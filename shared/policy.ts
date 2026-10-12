@@ -55,6 +55,13 @@ const read = [
   "p1.print",
 ];
 export const roleTemplates = {
+  project_manager: {
+    labels: ["مدير المشاريع", "Project manager", "منصوبوں کا مدیر"],
+    permissions: ATOMIC_PERMISSIONS.filter(
+      p => !["users", "policy", "permissions"].includes(p.module)
+    ).map(p => p.code),
+    landing: "contracts",
+  },
   preparer: {
     labels: [
       "مسؤول المشاريع والعقود",
@@ -172,7 +179,14 @@ export function togglePermission(
 export const accessProfileInput = z.object({
   userId: z.number().int().positive(),
   version: z.number().int().min(0),
-  template: z.enum(["preparer", "approver", "accountant", "viewer", "custom"]),
+  template: z.enum([
+    "project_manager",
+    "preparer",
+    "approver",
+    "accountant",
+    "viewer",
+    "custom",
+  ]),
   permissions: z.array(z.string().refine(isKnownPermission)).max(200),
   allProjects: z.boolean(),
   projectIds: z

@@ -12,6 +12,37 @@ import {
 } from "../../shared/policy";
 
 describe("central access policy", () => {
+  it("gives the project manager operational authority without user or policy administration", () => {
+    const manager = {
+      role: "user",
+      permissionCodes: [...roleTemplates.project_manager.permissions],
+    };
+    for (const code of [
+      "p1.projects.create",
+      "p1.contracts.create",
+      "p1.certificates.approve",
+      "p1.payments.record",
+      "p1.retention.release",
+      "p1.company.manage",
+      "reports.export",
+      "documents.view_confidential",
+    ])
+      expect(permissionAllowed(manager, code), code).toBe(true);
+    for (const code of [
+      "users.view",
+      "users.create",
+      "users.edit",
+      "users.password.reset",
+      "users.status.manage",
+      "policy.view",
+      "policy.manage",
+      "permissions.manage",
+    ])
+      expect(permissionAllowed(manager, code), code).toBe(false);
+    expect(completePermissions(manager.permissionCodes).sort()).toEqual(
+      [...manager.permissionCodes].sort()
+    );
+  });
   it("registers every API action explicitly and uses only known permissions", () => {
     expect(Object.keys(routePolicies).sort()).toEqual(
       Object.keys(appRouter._def.procedures).sort()
