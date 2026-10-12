@@ -1,0 +1,128 @@
+{
+  "checkedAt": "2026-10-12",
+  "mobile": [
+    {
+      "locale": "ar",
+      "direction": "rtl",
+      "left": 124,
+      "open": true,
+      "right": 378,
+      "viewport": 378,
+      "width": 254,
+      "menu": {
+        "expanded": "true",
+        "left": 330,
+        "right": 364
+      }
+    },
+    {
+      "locale": "ar",
+      "direction": "rtl",
+      "left": 124,
+      "open": true,
+      "right": 378,
+      "viewport": 378,
+      "width": 254,
+      "menu": {
+        "expanded": "true",
+        "left": 330,
+        "right": 364
+      }
+    },
+    {
+      "locale": "en",
+      "direction": "ltr",
+      "left": 0,
+      "open": true,
+      "right": 254,
+      "viewport": 378,
+      "width": 254,
+      "menu": {
+        "expanded": "true",
+        "left": 14,
+        "right": 48
+      }
+    },
+    {
+      "locale": "ur",
+      "direction": "rtl",
+      "left": 124,
+      "open": true,
+      "right": 378,
+      "viewport": 378,
+      "width": 254,
+      "menu": {
+        "expanded": "true",
+        "left": 330,
+        "right": 364
+      }
+    },
+    {
+      "locale": "ar",
+      "direction": "rtl",
+      "left": 124,
+      "open": true,
+      "right": 378,
+      "viewport": 378,
+      "width": 254,
+      "menu": {
+        "expanded": "true",
+        "left": 330,
+        "right": 364
+      }
+    }
+  ],
+  "desktop": [
+    {
+      "locale": "ur",
+      "main": {
+        "left": 0,
+        "right": 1026,
+        "width": 1026
+      },
+      "sidebar": {
+        "left": 1026,
+        "right": 1280,
+        "width": 254
+      },
+      "viewport": 1280,
+      "menuVisible": false
+    },
+    {
+      "locale": "en",
+      "main": {
+        "left": 254,
+        "right": 1280,
+        "width": 1026
+      },
+      "sidebar": {
+        "left": 0,
+        "right": 254,
+        "width": 254
+      },
+      "viewport": 1280,
+      "menuVisible": false
+    },
+    {
+      "locale": "ar",
+      "main": {
+        "left": 0,
+        "right": 1026,
+        "width": 1026
+      },
+      "sidebar": {
+        "left": 1026,
+        "right": 1280,
+        "width": 254
+      },
+      "viewport": 1280,
+      "menuVisible": false
+    }
+  ],
+  "arabicPointerClose": "passed",
+  "navigationAutoClose": "passed",
+  "typecheck": "passed",
+  "productionBuild": "passed",
+  "restoredLocale": "ar",
+  "viewportOverrideReset": true
+}

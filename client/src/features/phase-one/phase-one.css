@@ -1,0 +1,372 @@
+.p1-page {
+  --border: #25354d;
+  --background: #0b1525;
+  --foreground: #eef4fa;
+  --card: #101b2d;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.p1-shell .topbar {
+  gap: 10px;
+}
+.p1-sidebar-close {
+  position: absolute;
+  inset-block-start: 18px;
+  inset-inline-start: 14px;
+}
+@media (max-width: 1000px) {
+  .p1-shell .sidebar {
+    padding-block-start: 76px;
+  }
+}
+.p1-shell .topbar > b {
+  min-width: 0;
+  font-size: 14px;
+}
+.p1-page h1 {
+  font-size: 24px;
+}
+.p1-page h2 {
+  font-size: 19px;
+}
+.p1-page h3 {
+  font-size: 16px;
+}
+.p1-page button,
+.p1-page input,
+.p1-page select,
+.p1-page textarea {
+  font: inherit;
+}
+.p1-page button {
+  padding: 10px 14px;
+  border: 1px solid #31415a;
+  border-radius: 8px;
+  background: #17243a;
+  color: #eff6ff;
+  cursor: pointer;
+}
+.p1-page button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.p1-page button.primary {
+  background: #0e7490;
+  border-color: #0e7490;
+}
+.p1-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.p1-panel {
+  padding: 20px;
+  border: 1px solid #25354d;
+  border-radius: 12px;
+  background: #101b2d;
+  min-width: 0;
+}
+.p1-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 15px;
+}
+.p1-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+.p1-form input,
+.p1-form textarea,
+.p1-form select,
+.p1-filter {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #34455e;
+  background: #0b1525;
+  color: #eef4fa;
+  border-radius: 7px;
+  min-width: 0;
+}
+.p1-form textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+.p1-wide {
+  grid-column: 1/-1;
+}
+.p1-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+}
+.p1-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.p1-metrics > div {
+  padding: 16px;
+  background: #16253a;
+  border-radius: 9px;
+}
+.p1-metrics strong {
+  display: block;
+  font-size: 23px;
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.p1-hint {
+  color: #a9bbcf;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.p1-table-wrap {
+  overflow: auto;
+}
+.p1-page table {
+  border-collapse: collapse;
+  width: 100%;
+  text-align: start;
+  font-size: 14px;
+}
+.p1-page th,
+.p1-page td {
+  padding: 12px;
+  border-bottom: 1px solid #28384f;
+  text-align: start;
+  vertical-align: top;
+}
+.p1-page td {
+  font-variant-numeric: tabular-nums;
+}
+.p1-page th,
+.p1-page td {
+  font-size: inherit;
+  letter-spacing: normal;
+  white-space: normal;
+}
+.p1-status {
+  display: inline-block;
+  padding: 4px 8px;
+  background: #203653;
+  border-radius: 6px;
+}
+.p1-status.approved {
+  background: #164e43;
+}
+.p1-status.rejected {
+  background: #632b37;
+}
+.p1-dialog {
+  max-width: 1050px;
+  max-height: 90vh;
+  overflow: auto;
+  padding: 22px;
+}
+.p1-dialog > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.p1-detail-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.p1-detail-list p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.p1-detail-list b {
+  display: block;
+  color: #a7b9cd;
+  margin-bottom: 5px;
+}
+.p1-print-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.p1-logo {
+  max-width: 140px;
+  max-height: 75px;
+  object-fit: contain;
+}
+.p1-pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.p1-page hr {
+  border: 0;
+  border-top: 1px solid #2b3d54;
+  margin: 14px 0;
+}
+.p1-supplier-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.p1-side-nav > button {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  color: #a6bbd2;
+  display: flex;
+  gap: 12px;
+  text-align: start;
+  padding: 13px 18px;
+  align-items: center;
+}
+.p1-side-nav > button.active {
+  color: #66e0ed;
+  background: #152e40;
+}
+.p1-side-nav button small {
+  font: inherit;
+}
+.p1-page button:focus-visible,
+.p1-page input:focus-visible,
+.p1-page select:focus-visible,
+.p1-page textarea:focus-visible {
+  outline: 2px solid #54ccdd;
+  outline-offset: 2px;
+}
+@media (max-width: 650px) {
+  .p1-form,
+  .p1-detail-list {
+    grid-template-columns: 1fr;
+  }
+  .p1-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .p1-metrics {
+    grid-template-columns: 1fr;
+  }
+  .p1-dialog {
+    padding: 14px;
+  }
+  .p1-page table {
+    min-width: 560px;
+  }
+  .p1-panel {
+    padding: 14px;
+  }
+  .p1-page input,
+  .p1-page select,
+  .p1-page textarea {
+    font-size: 16px;
+  }
+}
+@media print {
+  html {
+    background: white !important;
+  }
+  body {
+    background: white !important;
+    color: #111 !important;
+    min-height: 0 !important;
+  }
+  .app-shell:has(.p1-print) {
+    display: block !important;
+    min-height: 0 !important;
+  }
+  .app-shell:has(.p1-print) > .sidebar,
+  .app-shell:has(.p1-print) > .app-main {
+    display: none !important;
+  }
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .p1-print,
+  .p1-print * {
+    visibility: visible;
+  }
+  .p1-print {
+    position: static;
+    width: 100%;
+    color: #111;
+    background: white;
+    font-family: Tahoma, Arial, sans-serif;
+    font-size: 12px;
+  }
+  .p1-print .p1-no-print {
+    display: none;
+  }
+  .p1-print table {
+    min-width: 0;
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 12px;
+  }
+  .p1-print th,
+  .p1-print td {
+    border: 1px solid #555;
+    color: #111;
+    padding: 7px;
+    text-align: start;
+  }
+  .p1-print h2,
+  .p1-print h3,
+  .p1-print b {
+    color: #111;
+  }
+  .p1-print hr {
+    border-color: #555;
+  }
+  .p1-print .p1-detail-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .p1-print .p1-table-wrap {
+    overflow: visible;
+  }
+  .p1-print .p1-panel {
+    border: 0;
+    background: white;
+    padding: 0;
+  }
+  .p1-print tr,
+  .p1-print .p1-detail-list p {
+    break-inside: avoid;
+  }
+  .p1-print .p1-hint {
+    color: #333;
+  }
+  .p1-print .p1-print-header {
+    margin-bottom: 20px;
+  }
+  .modal-backdrop:has(.p1-print) {
+    position: static;
+    display: block;
+    background: none;
+    backdrop-filter: none;
+    padding: 0;
+    width: 100%;
+  }
+  .modal-card:has(.p1-print) {
+    display: block;
+    width: 100%;
+    max-width: none;
+    padding: 0;
+    background: none;
+    border: 0;
+    overflow: visible;
+    max-height: none;
+    box-shadow: none;
+  }
+  .modal-card:has(.p1-print) > :not(.p1-print) {
+    display: none !important;
+  }
+}

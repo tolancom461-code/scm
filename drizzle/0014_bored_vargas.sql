@@ -1,0 +1,1 @@
+ALTER TABLE `p1_certificates` ADD `release_date` varchar(10);

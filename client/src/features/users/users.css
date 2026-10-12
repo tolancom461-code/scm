@@ -1,0 +1,29 @@
+.users-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 240px;
+}
+.users-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.users-hint {
+  grid-column: 1 / -1;
+  color: #b3c3e7;
+  font-size: 14px;
+  line-height: 1.8;
+}
+.users-form .form-footer {
+  gap: 12px;
+}
+.users-page {
+  min-width: 0;
+}
+.users-policy-fields {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.user-access-fields fieldset {
+  min-width: 0;
+}
