@@ -370,3 +370,334 @@
     display: none !important;
   }
 }
+
+/* Readable payment queue, with details kept out of the overview. */
+.p1-payment-queue {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+.p1-payment-card {
+  border: 1px solid #334155;
+  border-radius: 12px;
+  background: #131d2d;
+  overflow: hidden;
+}
+.p1-payment-card > summary {
+  list-style: none;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(110px, 1fr)) 24px;
+  gap: 20px;
+  align-items: center;
+  padding: 20px;
+}
+.p1-payment-card > summary::-webkit-details-marker {
+  display: none;
+}
+.p1-payment-card > summary h3 {
+  margin: 8px 0;
+  font-size: 16px;
+}
+.p1-payment-card > summary p {
+  margin: 5px 0;
+  color: #a7b6cf;
+  font-size: 13px;
+}
+.p1-payment-card > summary strong,
+.p1-payment-card > summary span {
+  display: block;
+}
+.p1-payment-card > summary strong {
+  margin-top: 8px;
+}
+.p1-payment-card > summary span {
+  color: #9db2d1;
+  font-size: 12px;
+}
+.p1-payment-card[open] > summary {
+  border-bottom: 1px solid #334155;
+  background: #1b2940;
+}
+.p1-payment-card-body {
+  padding: 20px;
+}
+.p1-card-chevron {
+  font-size: 24px !important;
+}
+.p1-payment-card[open] .p1-card-chevron {
+  transform: rotate(180deg);
+}
+.p1-payment-card > summary:focus-visible {
+  outline: 2px solid #68d9ef;
+  outline-offset: -3px;
+}
+@media (max-width: 760px) {
+  .p1-payment-card > summary {
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .p1-payment-card > summary > div:first-child {
+    grid-column: 1/-1;
+  }
+  .p1-card-chevron {
+    display: none !important;
+  }
+  .p1-payment-card-body {
+    padding: 12px;
+  }
+}
+/* Formal document styling also serves as the on-screen print preview. */
+.p1-print {
+  background: #fff;
+  color: #172435;
+  padding: 24px;
+  border-radius: 4px;
+  font-family: Tahoma, Arial, sans-serif;
+  line-height: 1.65;
+}
+.p1-print h2,
+.p1-print h3,
+.p1-print b {
+  color: #172435;
+}
+.p1-print .p1-print-header {
+  border-bottom: 3px solid #244862;
+  padding-bottom: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+.p1-print-header h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.p1-print-header p {
+  margin: 3px 0;
+  font-size: 11px;
+  color: #46576a;
+}
+.p1-print .p1-logo {
+  max-width: 120px;
+  max-height: 65px;
+  object-fit: contain;
+}
+.p1-print > h2 {
+  text-align: center;
+  font-size: 18px;
+  margin: 18px 0;
+}
+.p1-print h3 {
+  font-size: 14px;
+  border-inline-start: 3px solid #244862;
+  padding-inline-start: 10px;
+  margin: 18px 0 8px;
+}
+.p1-print .p1-detail-list {
+  gap: 0 18px;
+}
+.p1-print .p1-detail-list p {
+  padding: 7px 0;
+  margin: 0;
+  border-bottom: 1px solid #dce3e9;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.p1-print .p1-detail-list b {
+  font-size: 11px;
+  color: #526276;
+}
+.p1-print table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  min-width: 0;
+}
+.p1-print th {
+  background: #eaf0f5;
+  color: #244862;
+}
+.p1-print th,
+.p1-print td {
+  padding: 8px;
+  border: 1px solid #ccd5df;
+  color: #172435;
+}
+.p1-print .p1-hint {
+  color: #526276;
+  font-size: 10px;
+}
+.p1-print .p1-signatures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 24px;
+  break-inside: avoid;
+}
+.p1-print .p1-signatures > div {
+  border-top: 1px solid #ccd5df;
+  padding-top: 10px;
+}
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm 14mm 18mm;
+  }
+  html,
+  body,
+  #root {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .p1-print {
+    padding: 0 !important;
+    border-radius: 0;
+    font-size: 10pt;
+    line-height: 1.55;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .p1-print > h2 {
+    font-size: 15pt;
+  }
+  .p1-print-header h2 {
+    font-size: 13pt;
+  }
+  .p1-print table {
+    font-size: 9pt;
+  }
+  .p1-print th,
+  .p1-print td {
+    padding: 6px;
+    border-color: #c4cdd7;
+  }
+  .p1-print th {
+    background: #eaf0f5 !important;
+  }
+  .p1-print thead {
+    display: table-header-group;
+  }
+  .p1-print tfoot {
+    display: table-footer-group;
+  }
+  .p1-print h2,
+  .p1-print h3 {
+    break-after: avoid;
+  }
+  .p1-print tr {
+    break-inside: avoid;
+  }
+  .p1-print .p1-detail-list {
+    break-inside: avoid;
+  }
+  .p1-print p {
+    orphans: 3;
+    widows: 3;
+  }
+  .p1-print .p1-no-print,
+  .p1-print button,
+  .p1-print form {
+    display: none !important;
+  }
+  .modal-backdrop:has(.p1-print),
+  .modal-card:has(.p1-print) {
+    height: auto !important;
+    overflow: visible !important;
+    max-height: none !important;
+  }
+}
+
+.p1-supplier-cards {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+.p1-supplier-card {
+  border: 1px solid #334155;
+  border-radius: 14px;
+  background: #131d2d;
+  overflow: hidden;
+}
+.p1-supplier-card > summary {
+  list-style: none;
+  display: grid;
+  grid-template-columns: minmax(240px, 2fr) repeat(3, minmax(120px, 1fr)) 24px;
+  align-items: center;
+  gap: 20px;
+  padding: 24px;
+  cursor: pointer;
+}
+.p1-supplier-card > summary::-webkit-details-marker {
+  display: none;
+}
+.p1-supplier-identity h2 {
+  font-size: 17px;
+  margin: 8px 0;
+  line-height: 1.6;
+}
+.p1-supplier-card > summary span,
+.p1-supplier-identity small {
+  font-size: 12px;
+  color: #a5b8d2;
+}
+.p1-supplier-total strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 19px;
+  white-space: nowrap;
+}
+.p1-supplier-card[open] > summary {
+  background: #1b2940;
+  border-bottom: 1px solid #334155;
+}
+.p1-supplier-card > summary:focus-visible {
+  outline: 2px solid #68d9ef;
+  outline-offset: -3px;
+}
+.p1-supplier-chevron {
+  font-size: 24px !important;
+}
+.p1-supplier-card[open] .p1-supplier-chevron {
+  transform: rotate(180deg);
+}
+.p1-supplier-body {
+  padding: 18px;
+}
+.p1-supplier-body .p1-payment-queue {
+  margin-top: 0;
+}
+@media (max-width: 850px) {
+  .p1-supplier-card > summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    padding: 18px;
+  }
+  .p1-supplier-identity {
+    grid-column: 1/-1;
+  }
+  .p1-supplier-total strong {
+    font-size: 16px;
+    white-space: normal;
+  }
+  .p1-supplier-chevron {
+    display: none;
+  }
+  .p1-supplier-body {
+    padding: 10px;
+  }
+}
+@media (max-width: 440px) {
+  .p1-supplier-card > summary {
+    grid-template-columns: 1fr;
+  }
+  .p1-supplier-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+  .p1-supplier-total strong {
+    margin: 0;
+  }
+}

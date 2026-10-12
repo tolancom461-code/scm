@@ -1,5 +1,40 @@
 import type { Locale } from "@/lib/i18n";
 const labels = {
+  waitingTurn: [
+    "بانتظار استكمال الدفعات السابقة",
+    "Awaiting earlier installments",
+    "پچھلی اقساط کی تکمیل کا انتظار",
+  ],
+  settled: [
+    "لا توجد دفعات مستحقة حاليًا",
+    "No outstanding payments",
+    "فی الحال کوئی واجب ادائیگی نہیں",
+  ],
+  paymentScheduleMode: [
+    "طريقة جدولة الصرف",
+    "Payment schedule",
+    "ادائیگی کا شیڈول",
+  ],
+  followContract: [
+    "اتباع جدول العقد",
+    "Follow contract schedule",
+    "معاہدے کے شیڈول کی پیروی",
+  ],
+  independentSchedule: [
+    "جدول مستقل لهذا المستخلص",
+    "Independent certificate schedule",
+    "اس مستخلص کا الگ شیڈول",
+  ],
+  followContractHint: [
+    "تُصرف الدفعات وفق مراحل العقد والإنجاز المعتمد وصافي الرصيد المتبقي، دون إنشاء جدول جديد للمستخلص.",
+    "Payments follow contract stages, approved progress and the remaining net payable, without creating a certificate schedule.",
+    "ادائیگی معاہدے کے مراحل، منظور شدہ پیش رفت اور باقی خالص رقم کے مطابق ہوگی۔",
+  ],
+  independentScheduleHint: [
+    "استخدمه فقط عند الاتفاق على جدول خاص لهذا المستخلص؛ يصبح أساس الصرف لهذا المستخلص بدل مراحل العقد.",
+    "Use only when a separate schedule is agreed; it replaces contract stages for this certificate's payments.",
+    "الگ اتفاق شدہ شیڈول اس مستخلص کی ادائیگی کے لیے معاہدے کے مراحل کی جگہ لے گا۔",
+  ],
   releaseDate: [
     "تاريخ الإفراج الفعلي عن الضمان",
     "Effective retention release date",
@@ -122,7 +157,7 @@ const labels = {
     "سائٹ حوالگی کی تاریخ",
   ],
   duration: ["مدة التنفيذ بالأيام", "Duration in days", "مدت دنوں میں"],
-  warranty: ["مدة الضمان بالأشهر", "Warranty in months", "ضمانت مہینوں میں"],
+  warranty: ["مدة الضمان بالأيام", "Warranty in days", "ضمانت دنوں میں"],
   scope: ["وصف الأعمال", "Scope of work", "کام کی تفصیل"],
   terms: [
     "شروط العقد والدفع",

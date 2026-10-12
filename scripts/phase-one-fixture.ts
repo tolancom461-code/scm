@@ -25,7 +25,7 @@ import * as service from "../server/modules/phase-one/service";
 import { simpleContractInput } from "../shared/phase-one";
 import { unlink } from "node:fs/promises";
 import { localDocumentPath } from "../server/storage";
-export async function setupPhaseOne(warrantyMonths = 0) {
+export async function setupPhaseOne(warrantyDays = 0) {
   const code = "P1TEST-" + randomUUID().slice(0, 8),
     password = "P1-Test-" + randomUUID(),
     actors: number[] = [],
@@ -85,7 +85,7 @@ export async function setupPhaseOne(warrantyMonths = 0) {
         contractDate: date,
         siteDate: date,
         durationDays: 5,
-        warrantyMonths,
+        warrantyDays,
         retentionPercent: "20",
         dailyPenalty: "200",
         items: [

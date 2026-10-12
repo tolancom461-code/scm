@@ -373,7 +373,12 @@ export async function authorizeRequest(
       ["phaseOne.decideCertificate", "phaseOne.releaseRetention"].includes(path)
     ) {
       const certificate = await assertCertificateAccess(access, raw?.id);
-      if (certificate.createdBy === userId) forbidden("SELF_APPROVAL");
+      const ownerApproval =
+        path === "phaseOne.decideCertificate" &&
+        raw?.action === "approve" &&
+        access.user.role === "admin";
+      if (certificate.createdBy === userId && !ownerApproval)
+        forbidden("SELF_APPROVAL");
     }
     if (path === "phaseOne.recordPayment") {
       if (!canAccess(access, "p1.payments.view")) forbidden();

@@ -14,6 +14,9 @@ import { closeDb } from "../../db";
 import { documentPeriod } from "../../../shared/numbering";
 import * as service from "./service";
 import { loadAccess } from "../../core/policy";
+import { database } from "../../core/database";
+import { users } from "../../../drizzle/schema";
+import { eq } from "drizzle-orm";
 describe.runIf(process.env.SCM_INTEGRATION === "1")(
   "phase one contracts, certificates and accounting vouchers",
   () => {
@@ -103,20 +106,29 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
           "self approval"
         )
       ).rejects.toMatchObject({ domainCode: "DUTY_CONFLICT" });
+      const db = await database();
+      await db
+        .update(users)
+        .set({ role: "admin" })
+        .where(eq(users.id, f.actors[0]));
       const attempts = await Promise.allSettled([
         service.decideCertificate(
           certificateId,
-          f.actors[1],
+          f.actors[0],
           "approve",
           "Reviewed"
         ),
         service.decideCertificate(
           certificateId,
-          f.actors[1],
+          f.actors[0],
           "approve",
           "Duplicate"
         ),
       ]);
+      await db
+        .update(users)
+        .set({ role: "user" })
+        .where(eq(users.id, f.actors[0]));
       expect(attempts.filter(r => r.status === "fulfilled")).toHaveLength(1);
       expect((await balance()).upcoming?.readyAmount).toBe("846.00");
     }, 60000);

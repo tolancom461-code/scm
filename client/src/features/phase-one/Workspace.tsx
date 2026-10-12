@@ -27,10 +27,12 @@ import {
 } from "./Forms";
 import { phaseText, type PhaseLabel } from "./copy";
 import "./phase-one.css";
+import { PaymentQueue } from "./PaymentQueue";
 import { decimal, formatDecimal } from "@shared/decimal";
-import { businessDate, addCalendarMonths } from "@shared/date";
+import { businessDate, addCalendarDays } from "@shared/date";
 import {
   financeText,
+  ContractSchedule,
   ScheduleForm,
   HandoverForm,
   PaymentCorrection,
@@ -72,6 +74,8 @@ type Dialog = {
     | "cancel"
     | "restore";
   id: number;
+  certificateId?: number;
+  paymentKind?: "normal" | "retention";
 } | null;
 function GridTable({
   headers,
@@ -279,7 +283,9 @@ export function PhaseOneWorkspace({
             <h2>{state?.company?.name ?? p("brand")}</h2>
             <p>{state?.company?.address}</p>
             <p>
-              {state?.company?.registration} {state?.company?.taxNumber}
+              {p("registration")}: {state?.company?.registration || "—"}
+              {" · "}
+              {p("taxNumber")}: {state?.company?.taxNumber || "—"}
             </p>
           </div>
           {state?.company?.logo && (
@@ -559,190 +565,75 @@ export function PhaseOneWorkspace({
                 {page === "accounts" && (
                   <>
                     <p className="p1-hint">{p("accountHint")}</p>
-                    <GridTable
-                      headers={[
-                        p("supplier"),
-                        p("paid"),
-                        p("outstanding"),
-                        p("retained"),
-                      ]}
-                    >
-                      {filteredAccounts.map(a => (
-                        <tr key={a.supplierId + ":" + a.currency}>
-                          <td>{a.name}</td>
-                          <td>{money(a.paid, a.currency)}</td>
-                          <td>{money(a.outstanding, a.currency)}</td>
-                          <td>{money(a.retained, a.currency)}</td>
-                        </tr>
-                      ))}
-                    </GridTable>
-                    {contracts.map(c => {
-                      const b = state.balances.find(
-                        b => b.contractId === c.id
-                      )!;
-                      return (
-                        <section className="p1-panel" key={c.id}>
-                          <h2>
-                            {vendor(c.supplierId)} — {c.title}
-                          </h2>
-                          <p>
-                            {project(c.projectId)} · {c.number}
-                          </p>
-                          {metrics(b.paid, b.outstanding, b.retained)}
-                          <hr />
-                          <h3>{p("upcoming")}</h3>
-                          {b.certificates
-                            .filter(
-                              q => q.status === "approved" && q.nextInstallment
-                            )
-                            .map(q => (
-                              <div key={q.id} className="p1-panel">
-                                <strong>
-                                  {q.number} — {q.nextInstallment!.name}
-                                </strong>
-                                <p>
-                                  {p("dueDate")}: {q.nextInstallment!.dueDate} ·{" "}
-                                  {p("planned")}:{" "}
-                                  {money(q.nextInstallment!.amount)} ·{" "}
-                                  {p("readyAmount")}:{" "}
-                                  {money(q.nextInstallment!.readyAmount)} ·{" "}
-                                  {q.nextInstallment!.ready
-                                    ? p("ready")
-                                    : p("waiting")}
-                                </p>
-                              </div>
-                            ))}
-                          {b.upcoming ? (
-                            <div className="p1-detail-list">
-                              <p>
-                                <b>{p("stage")}</b>
-                                {b.upcoming.position} — {b.upcoming.name}
-                                {Number(b.upcoming.paid) > 0 && (
-                                  <span className="p1-status">
-                                    {p("partial")}
-                                  </span>
-                                )}
-                              </p>
-                              <p>
-                                <b>{p("dueDate")}</b>
-                                {b.upcoming.dueDate}
-                              </p>
-                              <p>
-                                <b>{p("planned")}</b>
-                                {money(b.upcoming.amount)}
-                              </p>
-                              <p>
-                                <b>{p("readyAmount")}</b>
-                                {money(b.upcoming.readyAmount)} —{" "}
-                                {b.upcoming.ready ? p("ready") : p("waiting")}
-                              </p>
-                            </div>
-                          ) : (
-                            <p>—</p>
-                          )}
-                          <div className="p1-actions">
-                            {can("p1.payments.record") &&
-                              (Number(b.upcoming?.readyAmount ?? 0) > 0 ||
-                                b.certificates.some(
-                                  q =>
-                                    Number(
-                                      q.nextInstallment?.readyAmount ?? 0
-                                    ) > 0
-                                ) ||
-                                Number(b.releasedOutstanding) > 0) && (
-                                <button
-                                  className="primary"
-                                  onClick={() => open("payment", c.id)}
-                                >
-                                  {p("recordPayment")}
-                                </button>
-                              )}
-                            <button onClick={() => open("contractView", c.id)}>
-                              {p("stages")}
-                            </button>
-                          </div>
-                          <h3>{p("payments")}</h3>
-                          <GridTable
-                            headers={[
-                              p("voucher"),
-                              p("date"),
-                              p("stage"),
-                              p("certificate"),
-                              p("amount"),
-                              p("attachments"),
-                            ]}
+                    <div className="p1-supplier-cards">
+                      {[
+                        ...new Set(filteredAccounts.map(a => a.supplierId)),
+                      ].map(supplierId => {
+                        const accounts = filteredAccounts.filter(
+                          a => a.supplierId === supplierId
+                        );
+                        const supplierContracts = contracts.filter(
+                          c => c.supplierId === supplierId
+                        );
+                        return (
+                          <details
+                            className="p1-supplier-card"
+                            key={supplierId}
                           >
-                            {state.payments
-                              .filter(
-                                x =>
-                                  x.contractId === c.id && x.status === "active"
-                              )
-                              .map(x => (
-                                <tr key={x.id}>
-                                  <td>{x.voucher}</td>
-                                  <td>{x.paymentDate}</td>
-                                  <td>
-                                    {x.kind === "retention"
-                                      ? p("retentionPayment")
-                                      : (state.installments.find(
-                                          i => i.id === x.installmentId
-                                        )?.name ??
-                                        b.stages.find(
-                                          m => m.id === x.milestoneId
-                                        )?.name)}
-                                  </td>
-                                  <td>
-                                    {
-                                      state.certificates.find(
-                                        q => q.id === x.certificateId
-                                      )?.number
-                                    }
-                                  </td>
-                                  <td>{money(x.amount)}</td>
-                                  <td>
-                                    <button
-                                      onClick={() => open("paymentView", x.id)}
-                                    >
-                                      {p("details")}
-                                    </button>
-                                  </td>
-                                </tr>
+                            <summary>
+                              <div className="p1-supplier-identity">
+                                <span>{p("supplier")}</span>
+                                <h2>{accounts[0].name}</h2>
+                                <small>
+                                  {ft(
+                                    "اضغط لعرض العقود والدفعات وسجل الصرف",
+                                    "Open contracts, installments and payment history",
+                                    "معاہدے، اقساط اور ادائیگی کی تاریخ دیکھیں"
+                                  )}
+                                </small>
+                              </div>
+                              {(
+                                ["paid", "outstanding", "retained"] as const
+                              ).map(k => (
+                                <div className="p1-supplier-total" key={k}>
+                                  <span>{p(k)}</span>
+                                  {accounts.map(a => (
+                                    <strong key={a.currency}>
+                                      {money(a[k], a.currency)}
+                                    </strong>
+                                  ))}
+                                </div>
                               ))}
-                          </GridTable>
-                          {state.payments.some(
-                            x =>
-                              x.contractId === c.id && x.status === "reversed"
-                          ) && (
-                            <details>
-                              <summary>
-                                {ft(
-                                  "السندات المعكوسة — محفوظة وخارج الأرصدة",
-                                  "Reversed vouchers — retained and excluded from balances",
-                                  "معکوس رسیدیں — محفوظ اور بقایا سے خارج"
-                                )}
-                              </summary>
-                              {state.payments
-                                .filter(
-                                  x =>
-                                    x.contractId === c.id &&
-                                    x.status === "reversed"
-                                )
-                                .map(x => (
-                                  <p key={x.id}>
-                                    {x.voucher} · {x.paymentDate} ·{" "}
-                                    {money(x.amount)}{" "}
-                                    <button
-                                      onClick={() => open("paymentView", x.id)}
-                                    >
-                                      {p("details")}
-                                    </button>
-                                  </p>
-                                ))}
-                            </details>
-                          )}
-                        </section>
-                      );
-                    })}
+                              <span
+                                className="p1-supplier-chevron"
+                                aria-hidden="true"
+                              >
+                                ⌄
+                              </span>
+                            </summary>
+                            <div className="p1-supplier-body">
+                              <PaymentQueue
+                                state={state}
+                                contracts={supplierContracts}
+                                locale={locale}
+                                canRecord={can("p1.payments.record")}
+                                record={(id, certificateId, paymentKind) => {
+                                  open("payment", id);
+                                  setDialog({
+                                    kind: "payment",
+                                    id,
+                                    certificateId,
+                                    paymentKind,
+                                  });
+                                }}
+                                contractDetails={id => open("contractView", id)}
+                                paymentDetails={id => open("paymentView", id)}
+                              />
+                            </div>
+                          </details>
+                        );
+                      })}
+                    </div>
                     <p className="p1-hint">{p("previousHint")}</p>
                   </>
                 )}
@@ -832,6 +723,8 @@ export function PhaseOneWorkspace({
             <HandoverForm contract={contract} locale={locale} done={done} />
           ) : dialog.kind === "replacement" ? (
             <PaymentForm
+              initialCertificateId={dialog.certificateId}
+              initialKind={dialog.paymentKind}
               state={state}
               contractId={
                 state.payments.find(x => x.id === dialog.id)!.contractId
@@ -929,9 +822,9 @@ export function PhaseOneWorkspace({
                   {contract.handoverDate ?? "—"} ·{" "}
                   {ft("انتهاء الضمان", "Warranty expiry", "ضمانت کا اختتام")}:{" "}
                   {contract.handoverDate
-                    ? addCalendarMonths(
+                    ? addCalendarDays(
                         contract.handoverDate,
-                        contract.warrantyMonths
+                        contract.warrantyDays
                       )
                     : "—"}
                 </p>
@@ -949,7 +842,7 @@ export function PhaseOneWorkspace({
                       ["contractDate", contract.contractDate],
                       ["siteDate", contract.siteDate],
                       ["duration", String(contract.durationDays)],
-                      ["warranty", String(contract.warrantyMonths)],
+                      ["warranty", String(contract.warrantyDays)],
                       ["retentionPercent", contract.retentionPercent],
                       ["dailyPenalty", money(contract.dailyPenalty)],
                     ] as const
@@ -1066,8 +959,9 @@ export function PhaseOneWorkspace({
                   </>
                 )}
                 <hr />
-                <div className="p1-detail-list">
+                <div className="p1-detail-list p1-signatures">
                   <p>
+                    <b>{p("representative")}</b>
                     {state.company?.representative}
                     <br />
                     ……………………
@@ -1185,60 +1079,75 @@ export function PhaseOneWorkspace({
                       </>
                     )}
                     <p className="p1-pre">{certificate.notes}</p>
-                    <h3>
-                      {ft(
-                        "جدول دفعات المستخلص",
-                        "Certificate installment schedule",
-                        "مستخلص کی اقساط کا شیڈول"
-                      )}
-                    </h3>
-                    <GridTable
-                      headers={[
-                        p("stage"),
-                        p("percent"),
-                        p("planned"),
-                        p("dueDate"),
-                        ...(can("p1.payments.view")
-                          ? [p("paid"), p("outstanding")]
-                          : []),
-                      ]}
-                    >
-                      {state.installments
-                        .filter(
-                          i =>
-                            i.certificateId === certificate.id &&
-                            i.version === certificate.scheduleVersion
-                        )
-                        .map(i => {
-                          const paid = state.payments
+                    {certificate.scheduleVersion === 0 ? (
+                      <>
+                        <h3>{p("followContract")}</h3>
+                        <ContractSchedule
+                          state={state}
+                          contractId={certificate.contractId}
+                          locale={locale}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <h3>
+                          {ft(
+                            "جدول دفعات المستخلص",
+                            "Certificate installment schedule",
+                            "مستخلص کی اقساط کا شیڈول"
+                          )}
+                        </h3>
+                        <GridTable
+                          headers={[
+                            p("stage"),
+                            p("percent"),
+                            p("planned"),
+                            p("dueDate"),
+                            ...(can("p1.payments.view")
+                              ? [p("paid"), p("outstanding")]
+                              : []),
+                          ]}
+                        >
+                          {state.installments
                             .filter(
-                              x =>
-                                x.installmentId === i.id &&
-                                x.status === "active"
+                              i =>
+                                i.certificateId === certificate.id &&
+                                i.version === certificate.scheduleVersion
                             )
-                            .reduce((n, x) => n + decimal(x.amount), 0n);
-                          return (
-                            <tr key={i.id}>
-                              <td>
-                                {i.position} — {i.name}
-                              </td>
-                              <td>{i.percent}%</td>
-                              <td>{money(i.amount)}</td>
-                              <td>{i.dueDate}</td>
-                              {can("p1.payments.view") && (
-                                <>
-                                  <td>{money(formatDecimal(paid))}</td>
+                            .map(i => {
+                              const paid = state.payments
+                                .filter(
+                                  x =>
+                                    x.installmentId === i.id &&
+                                    x.status === "active"
+                                )
+                                .reduce((n, x) => n + decimal(x.amount), 0n);
+                              return (
+                                <tr key={i.id}>
                                   <td>
-                                    {money(
-                                      formatDecimal(decimal(i.amount) - paid)
-                                    )}
+                                    {i.position} — {i.name}
                                   </td>
-                                </>
-                              )}
-                            </tr>
-                          );
-                        })}
-                    </GridTable>
+                                  <td>{i.percent}%</td>
+                                  <td>{money(i.amount)}</td>
+                                  <td>{i.dueDate}</td>
+                                  {can("p1.payments.view") && (
+                                    <>
+                                      <td>{money(formatDecimal(paid))}</td>
+                                      <td>
+                                        {money(
+                                          formatDecimal(
+                                            decimal(i.amount) - paid
+                                          )
+                                        )}
+                                      </td>
+                                    </>
+                                  )}
+                                </tr>
+                              );
+                            })}
+                        </GridTable>
+                      </>
+                    )}
                     {certificate.scheduleVersion === 0 && (
                       <p>
                         {ft(
@@ -1306,7 +1215,7 @@ export function PhaseOneWorkspace({
                       )}
                       :{" "}
                       {c.handoverDate
-                        ? addCalendarMonths(c.handoverDate, c.warrantyMonths)
+                        ? addCalendarDays(c.handoverDate, c.warrantyDays)
                         : ft(
                             "بانتظار التسليم النهائي",
                             "Awaiting final handover",
@@ -1333,8 +1242,18 @@ export function PhaseOneWorkspace({
                   </div>
                   {certificate.status === "pending" &&
                     can("p1.certificates.approve") &&
-                    certificate.createdBy !== user.id && (
+                    (certificate.createdBy !== user.id ||
+                      user.role === "admin") && (
                       <div className="p1-form">
+                        {certificate.createdBy === user.id && (
+                          <p>
+                            {ft(
+                              "استثناء مالك النظام: أنت مُعدّ هذا المستخلص. أدخل سبب الاعتماد الذاتي؛ سيُحفظ في سجل التدقيق.",
+                              "System owner exception: you prepared this certificate. Enter the self-approval reason; it will be recorded in the audit log.",
+                              "سسٹم مالک کی رعایت: آپ نے یہ سرٹیفکیٹ تیار کیا ہے۔ خود منظوری کی وجہ درج کریں؛ یہ آڈٹ لاگ میں محفوظ ہوگی۔"
+                            )}
+                          </p>
+                        )}
                         <Field
                           label={p("reason")}
                           value={reason}
@@ -1357,7 +1276,9 @@ export function PhaseOneWorkspace({
                           </button>
                           <button
                             disabled={
-                              reason.trim().length < 3 || decision.isPending
+                              certificate.createdBy === user.id ||
+                              reason.trim().length < 3 ||
+                              decision.isPending
                             }
                             onClick={() =>
                               decision.mutate({
@@ -1396,10 +1317,7 @@ export function PhaseOneWorkspace({
                             release.isPending ||
                             !c.handoverDate ||
                             releaseDate <
-                              addCalendarMonths(
-                                c.handoverDate,
-                                c.warrantyMonths
-                              )
+                              addCalendarDays(c.handoverDate, c.warrantyDays)
                           }
                           onClick={() =>
                             release.mutate({

@@ -2,7 +2,7 @@ import { and, asc, desc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import * as s from "../../../drizzle/phase-one";
-import { suppliers } from "../../../drizzle/schema";
+import { suppliers, users } from "../../../drizzle/schema";
 import { scmAuditEvents } from "../../../drizzle/foundation";
 import {
   decimal,
@@ -10,7 +10,7 @@ import {
   multiply,
   roundedDivide,
 } from "../../../shared/decimal";
-import { businessDate, addCalendarMonths } from "../../../shared/date";
+import { businessDate, addCalendarDays } from "../../../shared/date";
 import {
   calculateSimpleCertificate,
   companyInput,
@@ -199,8 +199,24 @@ export async function acceptHandover(
       rows = await related(tx, c.id);
     const final = rows.certificates.filter(i => i.status === "approved").at(-1);
     if (c.revision !== data.revision) throw new DomainError("CONFLICT");
-    if (c.createdBy === actorId || final?.createdBy === actorId)
-      throw new DomainError("DUTY_CONFLICT");
+    const selfHandover =
+      c.createdBy === actorId || final?.createdBy === actorId;
+    if (selfHandover) {
+      const [actor] = await tx
+        .select()
+        .from(users)
+        .where(eq(users.id, actorId));
+      const [profile] = await tx
+        .select()
+        .from(accessProfiles)
+        .where(eq(accessProfiles.userId, actorId));
+      if (
+        !actor?.active ||
+        (actor.role !== "admin" && profile?.template !== "project_manager")
+      )
+        throw new DomainError("DUTY_CONFLICT");
+      if (data.reason.trim().length < 3) throw new DomainError("INVALID_INPUT");
+    }
     if (
       !final ||
       decimal(final.progress) !== decimal("100") ||
@@ -228,7 +244,7 @@ export async function acceptHandover(
       entityType: "p1_contract",
       entityId: c.id,
       before: c,
-      after: { ...c, ...changes },
+      after: { ...c, ...changes, selfHandoverOverride: selfHandover },
       reason: data.reason,
     });
     return { id: c.id };
@@ -1132,7 +1148,16 @@ export async function decideCertificate(
       .where(eq(s.simpleCertificates.id, id))
       .for("update");
     if (c.status !== "pending") throw new DomainError("INVALID_TRANSITION");
-    if (c.createdBy === actorId) throw new DomainError("DUTY_CONFLICT");
+    const selfApproval = c.createdBy === actorId;
+    if (selfApproval) {
+      const [actor] = await tx
+        .select()
+        .from(users)
+        .where(eq(users.id, actorId));
+      if (action !== "approve" || actor?.role !== "admin" || !actor.active)
+        throw new DomainError("DUTY_CONFLICT");
+      if (reason.trim().length < 3) throw new DomainError("INVALID_REFERENCE");
+    }
     const status = action === "approve" ? "approved" : "rejected";
     await tx
       .update(s.simpleCertificates)
@@ -1149,7 +1174,7 @@ export async function decideCertificate(
       entityType: "p1_certificate",
       entityId: id,
       before: { status: c.status },
-      after: { status },
+      after: { status, selfApprovalOverride: selfApproval },
       reason,
     });
     return { id };
@@ -1185,7 +1210,7 @@ export async function releaseRetention(
     if (
       !contract.handoverDate ||
       releaseDate <
-        addCalendarMonths(contract.handoverDate, contract.warrantyMonths)
+        addCalendarDays(contract.handoverDate, contract.warrantyDays)
     )
       throw new DomainError("RETENTION_NOT_DUE");
     await tx

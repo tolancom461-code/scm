@@ -26,3 +26,8 @@ export function addCalendarMonths(date: string, months: number) {
   first.setUTCDate(Math.min(d, last));
   return first.toISOString().slice(0, 10);
 }
+/** Exact calendar days, independent of timezone and daylight saving. */
+export function addCalendarDays(date: string, days: number) {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}

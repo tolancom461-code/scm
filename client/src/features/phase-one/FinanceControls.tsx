@@ -2,7 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import type { Locale } from "@/lib/i18n";
-import { addCalendarMonths, businessDate } from "@shared/date";
+import { addCalendarMonths, addCalendarDays, businessDate } from "@shared/date";
 import { decimal, formatDecimal } from "@shared/decimal";
 import {
   percentOf,
@@ -10,6 +10,47 @@ import {
   handoverInput,
 } from "@shared/phase-one";
 import { Field, type State } from "./Forms";
+import { phaseText } from "./copy";
+export function ContractSchedule({
+  state,
+  contractId,
+  locale,
+}: {
+  state: State;
+  contractId: number;
+  locale: Locale;
+}) {
+  const stages =
+    state.schedules.find(s => s.contractId === contractId)?.stages ?? [];
+  return (
+    <div className="p1-table-wrap p1-wide">
+      <table>
+        <thead>
+          <tr>
+            {(
+              ["stage", "percent", "planned", "dueDate", "minProgress"] as const
+            ).map(k => (
+              <th key={k}>{phaseText(locale, k)}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {stages.map(s => (
+            <tr key={s.id}>
+              <td>
+                {s.position} — {s.name}
+              </td>
+              <td>{s.percent}%</td>
+              <td>{s.amount} SAR</td>
+              <td>{s.dueDate}</td>
+              <td>{s.minProgress}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 export const financeText = (
   locale: Locale,
   ar: string,
@@ -297,7 +338,7 @@ export function HandoverForm({
       <p>
         {t("انتهاء الضمان", "Warranty expiry", "ضمانت کی اختتامی تاریخ")}:{" "}
         {/^\d{4}-\d{2}-\d{2}$/.test(date)
-          ? addCalendarMonths(date, contract.warrantyMonths)
+          ? addCalendarDays(date, contract.warrantyDays)
           : "—"}
       </p>
       <Field

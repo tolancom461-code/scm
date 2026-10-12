@@ -22,7 +22,11 @@ import {
   percentOf,
 } from "@shared/phase-one";
 import { phaseText, type PhaseLabel } from "./copy";
-import { defaultInstallments, InstallmentEditor } from "./FinanceControls";
+import {
+  defaultInstallments,
+  InstallmentEditor,
+  ContractSchedule,
+} from "./FinanceControls";
 export type State = inferRouterOutputs<AppRouter>["phaseOne"]["state"];
 export function Field({
   label,
@@ -109,7 +113,7 @@ export function ContractForm({
     contractDate: today,
     siteDate: today,
     durationDays: 1,
-    warrantyMonths: 0,
+    warrantyDays: 0,
     scope: "",
     terms: "",
     retentionPercent: "0",
@@ -193,7 +197,7 @@ export function ContractForm({
           "contractDate",
           "siteDate",
           "durationDays",
-          "warrantyMonths",
+          "warrantyDays",
           "retentionPercent",
           "taxPercent",
           "dailyPenalty",
@@ -204,7 +208,7 @@ export function ContractForm({
           label={p(
             k === "durationDays"
               ? "duration"
-              : k === "warrantyMonths"
+              : k === "warrantyDays"
                 ? "warranty"
                 : k
           )}
@@ -215,7 +219,7 @@ export function ContractForm({
               ? "date"
               : [
                     "durationDays",
-                    "warrantyMonths",
+                    "warrantyDays",
                     "retentionPercent",
                     "taxPercent",
                     "dailyPenalty",
@@ -226,7 +230,7 @@ export function ContractForm({
           set={v =>
             change(
               k,
-              ["durationDays", "warrantyMonths"].includes(k) ? Number(v) : v
+              ["durationDays", "warrantyDays"].includes(k) ? Number(v) : v
             )
           }
         />
@@ -384,7 +388,7 @@ export function CertificateForm({
       otherDeduction: "0",
       deductionReason: "",
       notes: "",
-      installments: defaultInstallments(businessDate()),
+      installments: undefined,
     });
   const mutation = trpc.phaseOne.createCertificate.useMutation({
     onSuccess: done,
@@ -447,7 +451,9 @@ export function CertificateForm({
           set({
             ...data,
             certificateDate: v,
-            installments: defaultInstallments(v),
+            installments: data.installments
+              ? defaultInstallments(v)
+              : undefined,
           })
         }
       />
@@ -530,27 +536,70 @@ export function CertificateForm({
             "tax",
             "retention",
             "penalty",
+            "otherDeduction",
             "net",
           ] as const
         ).map(k => (
           <p key={k}>
             <b>{p(k)}</b>
-            {preview?.[k] ?? "—"} SAR
+            {k === "otherDeduction"
+              ? preview
+                ? formatDecimal(decimal(data.otherDeduction))
+                : "—"
+              : (preview?.[k] ?? "—")}{" "}
+            SAR
           </p>
         ))}
+        <p className="p1-wide">
+          <b>{p("deductionReason")}</b>
+          {data.deductionReason || "—"}
+        </p>
       </div>
+      <label className="p1-wide">
+        {p("paymentScheduleMode")}
+        <select
+          aria-label={p("paymentScheduleMode")}
+          value={data.installments ? "independent" : "contract"}
+          onChange={e =>
+            set({
+              ...data,
+              installments:
+                e.target.value === "independent"
+                  ? defaultInstallments(data.certificateDate)
+                  : undefined,
+            })
+          }
+        >
+          <option value="contract">{p("followContract")}</option>
+          <option value="independent">{p("independentSchedule")}</option>
+        </select>
+      </label>
+      <p className="p1-hint p1-wide">
+        {p(
+          data.installments ? "independentScheduleHint" : "followContractHint"
+        )}
+      </p>
+      {!data.installments && (
+        <ContractSchedule
+          state={state}
+          contractId={contractId}
+          locale={locale}
+        />
+      )}
+      {data.installments && (
+        <InstallmentEditor
+          plan={data.installments}
+          set={installments => set({ ...data, installments })}
+          net={preview?.net ?? "0"}
+          locale={locale}
+        />
+      )}
       <button
         className="primary p1-wide"
         disabled={mutation.isPending || !preview}
       >
         {p("send")}
       </button>
-      <InstallmentEditor
-        plan={data.installments ?? []}
-        set={installments => set({ ...data, installments })}
-        net={preview?.net ?? "0"}
-        locale={locale}
-      />
     </form>
   );
 }
@@ -629,6 +678,8 @@ export function ContractCorrectionForm({
   );
 }
 export function PaymentForm({
+  initialCertificateId,
+  initialKind,
   state,
   contractId,
   locale,
@@ -640,14 +691,24 @@ export function PaymentForm({
   locale: Locale;
   done: () => void;
   replacement?: State["payments"][number];
+  initialCertificateId?: number;
+  initialKind?: "normal" | "retention";
 }) {
   const p = (key: PhaseLabel) => phaseText(locale, key),
     current = state.balances.find(b => b.contractId === contractId)!;
   const first = replacement
     ? current.certificates.find(c => c.id === replacement.certificateId)
-    : current.certificates.find(
-        c => c.status === "approved" && Number(c.outstanding) > 0
-      );
+    : initialCertificateId
+      ? current.certificates.find(c => c.id === initialCertificateId)
+      : current.certificates.find(
+          c =>
+            c.status === "approved" &&
+            Number(
+              initialKind === "retention"
+                ? c.releasedOutstanding
+                : c.outstanding
+            ) > 0
+        );
   const [key] = useState(() => crypto.randomUUID()),
     [data, set] = useState<z.infer<typeof simplePaymentInput>>({
       contractId,
@@ -655,19 +716,24 @@ export function PaymentForm({
       milestoneId: current.upcoming?.id ?? null,
       installmentId: first?.nextInstallment?.id ?? null,
       replacesPaymentId: replacement?.id ?? null,
-      kind: replacement?.kind === "retention" ? "retention" : "normal",
-      amount: first
-        ? String(
-            Math.min(
-              Number(first.outstanding),
-              Number(
-                first.nextInstallment?.readyAmount ??
-                  current.upcoming?.readyAmount ??
-                  0
+      kind:
+        initialKind ??
+        (replacement?.kind === "retention" ? "retention" : "normal"),
+      amount:
+        initialKind === "retention"
+          ? (first?.releasedOutstanding ?? "0")
+          : first
+            ? String(
+                Math.min(
+                  Number(first.outstanding),
+                  Number(
+                    first.nextInstallment?.readyAmount ??
+                      current.upcoming?.readyAmount ??
+                      0
+                  )
+                )
               )
-            )
-          )
-        : "0",
+            : "0",
       paymentDate: replacement?.paymentDate ?? businessDate(),
       voucher: replacement?.voucher ?? "",
       notes: "",

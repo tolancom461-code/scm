@@ -71,7 +71,7 @@ export const simpleContractInput = z
     contractDate: dateInput,
     siteDate: dateInput,
     durationDays: z.number().int().min(1).max(3650),
-    warrantyMonths: z.number().int().min(0).max(240).default(0),
+    warrantyDays: z.number().int().min(0).max(73050).default(0),
     scope: z.string().trim().max(6000).default(""),
     terms: z.string().trim().max(6000).default(""),
     retentionPercent: percent.default("0"),

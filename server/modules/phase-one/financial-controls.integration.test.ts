@@ -47,7 +47,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
       );
     };
     beforeAll(async () => {
-      f = await setupPhaseOne(12);
+      f = await setupPhaseOne(365);
     }, 90000);
     afterAll(async () => {
       try {

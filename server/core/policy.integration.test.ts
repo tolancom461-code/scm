@@ -210,7 +210,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         (await accountant.phaseOne.state()).payments.map(p => p.id)
       ).toEqual([paymentId]);
     }, 60000);
-    it("never allows the owner to approve a certificate they created", async () => {
+    it("allows owner self-approval and project manager self-handover while preserving scope", async () => {
       const id = (
         await owner.phaseOne.createCertificate({
           key: randomUUID(),
@@ -228,7 +228,15 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
           action: "approve",
           reason: "Self approval",
         })
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      ).resolves.toEqual({ id });
+      await expect(
+        owner.phaseOne.acceptHandover({
+          id: f.b.contractId,
+          revision: 0,
+          handoverDate: f.b.date,
+          reason: "Owner self-handover exception",
+        })
+      ).resolves.toEqual({ id: f.b.contractId });
       await expect(
         approver.phaseOne.decideCertificate({
           id,
@@ -249,6 +257,54 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
           },
         })
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    }, 60000);
+    it("allows project manager self-handover but denies other templates", async () => {
+      const existingFinal = (await owner.phaseOne.state()).certificates.some(
+        c =>
+          c.contractId === f.b.contractId &&
+          c.status === "approved" &&
+          Number(c.progress) === 100
+      );
+      if (!existingFinal) {
+        const cert = (
+          await owner.phaseOne.createCertificate({
+            key: randomUUID(),
+            data: simpleCertificateInput.parse({
+              contractId: f.b.contractId,
+              certificateDate: f.b.date,
+              mode: "percent",
+              progress: "100",
+            }),
+          })
+        ).id;
+        await owner.phaseOne.decideCertificate({
+          id: cert,
+          action: "approve",
+          reason: "Owner test approval",
+        });
+      }
+      await configure(f.extra.owner, f.b.actors[0], "approver", [
+        f.b.projectId,
+      ]);
+      const manager = await callerFor(f.b.actors[0]);
+      const contract = (await owner.phaseOne.state()).contracts.find(
+        c => c.id === f.b.contractId
+      )!;
+      const input = {
+        id: f.b.contractId,
+        revision: contract.revision,
+        handoverDate: f.b.date,
+        reason: "Manager self-handover test",
+      };
+      await expect(
+        manager.phaseOne.acceptHandover(input)
+      ).rejects.toMatchObject({ message: expect.any(String) });
+      await configure(f.extra.owner, f.b.actors[0], "project_manager", [
+        f.b.projectId,
+      ]);
+      await expect(manager.phaseOne.acceptHandover(input)).resolves.toEqual({
+        id: f.b.contractId,
+      });
     }, 60000);
     it("scopes filtered and unfiltered attachment lists and rejects uploads before writing storage", async () => {
       const upload = (
