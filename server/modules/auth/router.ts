@@ -19,7 +19,6 @@ const localeSchema = z.enum(["ar", "en", "ur"]);
 
 export const authRouter = router({
   firstRunStatus: publicProcedure.query(async () => {
-    await db.seedPermissions();
     return { needsSetup: (await db.countUsers()) === 0 };
   }),
   bootstrap: publicProcedure

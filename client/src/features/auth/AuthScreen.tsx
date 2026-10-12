@@ -8,10 +8,16 @@ export function AuthScreen({
   locale,
   setLocale,
   setup,
+  checking = false,
+  checkError = false,
+  retryChecks,
 }: {
   locale: Locale;
   setLocale: (l: Locale) => void;
   setup: boolean;
+  checking?: boolean;
+  checkError?: boolean;
+  retryChecks?: () => void;
 }) {
   const trpcUtils = trpc.useUtils();
   const [username, setUsername] = useState("");
@@ -71,6 +77,33 @@ export function AuthScreen({
           <p>{setup ? t9("bootText") : t9("signinText")}</p>
         </div>
         <form onSubmit={submit} className="auth-form">
+          {checking && (
+            <p role="status">
+              {locale === "ar"
+                ? "جاري التحقق من جاهزية الدخول…"
+                : locale === "en"
+                  ? "Checking sign-in availability…"
+                  : "لاگ ان کی دستیابی کی جانچ…"}
+            </p>
+          )}
+          {checkError && (
+            <div role="alert">
+              <p>
+                {locale === "ar"
+                  ? "تعذر الاتصال بالخادم. أعد المحاولة."
+                  : locale === "en"
+                    ? "Could not reach the server. Please retry."
+                    : "سرور سے رابطہ نہیں ہو سکا۔ دوبارہ کوشش کریں۔"}
+              </p>
+              <button type="button" onClick={retryChecks}>
+                {locale === "ar"
+                  ? "إعادة المحاولة"
+                  : locale === "en"
+                    ? "Retry"
+                    : "دوبارہ کوشش"}
+              </button>
+            </div>
+          )}
           {setup ? (
             <>
               <Input label={t9("name")} required>
@@ -123,7 +156,9 @@ export function AuthScreen({
           </Input>
           <button
             className="neo-button full"
-            disabled={login.isPending || bootstrap.isPending}
+            disabled={
+              checking || checkError || login.isPending || bootstrap.isPending
+            }
           >
             {setup ? t9("createAccount") : t9("login")}
             <ShieldCheck size={17} />

@@ -1,3 +1,4 @@
+import { formatPercent } from "@shared/display";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import type { Locale } from "@/lib/i18n";
@@ -113,7 +114,7 @@ export function MvpOverview({
                       {node.startsAt} — {node.endsAt}
                     </td>
                     <td>
-                      {node.progress}%
+                      {formatPercent(node.progress)}
                       {allowed(user, "projects.manage") && (
                         <form
                           className="op-form"

@@ -28,6 +28,7 @@ import {
 import { phaseText, type PhaseLabel } from "./copy";
 import "./phase-one.css";
 import { PaymentQueue } from "./PaymentQueue";
+import { formatPercent } from "@shared/display";
 import { decimal, formatDecimal } from "@shared/decimal";
 import { businessDate, addCalendarDays } from "@shared/date";
 import {
@@ -275,6 +276,47 @@ export function PhaseOneWorkspace({
       ))}
     </div>
   );
+  const [preparingPrint, setPreparingPrint] = useState(false);
+  async function printCurrentDocument(title: string) {
+    const surface = document.querySelector<HTMLElement>(
+      ".modal-card .p1-print"
+    );
+    if (!surface || preparingPrint) return;
+    const preview = window.open("", "_blank");
+    if (preview) {
+      preview.document.title = title;
+      preview.document.body.textContent = ft(
+        "جاري تجهيز الطباعة…",
+        "Preparing print document…",
+        "پرنٹ دستاویز تیار ہو رہی ہے…"
+      );
+    }
+    setPreparingPrint(true);
+    try {
+      const { printablePdf } = await import("./print-document");
+      const blob = await printablePdf(surface, title),
+        url = URL.createObjectURL(blob);
+      if (preview) preview.location.href = url;
+      else {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = title.replace(/[\\/:*?"<>|]/g, "-") + ".pdf";
+        link.click();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      preview?.close();
+      toast.error(
+        ft(
+          "تعذر تجهيز الطباعة. أعد المحاولة.",
+          "Could not prepare the print document. Please retry.",
+          "پرنٹ دستاویز تیار نہیں ہو سکی۔ دوبارہ کوشش کریں۔"
+        )
+      );
+    } finally {
+      setPreparingPrint(false);
+    }
+  }
   function printHeader(title: string) {
     return (
       <>
@@ -761,7 +803,12 @@ export function PhaseOneWorkspace({
             <>
               <div className="p1-actions">
                 {can("p1.print") && (
-                  <button onClick={() => window.print()}>{p("print")}</button>
+                  <button
+                    disabled={preparingPrint}
+                    onClick={() => void printCurrentDocument(contract.number)}
+                  >
+                    {p("print")}
+                  </button>
                 )}
                 {can("p1.certificates.create") &&
                   contract.status === "active" && (
@@ -795,43 +842,45 @@ export function PhaseOneWorkspace({
                   )}
               </div>
               <div className="p1-print" dir={localeMeta[locale].direction}>
-                {printHeader(contract.title)}
-                {can("p1.contracts.handover") &&
-                  contract.status === "active" &&
-                  state.certificates.some(
-                    q =>
-                      q.contractId === contract.id &&
-                      q.status === "approved" &&
-                      Number(q.progress) === 100
-                  ) &&
-                  !state.certificates.some(
-                    q =>
-                      q.contractId === contract.id &&
-                      Number(q.releasedAmount) > 0
-                  ) && (
-                    <button onClick={() => open("handover", contract.id)}>
-                      {ft(
-                        "اعتماد التسليم النهائي",
-                        "Approve final handover",
-                        "آخری حوالگی منظور کریں"
-                      )}
-                    </button>
-                  )}
-                <p>
-                  {ft("التسليم النهائي", "Final handover", "آخری حوالگی")}:{" "}
-                  {contract.handoverDate ?? "—"} ·{" "}
-                  {ft("انتهاء الضمان", "Warranty expiry", "ضمانت کا اختتام")}:{" "}
-                  {contract.handoverDate
-                    ? addCalendarDays(
-                        contract.handoverDate,
-                        contract.warrantyDays
-                      )
-                    : "—"}
-                </p>
+                <section className="p1-print-intro">
+                  {printHeader(contract.title)}
+                  {can("p1.contracts.handover") &&
+                    contract.status === "active" &&
+                    state.certificates.some(
+                      q =>
+                        q.contractId === contract.id &&
+                        q.status === "approved" &&
+                        Number(q.progress) === 100
+                    ) &&
+                    !state.certificates.some(
+                      q =>
+                        q.contractId === contract.id &&
+                        Number(q.releasedAmount) > 0
+                    ) && (
+                      <button onClick={() => open("handover", contract.id)}>
+                        {ft(
+                          "اعتماد التسليم النهائي",
+                          "Approve final handover",
+                          "آخری حوالگی منظور کریں"
+                        )}
+                      </button>
+                    )}
+                  <p>
+                    {ft("التسليم النهائي", "Final handover", "آخری حوالگی")}:{" "}
+                    {contract.handoverDate ?? "—"} ·{" "}
+                    {ft("انتهاء الضمان", "Warranty expiry", "ضمانت کا اختتام")}:{" "}
+                    {contract.handoverDate
+                      ? addCalendarDays(
+                          contract.handoverDate,
+                          contract.warrantyDays
+                        )
+                      : "—"}
+                  </p>
+                </section>
                 {contract.status === "cancelled" && (
                   <p className="p1-hint">{p("cancelledContracts")}</p>
                 )}
-                <div className="p1-detail-list">
+                <div className="p1-detail-list p1-contract-facts">
                   {(
                     [
                       ["contractNumber", contract.number],
@@ -843,7 +892,10 @@ export function PhaseOneWorkspace({
                       ["siteDate", contract.siteDate],
                       ["duration", String(contract.durationDays)],
                       ["warranty", String(contract.warrantyDays)],
-                      ["retentionPercent", contract.retentionPercent],
+                      [
+                        "retentionPercent",
+                        formatPercent(contract.retentionPercent),
+                      ],
                       ["dailyPenalty", money(contract.dailyPenalty)],
                     ] as const
                   ).map(([k, v]) => (
@@ -909,10 +961,10 @@ export function PhaseOneWorkspace({
                         <td>
                           {m.position} — {m.name}
                         </td>
-                        <td>{m.percent}</td>
+                        <td>{formatPercent(m.percent)}</td>
                         <td>{money(m.amount)}</td>
                         <td>{m.dueDate}</td>
-                        <td>{m.minProgress}</td>
+                        <td>{formatPercent(m.minProgress)}</td>
                       </tr>
                     ))}
                 </GridTable>
@@ -988,7 +1040,14 @@ export function PhaseOneWorkspace({
               return (
                 <>
                   {can("p1.print") && (
-                    <button onClick={() => window.print()}>{p("print")}</button>
+                    <button
+                      disabled={preparingPrint}
+                      onClick={() =>
+                        void printCurrentDocument(certificate.number)
+                      }
+                    >
+                      {p("print")}
+                    </button>
                   )}
                   <div className="p1-print" dir={localeMeta[locale].direction}>
                     {printHeader(p("certificate") + " — " + certificate.number)}
@@ -1007,7 +1066,7 @@ export function PhaseOneWorkspace({
                           ["project", project(c.projectId)],
                           ["supplier", vendor(c.supplierId)],
                           ["certificateDate", certificate.certificateDate],
-                          ["progress", certificate.progress],
+                          ["progress", formatPercent(certificate.progress)],
                           ["delayDays", String(certificate.delayDays)],
                           [
                             "status",
@@ -1127,7 +1186,7 @@ export function PhaseOneWorkspace({
                                   <td>
                                     {i.position} — {i.name}
                                   </td>
-                                  <td>{i.percent}%</td>
+                                  <td>{formatPercent(i.percent)}</td>
                                   <td>{money(i.amount)}</td>
                                   <td>{i.dueDate}</td>
                                   {can("p1.payments.view") && (
@@ -1188,8 +1247,8 @@ export function PhaseOneWorkspace({
                           .map(i => (
                             <p key={i.id}>
                               {p("revision")}: {i.version} · {i.position} —{" "}
-                              {i.name} · {i.percent}% · {money(i.amount)} ·{" "}
-                              {i.dueDate}
+                              {i.name} · {formatPercent(i.percent)} ·{" "}
+                              {money(i.amount)} · {i.dueDate}
                             </p>
                           ))}
                       </details>

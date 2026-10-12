@@ -5,6 +5,7 @@ import { trpc } from "@/lib/trpc";
 import type { Locale } from "@/lib/i18n";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
+import { trimDecimal } from "@shared/display";
 import { businessDate } from "@shared/date";
 import {
   decimal,
@@ -35,6 +36,7 @@ export function Field({
   type = "text",
   required = true,
   wide = false,
+  normalizePercent = false,
 }: {
   label: string;
   value: string;
@@ -42,6 +44,7 @@ export function Field({
   type?: string;
   required?: boolean;
   wide?: boolean;
+  normalizePercent?: boolean;
 }) {
   return (
     <label className={wide ? "p1-wide" : ""}>
@@ -55,6 +58,9 @@ export function Field({
       ) : (
         <input
           type={type}
+          onBlur={() => {
+            if (normalizePercent) set(trimDecimal(value));
+          }}
           step={type === "number" ? "any" : undefined}
           min={type === "number" ? "0" : undefined}
           required={required}
@@ -213,6 +219,7 @@ export function ContractForm({
                 : k
           )}
           value={String(data[k])}
+          normalizePercent={k === "retentionPercent" || k === "taxPercent"}
           required={k !== "reference"}
           type={
             k.endsWith("Date")
@@ -309,6 +316,7 @@ export function ContractForm({
               key={k}
               label={p(k === "name" ? "stageName" : k)}
               value={m[k]}
+              normalizePercent={k === "percent" || k === "minProgress"}
               type={k === "dueDate" ? "date" : k === "name" ? "text" : "number"}
               set={v =>
                 change(
@@ -382,7 +390,7 @@ export function CertificateForm({
       contractId,
       certificateDate: businessDate(),
       mode: "percent",
-      progress: last?.progress ?? "0",
+      progress: trimDecimal(last?.progress ?? "0"),
       quantities: last?.quantities ?? contract.items.map(() => "0"),
       delayDays: last?.delayDays ?? 0,
       otherDeduction: "0",
@@ -474,6 +482,7 @@ export function CertificateForm({
         <Field
           label={p("progress")}
           value={data.progress}
+          normalizePercent
           type="number"
           set={v => set({ ...data, progress: v })}
         />

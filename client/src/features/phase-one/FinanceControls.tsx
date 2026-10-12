@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import type { Locale } from "@/lib/i18n";
 import { addCalendarMonths, addCalendarDays, businessDate } from "@shared/date";
+import { formatPercent, trimDecimal } from "@shared/display";
 import { decimal, formatDecimal } from "@shared/decimal";
 import {
   percentOf,
@@ -40,10 +41,10 @@ export function ContractSchedule({
               <td>
                 {s.position} — {s.name}
               </td>
-              <td>{s.percent}%</td>
+              <td>{formatPercent(s.percent)}</td>
               <td>{s.amount} SAR</td>
               <td>{s.dueDate}</td>
-              <td>{s.minProgress}%</td>
+              <td>{formatPercent(s.minProgress)}</td>
             </tr>
           ))}
         </tbody>
@@ -119,6 +120,7 @@ export function InstallmentEditor({
               label={t("نسبة الدفعة", "Installment percent", "قسط فیصد")}
               type="number"
               value={row.percent}
+              normalizePercent
               set={v =>
                 set(plan.map((r, i) => (i === n ? { ...r, percent: v } : r)))
               }
@@ -185,7 +187,11 @@ export function ScheduleForm({
   );
   const [plan, setPlan] = useState<Plan>(
     old.length
-      ? old.map(({ name, percent, dueDate }) => ({ name, percent, dueDate }))
+      ? old.map(({ name, percent, dueDate }) => ({
+          name,
+          percent: trimDecimal(percent),
+          dueDate,
+        }))
       : defaultInstallments(certificate.certificateDate)
   );
   const [reason, setReason] = useState(""),
