@@ -18,17 +18,13 @@ export function SystemBrand({
   return (
     <div className={`system-brand ${landing ? "system-brand-landing" : ""}`}>
       <strong dir={landing ? undefined : "ltr"}>
-        {landing
-          ? locale === "en"
-            ? `${systemBrand.en} - ${systemBrand.abbreviation}`
-            : systemName(locale)
-          : systemBrand.abbreviation}
+        {landing ? systemName(locale) : systemBrand.abbreviation}
       </strong>
       <small dir={landing ? (locale === "en" ? "rtl" : "ltr") : undefined}>
         {landing
           ? locale === "en"
             ? systemBrand.ar
-            : `${systemBrand.en} - ${systemBrand.abbreviation}`
+            : systemBrand.en
           : systemName(locale)}
       </small>
     </div>

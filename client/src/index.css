@@ -1,6 +1,30 @@
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Noto+Sans+Arabic:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
+.auth-wordmark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 32px 0 0;
+  color: #91dbe9;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.2em;
+  text-shadow: 0 0 10px rgba(84, 232, 255, 0.16);
+}
+.auth-wordmark::before,
+.auth-wordmark::after {
+  content: "";
+  width: 38px;
+  height: 1px;
+  background: linear-gradient(to right, transparent, rgba(145, 219, 233, 0.55));
+}
+.auth-wordmark::after {
+  transform: rotate(180deg);
+}
+
 /* The system identity uses the same names on the sign-in screen and workspace. */
 .brand-lockup > .system-brand {
   min-width: 0;

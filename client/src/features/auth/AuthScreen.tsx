@@ -5,6 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Input } from "@/features/workspace/ui";
 import { SystemBrand, useSystemTitle } from "@/components/SystemBrand";
+import { systemBrand } from "@/lib/branding";
 export function AuthScreen({
   locale,
   setLocale,
@@ -73,7 +74,7 @@ export function AuthScreen({
         <div className="auth-heading">
           <p className="eyebrow">{setup ? t9("setup") : t9("signIn")}</p>
           <h1>{setup ? t9("initialize") : t9("welcomeBack")}</h1>
-          <p>{setup ? t9("bootText") : t9("signinText")}</p>
+          {setup && <p>{t9("bootText")}</p>}
         </div>
         <form onSubmit={submit} className="auth-form">
           {checking && (
@@ -163,8 +164,8 @@ export function AuthScreen({
             <ShieldCheck size={17} />
           </button>
         </form>
-        <p className="auth-foot">
-          LOCAL//AUTH <span /> ATOMIC//ACCESS
+        <p className="auth-wordmark" dir="ltr">
+          {systemBrand.abbreviation}
         </p>
       </section>
     </main>
