@@ -1,4 +1,5 @@
 /** Generate the printable page area directly, independent of printer margins. */
+import { systemBrand } from "@/lib/branding";
 let printFont: Promise<FontFace> | undefined;
 const printLayout = {
   top: 5,
@@ -140,7 +141,10 @@ export async function printablePdf(source: HTMLElement, title: string) {
       format: "a4",
       orientation: "portrait",
     });
-    pdf.setProperties({ title, creator: "Procure Nexus" });
+    pdf.setProperties({
+      title,
+      creator: `${systemBrand.en} - ${systemBrand.abbreviation}`,
+    });
     const pixelsPerMm = canvas.width / printLayout.width,
       ratio = canvas.height / height;
     const breaks = boundaries

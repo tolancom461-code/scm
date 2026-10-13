@@ -1,4 +1,5 @@
 import type { Locale } from "@/lib/i18n";
+import { systemBrand } from "@/lib/branding";
 const labels = {
   waitingTurn: [
     "بانتظار استكمال الدفعات السابقة",
@@ -81,11 +82,7 @@ const labels = {
   ],
   partial: ["مدفوعة جزئيًا", "Partially paid", "جزوی ادائیگی"],
   value: ["القيمة", "Value", "رقم"],
-  brand: [
-    "المشاريع والمستخلصات",
-    "Projects & certificates",
-    "منصوبے اور مستخلص",
-  ],
+  brand: [systemBrand.ar, systemBrand.en, systemBrand.ur],
   contracts: ["المشاريع والعقود", "Projects & contracts", "منصوبے اور معاہدے"],
   certificates: ["المستخلصات", "Certificates", "مستخلص"],
   accounts: [

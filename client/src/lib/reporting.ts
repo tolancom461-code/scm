@@ -51,9 +51,9 @@ export function buildCappedExcelWorkbook(sheetName: string, rows: Array<Record<s
 }
 
 export function createPdfMetadata(module: ReportModule, recordCount: number, headers: string[], sampleRecord = "") {
-  return { title: "PROCURE//NEXUS Report Export", subject: `module=${module};records=${recordCount};headers=${headers.join("|")};sample=${sampleRecord}` };
+  return { title: "PSCM Report Export", subject: `module=${module};records=${recordCount};headers=${headers.join("|")};sample=${sampleRecord}` };
 }
 
 export function createPdfAuditFooter(module: ReportModule, recordCount: number, headers: string[], sampleRecord = "", totalValue = 0, statusCount = 0, appliedFilters = "—") {
-  return `Procure Nexus | ${module} | Records: ${recordCount} | Total: ${totalValue} | Status groups: ${statusCount} | Filters: ${appliedFilters} | Fields: ${headers.join(", ")} | Sample: ${sampleRecord}`;
+  return `PSCM | ${module} | Records: ${recordCount} | Total: ${totalValue} | Status groups: ${statusCount} | Filters: ${appliedFilters} | Fields: ${headers.join(", ")} | Sample: ${sampleRecord}`;
 }

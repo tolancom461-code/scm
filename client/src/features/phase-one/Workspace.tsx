@@ -32,6 +32,12 @@ import { formatPercent } from "@shared/display";
 import { decimal, formatDecimal } from "@shared/decimal";
 import { businessDate, addCalendarDays } from "@shared/date";
 import {
+  SystemBrand,
+  SystemPrintFooter,
+  useSystemTitle,
+} from "@/components/SystemBrand";
+import { systemBrand } from "@/lib/branding";
+import {
   financeText,
   ContractSchedule,
   ScheduleForm,
@@ -163,6 +169,7 @@ export function PhaseOneWorkspace({
       (user.policy?.landing ?? "contracts") as Page
     ),
     page = pages.some(x => x.page === selected) ? selected : pages[0]?.page;
+  useSystemTitle(page ? p(page) : p("brand"));
   const [sidebar, setSidebar] = useState(false),
     [dialog, setDialog] = useState<Dialog>(null),
     [policyTarget, setPolicyTarget] = useState(0),
@@ -352,10 +359,7 @@ export function PhaseOneWorkspace({
         </button>
         <div className="brand-lockup">
           <Building2 size={30} />
-          <div>
-            <strong>Procure Nexus</strong>
-            <small>{p("brand")}</small>
-          </div>
+          <SystemBrand locale={locale} />
         </div>
         <nav className="p1-side-nav">
           {pages.map(x => (
@@ -401,7 +405,11 @@ export function PhaseOneWorkspace({
           >
             <Menu size={19} />
           </button>
-          <b>{page ? p(page) : p("brand")}</b>
+          <div className="breadcrumb">
+            <span dir="ltr">{systemBrand.abbreviation}</span>
+            <i />
+            <b>{page ? p(page) : p("brand")}</b>
+          </div>
           <div className="locale-switch">
             <Globe2 size={15} />
             <select
@@ -1024,6 +1032,7 @@ export function PhaseOneWorkspace({
                     ……………………
                   </p>
                 </div>
+                <SystemPrintFooter locale={locale} />
               </div>
               <LinkedDocuments
                 entityType="p1_contract"
@@ -1298,6 +1307,7 @@ export function PhaseOneWorkspace({
                       )}{" "}
                       · {certificate.decisionReason}
                     </p>
+                    <SystemPrintFooter locale={locale} />
                   </div>
                   {certificate.status === "pending" &&
                     can("p1.certificates.approve") &&

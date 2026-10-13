@@ -45,7 +45,7 @@ describe("safeExcelValue", () => {
 
   it("writes report identity, KPI count, and headers into PDF metadata", () => {
     const metadata = createPdfMetadata("requests", 1, ["حوالہ", "حالت"], "PR-2026-01");
-    expect(metadata.title).toBe("PROCURE//NEXUS Report Export");
+    expect(metadata.title).toBe("PSCM Report Export");
     expect(metadata.subject).toContain("records=1");
     expect(metadata.subject).toContain("headers=");
     expect(metadata.subject).toContain("sample=PR-2026-01");
@@ -54,7 +54,7 @@ describe("safeExcelValue", () => {
     const auditFooter = createPdfAuditFooter("requests", 1, ["requestNumber", "status"], "PR-2026-01", 1250, 1);
     pdf.setTextColor(51, 65, 85); pdf.setFontSize(8); pdf.text(auditFooter, 10, 20);
     const actualPdf = Buffer.from(pdf.output("arraybuffer")).toString("latin1");
-    expect(actualPdf).toContain("PROCURE//NEXUS Report Export");
+    expect(actualPdf).toContain("PSCM Report Export");
     expect(actualPdf).toContain("Records: 1");
     expect(actualPdf).toContain("Total: 1250");
     expect(actualPdf).toContain("Fields: requestNumber, status");

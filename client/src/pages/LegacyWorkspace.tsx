@@ -1,4 +1,6 @@
 import { trpc } from "@/lib/trpc";
+import { SystemBrand, useSystemTitle } from "@/components/SystemBrand";
+import { systemBrand } from "@/lib/branding";
 import {
   chrome,
   localeMeta,
@@ -85,6 +87,7 @@ export default function Workspace({
 }) {
   const t9 = (key: TranslationKey) => t(locale, key);
   const [page, setPage] = useState<Page>("overview");
+  useSystemTitle(t9(page));
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
   const logout = trpc.auth.logout.useMutation({
@@ -288,10 +291,7 @@ export default function Workspace({
           <div className="brand-mark">
             <span />
           </div>
-          <div>
-            <strong>{t9("brand")}</strong>
-            <small>{t9("strap")}</small>
-          </div>
+          <SystemBrand locale={locale} />
         </div>
         <nav>
           {allowed.map(item => (
@@ -333,7 +333,7 @@ export default function Workspace({
             <Menu size={19} />
           </button>
           <div className="breadcrumb">
-            <span>PROCURE//NEXUS</span>
+            <span dir="ltr">{systemBrand.abbreviation}</span>
             <i />{" "}
             <b>
               {t9(

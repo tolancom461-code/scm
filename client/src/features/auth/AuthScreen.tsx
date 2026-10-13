@@ -4,6 +4,7 @@ import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Input } from "@/features/workspace/ui";
+import { SystemBrand, useSystemTitle } from "@/components/SystemBrand";
 export function AuthScreen({
   locale,
   setLocale,
@@ -25,6 +26,7 @@ export function AuthScreen({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const t9 = (key: TranslationKey) => t(locale, key);
+  useSystemTitle(setup ? t9("setup") : t9("login"));
   const login = trpc.auth.login.useMutation({
     onSuccess: () => {
       void trpcUtils.auth.me.invalidate();
@@ -66,10 +68,7 @@ export function AuthScreen({
           <div className="brand-mark">
             <span />
           </div>
-          <div>
-            <strong>{t9("brand")}</strong>
-            <small>{t9("strap")}</small>
-          </div>
+          <SystemBrand locale={locale} landing />
         </div>
         <div className="auth-heading">
           <p className="eyebrow">{setup ? t9("setup") : t9("signIn")}</p>
