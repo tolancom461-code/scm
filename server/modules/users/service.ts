@@ -1,5 +1,6 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
-import { users, sessions, auditLogs } from "../../../drizzle/schema";
+import { recordChange } from "../../core/audit";
+import { asc, eq, inArray } from "drizzle-orm";
+import { users, sessions } from "../../../drizzle/schema";
 import { database, type Transaction } from "../../core/database";
 import { DomainError } from "../../core/errors";
 import { hashPassword } from "../../localAuth";
@@ -38,13 +39,13 @@ async function audit(
   before: unknown,
   after: unknown
 ) {
-  await tx.insert(auditLogs).values({
-    userId: actorId,
+  await recordChange(tx, {
+    actorId,
     action,
     entityType: "user",
     entityId: userId,
-    oldValue: before === undefined ? null : JSON.stringify(before),
-    newValue: JSON.stringify(after),
+    before,
+    after,
   });
 }
 function duplicateUsername(error: unknown) {

@@ -17,10 +17,7 @@ describe("واجهة اللغات الثلاث", () => {
   it("يوفر عناوين تقنية مترجمة للصفحات الداخلية في اللغات الثلاث", () => {
     for (const locale of ["ar", "en", "ur"] as const) {
       expect(chrome(locale, "module")).toBeTruthy();
-      expect(chrome(locale, "quotationIntake")).toBeTruthy();
-      expect(chrome(locale, "awardDecision")).toBeTruthy();
-      expect(chrome(locale, "quotationComparison")).toBeTruthy();
-      expect(chrome(locale, "financialRegister")).toBeTruthy();
+      expect(chrome(locale, "records")).toBeTruthy();
     }
   });
 });

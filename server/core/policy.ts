@@ -1,3 +1,4 @@
+import { constructionProjects, projectTasks } from "../../drizzle/construction";
 import { TRPCError } from "@trpc/server";
 import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { AnyMySqlColumn } from "drizzle-orm/mysql-core";
@@ -8,6 +9,7 @@ import {
   documents,
 } from "../../drizzle/schema";
 import {
+  accessConstructionProjects,
   accessProfiles,
   accessProjects,
   accessDenials,
@@ -18,11 +20,11 @@ import {
   simpleCertificates,
   simplePayments,
   paymentReversals,
+  workInspections,
 } from "../../drizzle/phase-one";
 import { ATOMIC_PERMISSIONS } from "../../shared/permissions";
 import {
   permissionAllowed,
-  importLegacyPermissions,
   roleTemplates,
   scopeAllows,
   type AccessScope,
@@ -76,6 +78,13 @@ export async function loadAccess(
           .from(accessProjects)
           .where(eq(accessProjects.userId, userId))
       : [];
+  const pmProjects =
+    !owner && !profile?.allProjects
+      ? await db
+          .select({ id: accessConstructionProjects.projectId })
+          .from(accessConstructionProjects)
+          .where(eq(accessConstructionProjects.userId, userId))
+      : [];
   return {
     user: {
       ...user,
@@ -85,7 +94,7 @@ export async function loadAccess(
     },
     scope: {
       allProjects: owner || (profile?.allProjects ?? false),
-      legacyAccess: owner || (profile?.legacyAccess ?? false),
+      constructionProjectIds: pmProjects.map(p => p.id),
       projectIds: projects.map(p => p.id),
       template:
         profile && profile.template in roleTemplates
@@ -104,6 +113,36 @@ export function projectScope(
     : access.scope.projectIds.length
       ? inArray(column, access.scope.projectIds)
       : sql`FALSE`;
+}
+export function constructionScope(
+  access: AccessContext,
+  column: AnyMySqlColumn
+): SQL | undefined {
+  return access.scope.allProjects
+    ? undefined
+    : (access.scope.constructionProjectIds ?? []).length
+      ? inArray(column, access.scope.constructionProjectIds!)
+      : sql`FALSE`;
+}
+export async function assertConstructionAccess(
+  access: AccessContext,
+  id: number,
+  tx?: Transaction
+) {
+  if (!Number.isSafeInteger(id) || id < 1)
+    throw new TRPCError({ code: "BAD_REQUEST" });
+  const db = tx ?? (await database());
+  const [project] = await db
+    .select()
+    .from(constructionProjects)
+    .where(
+      and(
+        eq(constructionProjects.id, id),
+        constructionScope(access, constructionProjects.id)
+      )
+    );
+  if (!project) forbidden("PROJECT_SCOPE");
+  return project;
 }
 export async function assertProjectAccess(
   access: AccessContext,
@@ -176,6 +215,31 @@ export async function assertDocumentTarget(
     entityId < 1
   )
     throw new TRPCError({ code: "BAD_REQUEST" });
+  if (entityType === "pm_project") {
+    if (!canAccess(access, "pm.view")) forbidden("DOCUMENT_TARGET");
+    await assertConstructionAccess(access, entityId);
+    return;
+  }
+  if (entityType === "pm_task") {
+    if (!canAccess(access, "pm.view")) forbidden("DOCUMENT_TARGET");
+    const [task] = await (await database())
+      .select({ projectId: projectTasks.projectId })
+      .from(projectTasks)
+      .where(eq(projectTasks.id, entityId));
+    if (!task) forbidden("DOCUMENT_TARGET");
+    await assertConstructionAccess(access, task.projectId);
+    return;
+  }
+  if (entityType === "p1_inspection") {
+    if (!canAccess(access, "p1.inspections.view")) forbidden("DOCUMENT_TARGET");
+    const [row] = await (await database())
+      .select({ contractId: workInspections.contractId })
+      .from(workInspections)
+      .where(eq(workInspections.id, entityId));
+    if (!row) forbidden("DOCUMENT_TARGET");
+    await assertContractAccess(access, row.contractId);
+    return;
+  }
   if (entityType === "p1_contract") {
     if (!canAccess(access, "p1.contracts.view")) forbidden("DOCUMENT_TARGET");
     await assertContractAccess(access, entityId);
@@ -207,17 +271,25 @@ export async function assertDocumentTarget(
     if (!row) forbidden("DOCUMENT_TARGET");
     return;
   }
-  if (
-    entityType.startsWith("p1_") ||
-    !access.scope.legacyAccess ||
-    !access.scope.allProjects
-  )
-    forbidden("DOCUMENT_TARGET");
+  forbidden("DOCUMENT_TARGET");
 }
 /** Used at SQL read time for attachment lists, including unfiltered list requests. */
 export function documentScope(access: AccessContext): SQL {
   const clauses: SQL[] = [];
+  if (canAccess(access, "pm.view")) {
+    const pmScope = constructionScope(access, constructionProjects.id);
+    clauses.push(
+      sql`${documents.entityType}='pm_project' AND EXISTS (SELECT 1 FROM ${constructionProjects} WHERE ${constructionProjects.id}=${documents.entityId} AND ${pmScope ?? sql`TRUE`})`
+    );
+    clauses.push(
+      sql`${documents.entityType}='pm_task' AND EXISTS (SELECT 1 FROM ${projectTasks} INNER JOIN ${constructionProjects} ON ${constructionProjects.id}=${projectTasks.projectId} WHERE ${projectTasks.id}=${documents.entityId} AND ${pmScope ?? sql`TRUE`})`
+    );
+  }
   const scope = projectScope(access, simpleContracts.projectId);
+  if (canAccess(access, "p1.inspections.view"))
+    clauses.push(
+      sql`${documents.entityType}='p1_inspection' AND EXISTS (SELECT 1 FROM ${workInspections} INNER JOIN ${simpleContracts} ON ${simpleContracts.id}=${workInspections.contractId} WHERE ${workInspections.id}=${documents.entityId} AND ${scope ?? sql`TRUE`})`
+    );
   if (canAccess(access, "p1.contracts.view"))
     clauses.push(
       sql`${documents.entityType}='p1_contract' AND EXISTS (SELECT 1 FROM ${simpleContracts} WHERE ${simpleContracts.id}=${documents.entityId} AND ${scope ?? sql`TRUE`})`
@@ -230,8 +302,6 @@ export function documentScope(access: AccessContext): SQL {
     clauses.push(
       sql`${documents.entityType}='p1_payment' AND EXISTS (SELECT 1 FROM ${simplePayments} INNER JOIN ${simpleContracts} ON ${simpleContracts.id}=${simplePayments.contractId} WHERE ${simplePayments.id}=${documents.entityId} AND ${scope ?? sql`TRUE`})`
     );
-  if (access.scope.legacyAccess && access.scope.allProjects)
-    clauses.push(sql`LEFT(${documents.entityType},3) <> 'p1_'`);
   const classification = canAccess(access, "documents.view_confidential")
     ? undefined
     : inArray(documents.classification, ["normal", "internal"]);
@@ -276,12 +346,19 @@ async function assertManageableUser(access: AccessContext, userId: number) {
     .select({ id: accessProjects.projectId })
     .from(accessProjects)
     .where(eq(accessProjects.userId, userId));
+  const pmProjects = await db
+    .select({ id: accessConstructionProjects.projectId })
+    .from(accessConstructionProjects)
+    .where(eq(accessConstructionProjects.userId, userId));
   if (
     grants.some(g => !canAccess(access, g.code)) ||
     (!access.scope.allProjects &&
+      pmProjects.some(
+        p => !(access.scope.constructionProjectIds ?? []).includes(p.id)
+      )) ||
+    (!access.scope.allProjects &&
       (profile?.allProjects ||
-        projects.some(p => !access.scope.projectIds.includes(p.id)))) ||
-    (profile?.legacyAccess && !access.scope.legacyAccess)
+        projects.some(p => !access.scope.projectIds.includes(p.id))))
   )
     forbidden("GRANT_AUTHORITY");
 }
@@ -295,14 +372,31 @@ export async function authorizeRequest(
   try {
     const rule = routePolicies[path];
     if (!rule || rule.public) forbidden("UNREGISTERED_ACTION");
-    if (
-      rule.legacy &&
-      (!access.scope.legacyAccess || !access.scope.allProjects)
-    )
-      forbidden("LEGACY_SCOPE");
     if (!rule.session && !rule.any?.some(code => canAccess(access, code)))
       forbidden();
     const raw = input as any;
+    if (path.startsWith("projectManagement.") && raw?.projectId)
+      await assertConstructionAccess(access, raw.projectId);
+    if (
+      ["projectManagement.detail", "projectManagement.action"].includes(path) ||
+      (path === "projectManagement.save" && raw?.id)
+    )
+      await assertConstructionAccess(access, raw?.id);
+    if (path === "phaseOne.saveInspection") {
+      await assertContractAccess(access, raw?.data?.contractId);
+      if (raw?.id) {
+        const [row] = await (await database())
+          .select({ contractId: workInspections.contractId })
+          .from(workInspections)
+          .where(eq(workInspections.id, raw.id));
+        if (!row || row.contractId !== raw.data.contractId)
+          forbidden("PROJECT_SCOPE");
+      }
+    }
+    if (path === "phaseOne.enableInspections") {
+      if (!canAccess(access, "p1.contracts.create")) forbidden();
+      await assertContractAccess(access, raw?.contractId);
+    }
     if (path === "phaseOne.acceptHandover")
       await assertContractAccess(access, raw?.id);
     if (
@@ -353,7 +447,6 @@ export async function authorizeRequest(
         "users.update",
         "users.resetPassword",
         "users.setActive",
-        "users.setPermissions",
         "policy.user",
         "policy.save",
       ].includes(path)
@@ -397,18 +490,14 @@ export async function authorizeRequest(
         await assertDocumentTarget(access, raw.entityType, raw.entityId);
     }
     if (
-      path === "users.setPermissions" ||
-      (path === "users.create" &&
-        Array.isArray(raw?.permissions) &&
-        raw.permissions.length)
+      path === "users.create" &&
+      Array.isArray(raw?.permissions) &&
+      raw.permissions.length
     ) {
       if (!canAccess(access, "policy.manage")) forbidden("GRANT_AUTHORITY");
       if (
         Array.isArray(raw?.permissions) &&
-        (path === "users.create"
-          ? importLegacyPermissions(raw.permissions)
-          : raw.permissions
-        ).some((p: string) => !canAccess(access, p))
+        raw.permissions.some((p: string) => !canAccess(access, p))
       )
         forbidden("GRANT_AUTHORITY");
       if (raw?.userId) {

@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 import {
+  closeDb,
   createLocalUser,
   getUserByUsername,
   seedPermissions,
@@ -49,8 +50,10 @@ async function main() {
   console.log("Role: admin (صلاحيات إدارية كاملة)");
 }
 
-main().catch(error => {
-  console.error("فشل إنشاء حساب المدير:");
-  console.error(error);
-  process.exit(1);
-});
+main()
+  .catch(error => {
+    console.error("فشل إنشاء حساب المدير:");
+    console.error(error);
+    process.exit(1);
+  })
+  .finally(closeDb);

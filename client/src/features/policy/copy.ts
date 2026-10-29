@@ -1,5 +1,6 @@
 import type { Locale } from "@/lib/i18n";
 const labels = {
+  construction: ["وحدة المشاريع", "Project module", "منصوبوں کی اکائی"],
   active: ["نشط", "Active", "فعال"],
   inactive: ["معطل", "Inactive", "غیر فعال"],
   title: [
@@ -32,11 +33,6 @@ const labels = {
     "اختر المشاريع المسموح بها",
     "Choose allowed projects",
     "مجاز منصوبے منتخب کریں",
-  ],
-  legacy: [
-    "السماح بالدورة السابقة — يتطلب نطاق جميع المشاريع",
-    "Allow previous workflow — requires all-project scope",
-    "پچھلا طریقہ کار — تمام منصوبوں کا دائرہ لازم ہے",
   ],
   permissions: ["الصلاحيات الفعلية", "Effective permissions", "اصل اجازتیں"],
   extra: [
@@ -93,11 +89,6 @@ const labels = {
     "Projects, contracts, certificates & payments",
     "منصوبے، معاہدے، مستخلص اور ادائیگی",
   ],
-  previous: [
-    "صلاحيات الدورة السابقة",
-    "Previous workflow permissions",
-    "پچھلے طریقے کی اجازتیں",
-  ],
   ownerAccount: ["حساب مدير نظام", "Administrator account", "منتظم اکاؤنٹ"],
   scopeWarning: [
     "صلاحية تسجيل الصرف مستقلة عن اعتماد المستخلص والإفراج عن الضمان. لا يستطيع المُعد اعتماد مستخلصه.",
@@ -113,11 +104,6 @@ const labels = {
     "المشروع خارج النطاق",
     "Project outside scope",
     "منصوبہ دائرے سے باہر",
-  ],
-  legacyDenied: [
-    "الدورة السابقة خارج النطاق",
-    "Previous workflow outside scope",
-    "پچھلا طریقہ دائرے سے باہر",
   ],
   selfDenied: [
     "منع اعتماد عمل أنشأه المستخدم",

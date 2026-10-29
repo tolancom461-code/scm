@@ -15,38 +15,9 @@ export function permissionAllowed(
     (user.role === "admin" || user.permissionCodes.includes(code))
   );
 }
-export const legacyPhaseAliases: Record<string, string[]> = {
-  "contracts.view": [
-    "p1.projects.view",
-    "p1.contracts.view",
-    "p1.certificates.view",
-    "p1.print",
-  ],
-  "contracts.create": ["p1.contracts.create"],
-  "certificates.create": ["p1.certificates.create"],
-  "certificates.approve": ["p1.certificates.approve"],
-  "finance.view": [
-    "p1.projects.view",
-    "p1.contracts.view",
-    "p1.certificates.view",
-    "p1.payments.view",
-  ],
-  "financial.create": ["p1.payments.record"],
-  "finance.approve": ["p1.retention.release"],
-  "master.view": ["p1.company.view", "p1.projects.view"],
-  "master.manage": ["p1.company.manage"],
-  "projects.manage": ["p1.projects.create"],
-  "permissions.manage": ["policy.view", "policy.manage"],
-};
-/** Compatibility is applied when importing legacy grants, not on every authorization. */
-export function importLegacyPermissions(codes: readonly string[]) {
-  return [
-    ...new Set(
-      codes.flatMap(code => [code, ...(legacyPhaseAliases[code] ?? [])])
-    ),
-  ];
-}
 const read = [
+  "p1.inspections.view",
+  "pm.view",
   "p1.projects.view",
   "p1.contracts.view",
   "p1.certificates.view",
@@ -60,7 +31,7 @@ export const roleTemplates = {
     permissions: ATOMIC_PERMISSIONS.filter(
       p => !["users", "policy", "permissions"].includes(p.module)
     ).map(p => p.code),
-    landing: "contracts",
+    landing: "projectModule",
   },
   preparer: {
     labels: [
@@ -70,10 +41,16 @@ export const roleTemplates = {
     ],
     permissions: [
       ...read,
+      "pm.create",
+      "pm.edit",
+      "pm.submit",
+      "pm.tasks.manage",
+      "pm.start",
       "p1.company.view",
       "p1.projects.create",
       "p1.contracts.create",
       "p1.certificates.create",
+      "p1.inspections.manage",
       "suppliers.create",
       "suppliers.edit",
       "documents.upload",
@@ -110,6 +87,15 @@ export const roleTemplates = {
     permissions: [...read, "p1.payments.view"],
     landing: "contracts",
   },
+  executive: {
+    labels: [
+      "الإدارة العليا — اعتماد المشاريع",
+      "Management — project approvals",
+      "انتظامیہ — منصوبے کی منظوری",
+    ],
+    permissions: ["pm.view", "pm.review", "documents.view"],
+    landing: "projectModule",
+  },
   custom: {
     labels: ["صلاحيات مخصصة", "Custom permissions", "مخصوص اجازتیں"],
     permissions: [] as string[],
@@ -118,6 +104,16 @@ export const roleTemplates = {
 } as const;
 export type AccessTemplate = keyof typeof roleTemplates;
 const dependencies: Record<string, string[]> = {
+  "p1.inspections.view": ["p1.contracts.view", "p1.certificates.view"],
+  "p1.inspections.manage": ["p1.inspections.view"],
+  "pm.create": ["pm.view"],
+  "pm.edit": ["pm.view"],
+  "pm.submit": ["pm.view"],
+  "pm.review": ["pm.view"],
+  "pm.start": ["pm.view"],
+  "pm.tasks.manage": ["pm.view"],
+  "pm.employees.manage": ["pm.view"],
+  "pm.statuses.manage": ["pm.view"],
   "p1.certificates.schedule": ["p1.certificates.view"],
   "p1.payments.reverse.approve": ["p1.certificates.view"],
   "p1.contracts.handover": ["p1.certificates.view"],
@@ -186,19 +182,24 @@ export const accessProfileInput = z.object({
     "accountant",
     "viewer",
     "custom",
+    "executive",
   ]),
   permissions: z.array(z.string().refine(isKnownPermission)).max(200),
   allProjects: z.boolean(),
+  constructionProjectIds: z
+    .array(z.number().int().positive())
+    .max(500)
+    .default([])
+    .transform(v => [...new Set(v)]),
   projectIds: z
     .array(z.number().int().positive())
     .max(500)
     .transform(v => [...new Set(v)]),
-  legacyAccess: z.boolean(),
 });
 export type AccessScope = {
+  constructionProjectIds?: number[];
   allProjects: boolean;
   projectIds: number[];
-  legacyAccess: boolean;
   template: AccessTemplate;
   version: number;
 };

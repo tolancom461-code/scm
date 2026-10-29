@@ -32,6 +32,7 @@ import { recordChange } from "../../core/audit";
 import { once } from "../../core/idempotency";
 import { canAccess, projectScope, type AccessContext } from "../../core/policy";
 import { accessProfiles, accessProjects } from "../../../drizzle/policy";
+import { allocateInspections, inspectionState } from "./inspections";
 
 type Contract = typeof s.simpleContracts.$inferSelect;
 type Certificate = typeof s.simpleCertificates.$inferSelect;
@@ -903,6 +904,7 @@ export async function state(access: AccessContext) {
       : [];
     return {
       projects,
+      inspections: await inspectionState(tx, access),
       suppliers: vendors,
       contracts,
       cancelledContracts: allContracts.filter(c => c.status === "cancelled"),
@@ -1004,6 +1006,7 @@ export async function createContract(
         .insert(s.simpleContracts)
         .values({
           ...fields,
+          inspectionRequired: true,
           subtotal,
           total,
           number: await allocateRecordNumber(tx, "contract"),
@@ -1052,8 +1055,20 @@ export async function createCertificate(
         data.certificateDate < (last?.certificateDate ?? contract.siteDate)
       )
         throw new DomainError("INVALID_INPUT");
+      const inspectionResult = contract.inspectionRequired
+        ? await allocateInspections(
+            tx,
+            contract.id,
+            data.certificateDate,
+            data.inspectionAllocations,
+            last?.quantities ?? contract.items.map(() => "0")
+          )
+        : null;
+      if (!contract.inspectionRequired && data.inspectionAllocations.length)
+        throw new DomainError("INVALID_INPUT");
       const quantities =
-        data.mode === "quantity"
+        inspectionResult?.quantities ??
+        (data.mode === "quantity"
           ? data.quantities
           : contract.items.map(i =>
               formatDecimal(
@@ -1063,7 +1078,7 @@ export async function createCertificate(
                 ),
                 4
               )
-            );
+            ));
       let computed;
       try {
         computed = calculateSimpleCertificate({
@@ -1092,6 +1107,8 @@ export async function createCertificate(
           contractId: contract.id,
           quantities,
           certificateDate: data.certificateDate,
+          inspectionAllocations:
+            inspectionResult?.inspectionAllocations ?? null,
           delayDays: data.delayDays,
           otherDeduction: data.otherDeduction,
           deductionReason: data.deductionReason,

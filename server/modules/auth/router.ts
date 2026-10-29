@@ -136,7 +136,7 @@ export const authRouter = router({
                 owner: ctx.user.role === "admin",
                 landing:
                   ctx.user.role === "admin"
-                    ? "contracts"
+                    ? "projectModule"
                     : roleTemplates[ctx.access.scope.template].landing,
               }
             : undefined,

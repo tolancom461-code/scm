@@ -1,8 +1,8 @@
 import "dotenv/config";
-import { and, eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { unlink } from "node:fs/promises";
 import { database } from "../server/core/database";
-import { documents, notifications } from "../drizzle/schema";
+import { documents } from "../drizzle/schema";
 import { localDocumentPath } from "../server/storage";
 import * as db from "../server/db";
 import { hashPassword } from "../server/localAuth";
@@ -40,7 +40,6 @@ export async function configure(
       permissions: [...roleTemplates[template].permissions, ...permissions],
       projectIds,
       allProjects: false,
-      legacyAccess: false,
     },
     owner
   );
@@ -101,16 +100,6 @@ export async function cleanupPolicyFixture(f: PolicyFixture) {
     .select({ id: documents.id, key: documents.storageKey })
     .from(documents)
     .where(inArray(documents.uploadedBy, [...f.a.actors, ...f.b.actors]));
-  if (files.length)
-    await connection.delete(notifications).where(
-      and(
-        eq(notifications.entityType, "document"),
-        inArray(
-          notifications.entityId,
-          files.map(f => f.id)
-        )
-      )
-    );
   // The owner from A creates a certificate in B: remove B's records before A's users.
   await cleanupPhaseOne(f.b);
   await cleanupPhaseOne(f.a);

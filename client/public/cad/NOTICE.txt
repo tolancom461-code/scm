@@ -1,0 +1,4 @@
+DWG preview uses @mlightcad/libredwg-web 0.8.2, licensed under GNU GPL version 3.
+Source: https://github.com/mlightcad/libredwg-web
+License: https://www.gnu.org/licenses/gpl-3.0.txt
+DWG conversion runs locally in a browser worker.

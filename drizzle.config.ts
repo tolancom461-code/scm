@@ -10,14 +10,8 @@ const connection = new URL(connectionString);
 export default defineConfig({
   schema: [
     "./drizzle/schema.ts",
+    "./drizzle/construction.ts",
     "./drizzle/foundation.ts",
-    "./drizzle/master-data.ts",
-    "./drizzle/workflows.ts",
-    "./drizzle/projects.ts",
-    "./drizzle/procurement.ts",
-    "./drizzle/receiving.ts",
-    "./drizzle/inventory.ts",
-    "./drizzle/finance.ts",
     "./drizzle/phase-one.ts",
     "./drizzle/policy.ts",
   ],

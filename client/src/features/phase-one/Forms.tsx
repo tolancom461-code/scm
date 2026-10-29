@@ -1,11 +1,12 @@
-import { useState, type ReactNode } from "react";
+export { Modal } from "@/components/Modal";
+import { useState } from "react";
 import type { z } from "zod";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import type { Locale } from "@/lib/i18n";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
-import { trimDecimal } from "@shared/display";
+import { trimDecimal, formatPercent } from "@shared/display";
 import { businessDate } from "@shared/date";
 import {
   decimal,
@@ -71,34 +72,6 @@ export function Field({
     </label>
   );
 }
-export function Modal({
-  title,
-  children,
-  close,
-}: {
-  title: string;
-  children: ReactNode;
-  close: () => void;
-}) {
-  return (
-    <div className="modal-backdrop">
-      <section
-        className="modal-card p1-dialog p1-page"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-      >
-        <header>
-          <h2>{title}</h2>
-          <button type="button" onClick={close} aria-label="Close / إغلاق">
-            ×
-          </button>
-        </header>
-        {children}
-      </section>
-    </div>
-  );
-}
 export function ContractForm({
   state,
   locale,
@@ -114,6 +87,7 @@ export function ContractForm({
   const [data, set] = useState<z.infer<typeof simpleContractInput>>({
     projectId: state.projects[0]?.id ?? 0,
     supplierId: state.suppliers.find(s => s.status === "active")?.id ?? 0,
+    inspectionRequired: true,
     title: "",
     reference: "",
     contractDate: today,
@@ -389,7 +363,7 @@ export function CertificateForm({
     [data, set] = useState<z.infer<typeof simpleCertificateInput>>({
       contractId,
       certificateDate: businessDate(),
-      mode: "percent",
+      mode: contract.inspectionRequired ? "quantity" : "percent",
       progress: trimDecimal(last?.progress ?? "0"),
       quantities: last?.quantities ?? contract.items.map(() => "0"),
       delayDays: last?.delayDays ?? 0,
@@ -397,6 +371,7 @@ export function CertificateForm({
       deductionReason: "",
       notes: "",
       installments: undefined,
+      inspectionAllocations: [],
     });
   const mutation = trpc.phaseOne.createCertificate.useMutation({
     onSuccess: done,
@@ -404,8 +379,23 @@ export function CertificateForm({
   });
   let preview: ReturnType<typeof calculateSimpleCertificate> | null = null;
   try {
-    const quantities =
-      data.mode === "quantity"
+    const quantities = contract.inspectionRequired
+      ? contract.items.map((_, i) =>
+          formatDecimal(
+            data.inspectionAllocations
+              .filter(
+                a =>
+                  state.inspections.find(r => r.id === a.inspectionId)
+                    ?.itemIndex === i
+              )
+              .reduce(
+                (q, a) => q + decimal(a.quantity),
+                decimal(last?.quantities[i] ?? "0")
+              ),
+            4
+          )
+        )
+      : data.mode === "quantity"
         ? data.quantities
         : contract.items.map(i =>
             formatDecimal(
@@ -459,26 +449,108 @@ export function CertificateForm({
           set({
             ...data,
             certificateDate: v,
+            inspectionAllocations: contract.inspectionRequired
+              ? []
+              : data.inspectionAllocations,
             installments: data.installments
               ? defaultInstallments(v)
               : undefined,
           })
         }
       />
-      <label>
-        {p("mode")}
-        <select
-          aria-label={p("mode")}
-          value={data.mode}
-          onChange={e =>
-            set({ ...data, mode: e.target.value as typeof data.mode })
-          }
-        >
-          <option value="percent">{p("byPercent")}</option>
-          <option value="quantity">{p("byQuantity")}</option>
-        </select>
-      </label>
-      {data.mode === "percent" ? (
+      {!contract.inspectionRequired && (
+        <label>
+          {p("mode")}
+          <select
+            aria-label={p("mode")}
+            value={data.mode}
+            onChange={e =>
+              set({ ...data, mode: e.target.value as typeof data.mode })
+            }
+          >
+            <option value="percent">{p("byPercent")}</option>
+            <option value="quantity">{p("byQuantity")}</option>
+          </select>
+        </label>
+      )}
+      {contract.inspectionRequired ? (
+        <div className="p1-wide p1-panel">
+          <h3>
+            {locale === "ar"
+              ? "الكميات المقبولة بالفحص والمتاحة للمستخلص"
+              : locale === "en"
+                ? "Accepted inspection quantities available for this certificate"
+                : "مستخلص کے لیے دستیاب منظور شدہ مقدار"}
+          </h3>
+          <p>
+            {locale === "ar"
+              ? "اختر الفحص وحدد الكمية المراد إدراجها. النسبة تُحسب تلقائيًا من قيمة الأعمال المقبولة."
+              : locale === "en"
+                ? "Select inspections and quantities. Progress is calculated from accepted work value."
+                : "معائنہ اور مقدار منتخب کریں۔ پیش رفت خودکار حساب ہوگی۔"}
+          </p>
+          {state.inspections
+            .filter(
+              r =>
+                r.contractId === contractId &&
+                ["accepted", "accepted_noted"].includes(r.status) &&
+                r.inspectionDate <= data.certificateDate &&
+                Number(r.remaining) > 0
+            )
+            .map(r => {
+              const selected = data.inspectionAllocations.find(
+                a => a.inspectionId === r.id
+              );
+              return (
+                <div className="p1-fir-allocation" key={r.id}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selected)}
+                      onChange={e =>
+                        set({
+                          ...data,
+                          inspectionAllocations: e.target.checked
+                            ? [
+                                ...data.inspectionAllocations,
+                                { inspectionId: r.id, quantity: r.remaining },
+                              ]
+                            : data.inspectionAllocations.filter(
+                                a => a.inspectionId !== r.id
+                              ),
+                        })
+                      }
+                    />
+                    {r.number} — {contract.items[r.itemIndex].description} —{" "}
+                    {r.location} ({r.remaining}{" "}
+                    {contract.items[r.itemIndex].unit})
+                  </label>
+                  {selected && (
+                    <Field
+                      label={r.number + " — " + p("quantity")}
+                      value={selected.quantity}
+                      type="number"
+                      set={v =>
+                        set({
+                          ...data,
+                          inspectionAllocations: data.inspectionAllocations.map(
+                            a =>
+                              a.inspectionId === r.id
+                                ? { ...a, quantity: v }
+                                : a
+                          ),
+                        })
+                      }
+                    />
+                  )}
+                </div>
+              );
+            })}
+          <p>
+            {p("progress")}: {preview ? formatPercent(preview.progress) : "—"}
+          </p>
+        </div>
+      ) : data.mode === "percent" ? (
         <Field
           label={p("progress")}
           value={data.progress}

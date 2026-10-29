@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import {
   Building2,
   FileText,
@@ -9,6 +9,7 @@ import {
   LogOut,
   Globe2,
   ShieldCheck,
+  ClipboardCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -38,6 +39,12 @@ import {
 } from "@/components/SystemBrand";
 import { systemBrand } from "@/lib/branding";
 import {
+  InspectionForm,
+  InspectionView,
+  InspectionList,
+  inspectionText,
+} from "./Inspections";
+import {
   financeText,
   ContractSchedule,
   ScheduleForm,
@@ -45,6 +52,11 @@ import {
   PaymentCorrection,
   ReversalReview,
 } from "./FinanceControls";
+const ProjectModule = lazy(() =>
+  import("../project-management/ProjectModule").then(m => ({
+    default: m.ProjectModule,
+  }))
+);
 type User = {
   id: number;
   name: string | null;
@@ -54,12 +66,14 @@ type User = {
   policy?: {
     landing: string;
     allProjects: boolean;
-    legacyAccess: boolean;
+
     version: number;
   };
 };
 type Page =
+  | "projectModule"
   | "contracts"
+  | "inspections"
   | "certificates"
   | "accounts"
   | "suppliers"
@@ -69,6 +83,10 @@ type Page =
 type Dialog = {
   kind:
     | "contract"
+    | "inspectionCreate"
+    | "inspectionEdit"
+    | "inspectionView"
+    | "inspectionRepeat"
     | "certificate"
     | "payment"
     | "contractView"
@@ -110,21 +128,31 @@ export function PhaseOneWorkspace({
   user,
   locale,
   setLocale,
-  previous,
 }: {
   user: User;
   locale: Locale;
   setLocale: (l: Locale) => void;
-  previous: () => void;
 }) {
   const p = (key: PhaseLabel) => phaseText(locale, key),
     can = (permission: string) => user.permissions.includes(permission);
   const pages = [
     {
+      page: "projectModule" as const,
+      label: "projectModule" as const,
+      icon: Building2,
+      permission: "pm.view",
+    },
+    {
       page: "contracts" as const,
       label: "contracts" as const,
       icon: Building2,
       permission: "p1.contracts.view",
+    },
+    {
+      page: "inspections" as const,
+      label: "inspections" as const,
+      icon: ClipboardCheck,
+      permission: "p1.inspections.view",
     },
     {
       page: "certificates" as const,
@@ -175,13 +203,16 @@ export function PhaseOneWorkspace({
     [policyTarget, setPolicyTarget] = useState(0),
     [filter, setFilter] = useState("");
   const query = trpc.phaseOne.state.useQuery(undefined, {
-    enabled: [
-      "p1.projects.view",
-      "p1.contracts.view",
-      "p1.certificates.view",
-      "p1.payments.view",
-      "p1.company.view",
-    ].some(can),
+    enabled:
+      page !== "projectModule" &&
+      [
+        "p1.projects.view",
+        "p1.contracts.view",
+        "p1.certificates.view",
+        "p1.payments.view",
+        "p1.company.view",
+        "p1.inspections.view",
+      ].some(can),
   });
   const utils = trpc.useUtils(),
     done = () => {
@@ -206,6 +237,12 @@ export function PhaseOneWorkspace({
       onError: e => toast.error(e.message),
     });
   const [reason, setReason] = useState("");
+  const enableFIR = trpc.phaseOne.enableInspections.useMutation({
+    onSuccess: () => {
+      void utils.phaseOne.state.invalidate();
+    },
+    onError: e => toast.error(e.message),
+  });
   const ft = (ar: string, en: string, ur: string) =>
     financeText(locale, ar, en, ur);
   const [releaseDate, setReleaseDate] = useState(businessDate());
@@ -215,6 +252,7 @@ export function PhaseOneWorkspace({
       ...(state?.cancelledContracts ?? []),
     ].find(c => c.id === dialog?.id),
     certificate = state?.certificates.find(c => c.id === dialog?.id);
+  const inspection = state?.inspections.find(r => r.id === dialog?.id);
   const money = (v: string, currency = "SAR") =>
     new Intl.NumberFormat(localeMeta[locale].formatting, {
       numberingSystem: "latn",
@@ -267,22 +305,6 @@ export function PhaseOneWorkspace({
     setReleaseDate(businessDate());
     setDialog({ kind, id });
   };
-  const metrics = (paid: string, outstanding: string, retained: string) => (
-    <div className="p1-metrics">
-      {(
-        [
-          ["paid", paid],
-          ["outstanding", outstanding],
-          ["retained", retained],
-        ] as const
-      ).map(([k, v]) => (
-        <div key={k}>
-          <span>{p(k)}</span>
-          <strong>{money(v)}</strong>
-        </div>
-      ))}
-    </div>
-  );
   const [preparingPrint, setPreparingPrint] = useState(false);
   async function printCurrentDocument(title: string) {
     const surface = document.querySelector<HTMLElement>(
@@ -378,12 +400,6 @@ export function PhaseOneWorkspace({
           ))}
         </nav>
         <div className="sidebar-bottom">
-          {user.policy?.legacyAccess && user.policy.allProjects && (
-            <button className="profile-row" onClick={previous}>
-              <FileText size={15} />
-              <span>{p("previous")}</span>
-            </button>
-          )}
           <button className="profile-row" onClick={() => logout.mutate()}>
             <div>{user.name?.slice(0, 1) ?? "U"}</div>
             <span>
@@ -428,6 +444,10 @@ export function PhaseOneWorkspace({
         <main className="content-area p1-page">
           {!page ? (
             <p role="status">{p("noAccess")}</p>
+          ) : page === "projectModule" ? (
+            <Suspense fallback={<p>…</p>}>
+              <ProjectModule locale={locale} user={user} />
+            </Suspense>
           ) : page === "policy" ? (
             <PolicyCenter
               locale={locale}
@@ -464,6 +484,7 @@ export function PhaseOneWorkspace({
               <>
                 <h1>{page ? p(page) : p("brand")}</h1>
                 {(page === "contracts" ||
+                  page === "inspections" ||
                   page === "certificates" ||
                   page === "accounts") && (
                   <input
@@ -473,6 +494,26 @@ export function PhaseOneWorkspace({
                     value={filter}
                     onChange={e => setFilter(e.target.value)}
                   />
+                )}
+                {page === "inspections" && (
+                  <>
+                    {can("p1.inspections.manage") && (
+                      <div className="p1-actions">
+                        <button
+                          className="primary"
+                          onClick={() => open("inspectionCreate", 0)}
+                        >
+                          {inspectionText(locale, "add")}
+                        </button>
+                      </div>
+                    )}
+                    <InspectionList
+                      state={state}
+                      locale={locale}
+                      filter={filter}
+                      open={id => open("inspectionView", id)}
+                    />
+                  </>
                 )}
                 {page === "contracts" && (
                   <>
@@ -684,7 +725,6 @@ export function PhaseOneWorkspace({
                         );
                       })}
                     </div>
-                    <p className="p1-hint">{p("previousHint")}</p>
                   </>
                 )}
                 {page === "settings" && (
@@ -728,41 +768,107 @@ export function PhaseOneWorkspace({
       {state && dialog && (
         <Modal
           title={
-            dialog.kind === "schedule"
-              ? ft(
-                  "جدول دفعات المستخلص",
-                  "Certificate installments",
-                  "مستخلص کی اقساط"
-                )
-              : dialog.kind === "handover"
+            dialog.kind.startsWith("inspection")
+              ? inspectionText(locale, "title")
+              : dialog.kind === "schedule"
                 ? ft(
-                    "التسليم النهائي والضمان",
-                    "Final handover and warranty",
-                    "آخری حوالگی اور ضمانت"
+                    "جدول دفعات المستخلص",
+                    "Certificate installments",
+                    "مستخلص کی اقساط"
                   )
-                : dialog.kind === "replacement"
+                : dialog.kind === "handover"
                   ? ft(
-                      "تسجيل سند بديل مرتبط",
-                      "Record linked replacement",
-                      "مربوط متبادل درج کریں"
+                      "التسليم النهائي والضمان",
+                      "Final handover and warranty",
+                      "آخری حوالگی اور ضمانت"
                     )
-                  : p(
-                      dialog.kind === "contract"
-                        ? "newContract"
-                        : dialog.kind === "certificate"
-                          ? "newCertificate"
-                          : dialog.kind === "payment"
-                            ? "recordPayment"
-                            : dialog.kind === "certificateView"
-                              ? "certificate"
-                              : dialog.kind === "paymentView"
-                                ? "payments"
-                                : "contracts"
-                    )
+                  : dialog.kind === "replacement"
+                    ? ft(
+                        "تسجيل سند بديل مرتبط",
+                        "Record linked replacement",
+                        "مربوط متبادل درج کریں"
+                      )
+                    : p(
+                        dialog.kind === "contract"
+                          ? "newContract"
+                          : dialog.kind === "certificate"
+                            ? "newCertificate"
+                            : dialog.kind === "payment"
+                              ? "recordPayment"
+                              : dialog.kind === "certificateView"
+                                ? "certificate"
+                                : dialog.kind === "paymentView"
+                                  ? "payments"
+                                  : "contracts"
+                      )
           }
           close={() => setDialog(null)}
         >
-          {dialog.kind === "schedule" && certificate ? (
+          {["inspectionCreate", "inspectionEdit", "inspectionRepeat"].includes(
+            dialog.kind
+          ) ? (
+            <InspectionForm
+              key={`${dialog.kind}-${dialog.id}`}
+              state={state}
+              locale={locale}
+              user={user}
+              cancel={() => setDialog(null)}
+              contractId={
+                dialog.kind === "inspectionCreate"
+                  ? dialog.id || undefined
+                  : undefined
+              }
+              inspection={
+                dialog.kind === "inspectionEdit" ? inspection : undefined
+              }
+              reinspection={
+                dialog.kind === "inspectionRepeat" ? inspection : undefined
+              }
+              done={id => {
+                void utils.phaseOne.state
+                  .invalidate()
+                  .then(() => setDialog({ kind: "inspectionView", id }));
+              }}
+            />
+          ) : dialog.kind === "inspectionView" && inspection ? (
+            <>
+              <div className="p1-actions">
+                {can("p1.print") && (
+                  <button
+                    disabled={preparingPrint}
+                    onClick={() => void printCurrentDocument(inspection.number)}
+                  >
+                    {p("print")}
+                  </button>
+                )}
+                {can("p1.inspections.manage") && !inspection.locked && (
+                  <button onClick={() => open("inspectionEdit", inspection.id)}>
+                    {inspectionText(locale, "edit")}
+                  </button>
+                )}
+                {can("p1.inspections.manage") &&
+                  (inspection.status === "rejected" ||
+                    Number(inspection.accepted) <
+                      Number(inspection.executed)) &&
+                  inspection.status !== "pending" && (
+                    <button
+                      onClick={() => open("inspectionRepeat", inspection.id)}
+                    >
+                      {inspectionText(locale, "reinspection")}
+                    </button>
+                  )}
+              </div>
+              <InspectionView
+                state={state}
+                row={inspection}
+                locale={locale}
+                user={user}
+                header={printHeader(
+                  inspectionText(locale, "title") + " — " + inspection.number
+                )}
+              />
+            </>
+          ) : dialog.kind === "schedule" && certificate ? (
             <ScheduleForm
               certificate={certificate}
               state={state}
@@ -810,6 +916,27 @@ export function PhaseOneWorkspace({
           ) : dialog.kind === "contractView" && contract ? (
             <>
               <div className="p1-actions">
+                {can("p1.inspections.manage") &&
+                  contract.status === "active" &&
+                  !contract.handoverDate &&
+                  (contract.inspectionRequired ? (
+                    <button
+                      onClick={() => open("inspectionCreate", contract.id)}
+                    >
+                      {inspectionText(locale, "add")}
+                    </button>
+                  ) : (
+                    can("p1.contracts.create") && (
+                      <button
+                        disabled={enableFIR.isPending}
+                        onClick={() =>
+                          enableFIR.mutate({ contractId: contract.id })
+                        }
+                      >
+                        {inspectionText(locale, "enable")}
+                      </button>
+                    )
+                  ))}
                 {can("p1.print") && (
                   <button
                     disabled={preparingPrint}
@@ -849,6 +976,14 @@ export function PhaseOneWorkspace({
                     </button>
                   )}
               </div>
+              {can("p1.inspections.view") && (
+                <InspectionList
+                  state={state}
+                  contractId={contract.id}
+                  locale={locale}
+                  open={id => open("inspectionView", id)}
+                />
+              )}
               <div className="p1-print" dir={localeMeta[locale].direction}>
                 <section className="p1-print-intro">
                   {printHeader(contract.title)}
@@ -1147,6 +1282,28 @@ export function PhaseOneWorkspace({
                       </>
                     )}
                     <p className="p1-pre">{certificate.notes}</p>
+                    {certificate.inspectionAllocations?.length ? (
+                      <>
+                        <h3>{p("inspections")}</h3>
+                        <GridTable
+                          headers={[
+                            inspectionText(locale, "number"),
+                            p("description"),
+                            p("quantity"),
+                          ]}
+                        >
+                          {certificate.inspectionAllocations.map(a => (
+                            <tr key={a.inspectionId}>
+                              <td>{a.number}</td>
+                              <td>{c.items[a.itemIndex].description}</td>
+                              <td>
+                                {a.quantity} {c.items[a.itemIndex].unit}
+                              </td>
+                            </tr>
+                          ))}
+                        </GridTable>
+                      </>
+                    ) : null}
                     {certificate.scheduleVersion === 0 ? (
                       <>
                         <h3>{p("followContract")}</h3>
@@ -1557,7 +1714,6 @@ function Setup({
           <p className="p1-hint">{p("automaticNumber")}</p>
         </form>
       )}
-      <p className="p1-hint">{p("previousHint")}</p>
     </>
   );
 }

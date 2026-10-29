@@ -10,7 +10,7 @@ import * as db from "../../db";
 import * as service from "./service";
 import { userProfileInput, userPasswordInput } from "../../../shared/users";
 import { database } from "../../core/database";
-import { auditLogs } from "../../../drizzle/schema";
+import { scmAuditEvents } from "../../../drizzle/foundation";
 import { verifyPassword } from "../../localAuth";
 import { appRouter } from "../../routers";
 import type { TrpcContext } from "../../_core/context";
@@ -95,8 +95,8 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
       ).toBe(false);
       const events = await (await database())
         .select()
-        .from(auditLogs)
-        .where(eq(auditLogs.entityId, target.id));
+        .from(scmAuditEvents)
+        .where(eq(scmAuditEvents.entityId, target.id));
       const serialized = JSON.stringify(events);
       expect(serialized).not.toContain(newPassword);
       expect(serialized).not.toContain(after.passwordHash!);

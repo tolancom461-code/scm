@@ -1,6 +1,5 @@
 import { trpc } from "@/lib/trpc";
 import { t, localeMeta, type Locale, type TranslationKey } from "@/lib/i18n";
-import { ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -54,7 +53,7 @@ export function UsersPage({
     permissions: [],
     allProjects: false,
     projectIds: [],
-    legacyAccess: false,
+    constructionProjectIds:[],
   };
   const [createAccess, setCreateAccess] = useState<UserAccessForm>(emptyAccess);
   const [editAccess, setEditAccess] = useState<
@@ -220,20 +219,12 @@ export function UsersPage({
                 item.role === "admin" ? (
                   p("fullAccess")
                 ) : can("policy.manage") && manageTarget ? (
-                  managePolicy ? (
-                    <button
-                      className="table-action"
-                      onClick={() => managePolicy(item.id)}
-                    >
-                      {p("configurePolicy")}
-                    </button>
-                  ) : (
-                    <ManageUserPermissions
-                      key={`${item.id}-permissions`}
-                      userId={item.id}
-                      locale={locale}
-                    />
-                  )
+                  <button
+                    className="table-action"
+                    onClick={() => managePolicy?.(item.id)}
+                  >
+                    {p("configurePolicy")}
+                  </button>
                 ) : (
                   "—"
                 ),
@@ -276,7 +267,7 @@ export function UsersPage({
       {open && (
         <Modal
           title={t9("addUser")}
-          onClose={() => {
+          close={() => {
             if (!create.isPending) {
               setOpen(false);
               setForm(emptyForm);
@@ -377,7 +368,7 @@ export function UsersPage({
                   : "activate"
           )}
           eyebrow={dialog.user.username ?? ""}
-          onClose={() => {
+          close={() => {
             if (!pending) close();
           }}
         >
@@ -582,92 +573,5 @@ export function UsersPage({
         </Modal>
       )}
     </div>
-  );
-}
-
-export function ManageUserPermissions({
-  userId,
-  locale,
-}: {
-  userId: number;
-  locale: Locale;
-}) {
-  const t9 = (key: TranslationKey) => t(locale, key),
-    utils = trpc.useUtils();
-  const [open, setOpen] = useState(false),
-    [selected, setSelected] = useState<string[]>([]);
-  const current = trpc.users.permissions.useQuery(
-    { userId },
-    { enabled: open }
-  );
-  const catalog = trpc.permissions.list.useQuery(undefined, { enabled: open });
-  const update = trpc.users.setPermissions.useMutation({
-    onSuccess: () => {
-      void utils.users.permissions.invalidate({ userId });
-      toast.success(t9("actionDone"));
-      setOpen(false);
-    },
-    onError: e => toast.error(e.message),
-  });
-  useEffect(() => {
-    if (current.data) setSelected(current.data);
-  }, [current.data]);
-  const toggle = (code: string) =>
-    setSelected(value =>
-      value.includes(code)
-        ? value.filter(item => item !== code)
-        : [...value, code]
-    );
-  if (!open)
-    return (
-      <button className="table-action" onClick={() => setOpen(true)}>
-        {t9("grant")}
-      </button>
-    );
-  return (
-    <Modal
-      title={t9("permissions")}
-      onClose={() => {
-        if (!update.isPending) setOpen(false);
-      }}
-    >
-      <div className="permission-picker">
-        <div className="picker-title">
-          <ShieldCheck size={16} /> {t9("permissions")}
-        </div>
-        {(catalog.data ?? []).map(item => (
-          <label className="permission-option" key={item.id}>
-            <input
-              type="checkbox"
-              checked={selected.includes(item.code)}
-              onChange={() => toggle(item.code)}
-            />
-            <span>
-              {locale === "en"
-                ? item.labelEn
-                : locale === "ur"
-                  ? item.labelUr
-                  : item.labelAr}
-            </span>
-            <code>{item.code}</code>
-          </label>
-        ))}
-      </div>
-      <div className="form-footer">
-        <button
-          className="neo-button"
-          onClick={() => update.mutate({ userId, permissions: selected })}
-          disabled={
-            update.isPending ||
-            current.isLoading ||
-            current.isError ||
-            catalog.isError
-          }
-        >
-          {t9("save")}
-          <ShieldCheck size={16} />
-        </button>
-      </div>
-    </Modal>
   );
 }

@@ -55,7 +55,7 @@ export function allocateRecordNumber(
 ) {
   return allocateDocumentNumber(tx, documentPrefixes[document], issuedAt);
 }
-/** Transitional legacy API; new services allocate inside the document transaction. */
+/** Allocates a standalone supplier or attachment reference. */
 export async function nextDocumentNumber(prefix: string) {
   return (await database()).transaction(tx =>
     allocateDocumentNumber(tx, prefix)

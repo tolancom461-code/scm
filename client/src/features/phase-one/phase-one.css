@@ -7,6 +7,117 @@
   flex-direction: column;
   gap: 22px;
 }
+
+.p1-fir-form {
+  background: #fff;
+  color: #222;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid #d6d8de;
+  gap: 16px;
+}
+.p1-fir-form label {
+  color: #444;
+  font-size: 13px;
+}
+.p1-fir-form button {
+  background: #fff;
+  color: #222;
+  border: 1px solid #aab0b8;
+  border-radius: 8px;
+  padding: 10px 16px;
+}
+.p1-form.p1-fir-form input,
+.p1-form.p1-fir-form select,
+.p1-form.p1-fir-form textarea {
+  background: #fff;
+  color: #222;
+  border: 1px solid #d2d5da;
+  border-radius: 20px;
+}
+.p1-form.p1-fir-form textarea {
+  border-radius: 9px;
+}
+.p1-form.p1-fir-form input:read-only {
+  background: #f7f8fa;
+}
+.p1-fir-status {
+  border: 0;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 0;
+}
+.p1-fir-form .p1-fir-status label,
+.p1-fir-allocation > label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+}
+.p1-fir-status input,
+.p1-fir-allocation input[type="checkbox"] {
+  width: auto;
+}
+.p1-fir-signatures {
+  display: grid !important;
+  grid-template-columns: repeat(
+    var(--signature-count, 2),
+    minmax(0, 1fr)
+  ) !important;
+  gap: 8px;
+  margin-top: 16px;
+}
+.p1-fir-signatures > div {
+  border: 1px solid #d2d5da;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  text-align: center;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.p1-fir-signatures input {
+  min-width: 0;
+  padding: 6px !important;
+  font-size: 11px !important;
+}
+.p1-fir-signature-line {
+  margin-top: auto;
+  padding-top: 35px;
+  min-height: 50px;
+}
+.p1-fir-signature-line::before {
+  content: "";
+  display: block;
+  border-top: 1px dotted #555;
+  margin-bottom: 8px;
+}
+.p1-fir-form .p1-fir-signatures {
+  overflow-x: auto;
+}
+.p1-fir-form .p1-fir-signatures > div {
+  min-width: 100px;
+}
+.p1-fir-allocation {
+  display: grid;
+  grid-template-columns: 1fr minmax(130px, 200px);
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #34455e;
+}
+@media (max-width: 620px) {
+  .p1-fir-allocation {
+    grid-template-columns: 1fr;
+  }
+  .p1-fir-form {
+    padding: 12px;
+  }
+}
 .p1-shell .topbar {
   gap: 10px;
 }
@@ -162,18 +273,6 @@
 .p1-status.rejected {
   background: #632b37;
 }
-.p1-dialog {
-  max-width: 1050px;
-  max-height: 90vh;
-  overflow: auto;
-  padding: 22px;
-}
-.p1-dialog > header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 18px;
-}
 .p1-detail-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -207,12 +306,6 @@
   border: 0;
   border-top: 1px solid #2b3d54;
   margin: 14px 0;
-}
-.p1-supplier-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 .p1-side-nav > button {
   width: 100%;
@@ -249,9 +342,6 @@
   }
   .p1-metrics {
     grid-template-columns: 1fr;
-  }
-  .p1-dialog {
-    padding: 14px;
   }
   .p1-page table {
     min-width: 560px;
@@ -455,6 +545,11 @@
   border-radius: 4px;
   font-family: Tahoma, Arial, sans-serif;
   line-height: 1.65;
+}
+.p1-print .system-print-footer {
+  line-height: 2;
+  padding-bottom: 10px;
+  min-height: 30px;
 }
 .p1-print h2,
 .p1-print h3,

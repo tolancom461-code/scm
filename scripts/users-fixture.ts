@@ -4,7 +4,8 @@ import { and, eq, inArray, like, or } from "drizzle-orm";
 import * as db from "../server/db";
 import { database } from "../server/core/database";
 import { hashPassword } from "../server/localAuth";
-import { users, sessions, userPermissions, auditLogs } from "../drizzle/schema";
+import { scmAuditEvents } from "../drizzle/foundation";
+import { users, sessions, userPermissions } from "../drizzle/schema";
 
 export async function setupUsersFixture() {
   const code = "utest_" + randomUUID().slice(0, 8),
@@ -48,13 +49,13 @@ export async function cleanupUsersFixture(f: UsersFixture) {
       .delete(userPermissions)
       .where(inArray(userPermissions.userId, ids));
     await tx
-      .delete(auditLogs)
+      .delete(scmAuditEvents)
       .where(
         or(
-          inArray(auditLogs.userId, ids),
+          inArray(scmAuditEvents.actorId, ids),
           and(
-            eq(auditLogs.entityType, "user"),
-            inArray(auditLogs.entityId, ids)
+            eq(scmAuditEvents.entityType, "user"),
+            inArray(scmAuditEvents.entityId, ids)
           )
         )
       );

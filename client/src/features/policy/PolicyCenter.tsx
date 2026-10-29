@@ -60,7 +60,6 @@ export function PolicyCenter({
         {
           PERMISSION_DENIED: "permissionDenied",
           PROJECT_SCOPE: "projectDenied",
-          LEGACY_SCOPE: "legacyDenied",
           SELF_APPROVAL: "selfDenied",
           DOCUMENT_TARGET: "targetDenied",
           GRANT_AUTHORITY: "grantDenied",
@@ -173,7 +172,7 @@ export function PolicyCenter({
         <Modal
           title={`${p("edit")} — ${chosenUser?.name ?? ""}`}
           eyebrow={chosenUser?.username ?? ""}
-          onClose={close}
+          close={close}
         >
           {chosenUser?.role === "admin" ? (
             <p>{p("ownerHint")}</p>

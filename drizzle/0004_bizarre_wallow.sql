@@ -1,1 +1,0 @@
-ALTER TABLE `rfqs` ADD `packageId` int;

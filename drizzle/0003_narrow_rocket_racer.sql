@@ -1,1 +1,0 @@
-ALTER TABLE `purchaseRequests` ADD `supplierId` int;

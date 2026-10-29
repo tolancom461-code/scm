@@ -12,10 +12,35 @@ import {
   handoverInput,
 } from "../../../shared/phase-one";
 import * as service from "./service";
-import { dateInput } from "../../../shared/projects";
+import { dateInput } from "../../../shared/validation";
+import { inspectionInput } from "../../../shared/inspections";
+import { saveInspection, enableInspections } from "./inspections";
 const key = z.string().uuid(),
   id = z.number().int().positive();
 export const phaseOneRouter = router({
+  saveInspection: requiring("p1.inspections.manage")
+    .input(
+      z.object({
+        data: inspectionInput,
+        key,
+        id: id.optional(),
+        revision: z.number().int().nonnegative().default(0),
+      })
+    )
+    .mutation(({ input, ctx }) =>
+      saveInspection(
+        input.data,
+        ctx.user.id,
+        input.key,
+        input.id,
+        input.revision
+      )
+    ),
+  enableInspections: requiring("p1.inspections.manage")
+    .input(z.object({ contractId: id }))
+    .mutation(({ input, ctx }) =>
+      enableInspections(input.contractId, ctx.user.id)
+    ),
   configureSchedule: requiring("p1.certificates.schedule")
     .input(certificateScheduleInput)
     .mutation(({ input, ctx }) =>

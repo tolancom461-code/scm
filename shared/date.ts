@@ -11,11 +11,6 @@ export function businessDate(value = new Date()) {
   const part = (type: string) => parts.find(p => p.type === type)!.value;
   return part("year") + "-" + part("month") + "-" + part("day");
 }
-export function localDateTime(value = new Date()) {
-  return new Date(value.getTime() - value.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
-}
 /** Calendar months, with month-end clamping; independent of host timezone. */
 export function addCalendarMonths(date: string, months: number) {
   const [y, m, d] = date.split("-").map(Number);

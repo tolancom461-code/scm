@@ -14,8 +14,9 @@ import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
 import type { TrpcContext } from "../_core/context";
 import { database } from "./database";
 import { accessDenials } from "../../drizzle/policy";
-import { closeDb, setUserPermissions, getUserByUsername } from "../db";
+import { closeDb, getUserByUsername } from "../db";
 import { roleTemplates, togglePermission } from "../../shared/policy";
+import { setFixturePermissions as setUserPermissions } from "../../scripts/permissions-fixture";
 import { userPolicy } from "../modules/policy/service";
 import {
   simpleCertificateInput,
@@ -250,6 +251,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
           data: {
             contractId: f.b.contractId,
             certificateId: id,
+            milestoneId: null,
             kind: "normal",
             amount: "100",
             paymentDate: f.b.date,
@@ -308,7 +310,11 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
     }, 60000);
     it("scopes filtered and unfiltered attachment lists and rejects uploads before writing storage", async () => {
       const upload = (
-        entityType: string,
+        entityType:
+          | "p1_contract"
+          | "p1_certificate"
+          | "p1_payment"
+          | "p1_inspection",
         entityId: number,
         classification: "internal" | "confidential" = "internal"
       ) =>
@@ -372,23 +378,6 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         code: "FORBIDDEN",
       });
       await configure(f.extra.owner, f.extra.viewer, "viewer", [f.a.projectId]);
-    }, 60000);
-    it("prevents legacy routes from bypassing assigned projects and denies reports without export access", async () => {
-      const actual = (await loadAccess(f.a.actors[0]))!;
-      await setUserPermissions(f.a.actors[0], [
-        ...actual.user.permissionCodes,
-        "contracts.view",
-        "reports.export",
-      ]);
-      await expect(preparer.contracts.list()).rejects.toMatchObject({
-        code: "FORBIDDEN",
-      });
-      await expect(
-        preparer.reports.data({ module: "requests" })
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
-      await configure(f.extra.owner, f.a.actors[0], "preparer", [
-        f.a.projectId,
-      ]);
     }, 60000);
     it("limits delegated grants and project scopes and protects broader accounts from password takeover", async () => {
       const manager = await callerFor(f.extra.manager);
@@ -477,7 +466,6 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         ),
         allProjects: false,
         projectIds: [f.a.projectId],
-        legacyAccess: false,
       };
       const result = await owner.users.create({
         username,
@@ -563,11 +551,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         .from(accessDenials)
         .where(eq(accessDenials.actorId, f.a.actors[0]));
       expect(events.map(e => e.reason)).toEqual(
-        expect.arrayContaining([
-          "PROJECT_SCOPE",
-          "DOCUMENT_TARGET",
-          "LEGACY_SCOPE",
-        ])
+        expect.arrayContaining(["PROJECT_SCOPE", "DOCUMENT_TARGET"])
       );
       expect(JSON.stringify(events)).not.toContain(f.a.password);
       expect(JSON.stringify(events)).not.toContain("YQ==");

@@ -12,15 +12,9 @@ import {
   users,
   userPermissions,
   sessions,
-  auditLogs,
   documents,
-  notifications,
 } from "../drizzle/schema";
-import {
-  operationKeys,
-  scmAuditEvents,
-  scmOutbox,
-} from "../drizzle/foundation";
+import { operationKeys, scmAuditEvents } from "../drizzle/foundation";
 import * as service from "../server/modules/phase-one/service";
 import { simpleContractInput } from "../shared/phase-one";
 import { unlink } from "node:fs/promises";
@@ -80,6 +74,7 @@ export async function setupPhaseOne(warrantyDays = 0) {
       simpleContractInput.parse({
         projectId,
         supplierId,
+        inspectionRequired: false,
         title: code + " Epoxy",
         reference: code,
         contractDate: date,
@@ -111,6 +106,11 @@ export async function setupPhaseOne(warrantyDays = 0) {
       randomUUID()
     )
   ).id;
+  // Certificate-only fixture: new production contracts always require FIR.
+  await (await database())
+    .update(s.simpleContracts)
+    .set({ inspectionRequired: false })
+    .where(eq(s.simpleContracts.id, contractId));
   return {
     code,
     password,
@@ -136,19 +136,6 @@ export async function cleanupPhaseOne(f: PhaseFixture) {
     .from(documents)
     .where(inArray(documents.uploadedBy, f.actors));
   await connection.transaction(async tx => {
-    if (files.length)
-      await tx.delete(notifications).where(
-        and(
-          eq(notifications.entityType, "document"),
-          inArray(
-            notifications.entityId,
-            files.map(f => f.id)
-          )
-        )
-      );
-    await tx
-      .delete(notifications)
-      .where(inArray(notifications.userId, f.actors));
     const contracts = await tx
       .select({ id: s.simpleContracts.id })
       .from(s.simpleContracts)
@@ -166,10 +153,17 @@ export async function cleanupPhaseOne(f: PhaseFixture) {
           .from(s.simplePayments)
           .where(inArray(s.simplePayments.contractId, ids))
       : [];
+    const inspections = ids.length
+      ? await tx
+          .select({ id: s.workInspections.id })
+          .from(s.workInspections)
+          .where(inArray(s.workInspections.contractId, ids))
+      : [];
     for (const [type, values] of [
       ["p1_contract", ids],
       ["p1_certificate", certs.map(c => c.id)],
       ["p1_payment", payments.map(c => c.id)],
+      ["p1_inspection", inspections.map(c => c.id)],
     ] as const)
       if (values.length)
         await tx
@@ -202,6 +196,13 @@ export async function cleanupPhaseOne(f: PhaseFixture) {
         .delete(s.simpleCertificates)
         .where(inArray(s.simpleCertificates.contractId, ids));
       await tx
+        .update(s.workInspections)
+        .set({ previousInspectionId: null })
+        .where(inArray(s.workInspections.contractId, ids));
+      await tx
+        .delete(s.workInspections)
+        .where(inArray(s.workInspections.contractId, ids));
+      await tx
         .delete(s.simpleMilestones)
         .where(inArray(s.simpleMilestones.contractId, ids));
       await tx
@@ -213,31 +214,12 @@ export async function cleanupPhaseOne(f: PhaseFixture) {
       .where(inArray(s.simpleProjects.createdBy, f.actors));
     await tx.delete(suppliers).where(eq(suppliers.id, f.supplierId));
     // Only the dedicated fixture users' events are removed, never real users' history.
-    const events = await tx
-      .select({
-        entityId: scmAuditEvents.entityId,
-        entityType: scmAuditEvents.entityType,
-        action: scmAuditEvents.action,
-      })
-      .from(scmAuditEvents)
-      .where(inArray(scmAuditEvents.actorId, f.actors));
-    for (const e of events)
-      await tx
-        .delete(scmOutbox)
-        .where(
-          and(
-            eq(scmOutbox.entityId, e.entityId),
-            eq(scmOutbox.entityType, e.entityType),
-            eq(scmOutbox.type, e.action)
-          )
-        );
     await tx
       .delete(scmAuditEvents)
       .where(inArray(scmAuditEvents.actorId, f.actors));
     await tx
       .delete(operationKeys)
       .where(inArray(operationKeys.actorId, f.actors));
-    await tx.delete(auditLogs).where(inArray(auditLogs.userId, f.actors));
     await tx.delete(sessions).where(inArray(sessions.userId, f.actors));
     await tx
       .delete(userPermissions)

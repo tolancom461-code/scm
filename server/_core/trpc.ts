@@ -1,4 +1,4 @@
-import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from "@shared/const";
+import { UNAUTHED_ERR_MSG } from "@shared/const";
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
@@ -37,11 +37,7 @@ const domainErrors = t.middleware(async ({ next }) => {
         ? "NOT_FOUND"
         : ["CONFLICT", "USERNAME_TAKEN"].includes(domain.domainCode)
           ? "CONFLICT"
-          : [
-                "DUTY_CONFLICT",
-                "APPROVER_INELIGIBLE",
-                "USER_ADMIN_REQUIRED",
-              ].includes(domain.domainCode)
+          : ["DUTY_CONFLICT", "USER_ADMIN_REQUIRED"].includes(domain.domainCode)
             ? "FORBIDDEN"
             : domain.domainCode === "SERVICE_UNAVAILABLE"
               ? "INTERNAL_SERVER_ERROR"
@@ -74,11 +70,9 @@ const policyGate = t.middleware(async ({ ctx, path, getRawInput, next }) => {
     !result.ok &&
     (result.error.code === "FORBIDDEN" ||
       (result.error.cause instanceof DomainError &&
-        [
-          "DUTY_CONFLICT",
-          "APPROVER_INELIGIBLE",
-          "USER_ADMIN_REQUIRED",
-        ].includes(result.error.cause.domainCode)))
+        ["DUTY_CONFLICT", "USER_ADMIN_REQUIRED"].includes(
+          result.error.cause.domainCode
+        )))
   )
     await logAccessDenied(
       ctx.user.id,
@@ -108,20 +102,3 @@ const requireUser = t.middleware(async opts => {
 });
 
 export const protectedProcedure = publicProcedure.use(requireUser);
-
-export const adminProcedure = publicProcedure.use(
-  t.middleware(async opts => {
-    const { ctx, next } = opts;
-
-    if (!ctx.user || ctx.user.role !== "admin") {
-      throw new TRPCError({ code: "FORBIDDEN", message: NOT_ADMIN_ERR_MSG });
-    }
-
-    return next({
-      ctx: {
-        ...ctx,
-        user: ctx.user,
-      },
-    });
-  })
-);

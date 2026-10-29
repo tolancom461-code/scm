@@ -5,6 +5,7 @@ export const documentPrefixes = {
   project: "PRJ",
   contract: "CTR",
   certificate: "IPC",
+  inspection: "FIR",
 } as const;
 export type NumberedDocument = keyof typeof documentPrefixes;
 

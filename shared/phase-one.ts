@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { dateInput } from "./projects";
+import { dateInput } from "./validation";
 import { decimal, formatDecimal, multiply, roundedDivide } from "./decimal";
+import { inspectionAllocationInput } from "./inspections";
 
 const id = z.number().int().positive();
 export const contractCorrectionInput = z
@@ -66,6 +67,7 @@ export const simpleContractInput = z
   .object({
     projectId: id,
     supplierId: id,
+    inspectionRequired: z.boolean().default(true),
     title: z.string().trim().min(2).max(255),
     reference: z.string().trim().max(100).default(""),
     contractDate: dateInput,
@@ -115,6 +117,10 @@ export const simpleCertificateInput = z
   .object({
     contractId: id,
     certificateDate: dateInput,
+    inspectionAllocations: z
+      .array(inspectionAllocationInput)
+      .max(200)
+      .default([]),
     mode: z.enum(["percent", "quantity"]),
     progress: percent.default("0"),
     quantities: z.array(qty).max(50).default([]),

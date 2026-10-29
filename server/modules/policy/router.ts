@@ -10,7 +10,7 @@ export const policyRouter = router({
     owner: ctx.user.role === "admin",
     landing:
       ctx.user.role === "admin"
-        ? "contracts"
+        ? "projectModule"
         : roleTemplates[ctx.access!.scope.template].landing,
   })),
   catalog: requiring("policy.view").query(({ ctx }) =>
@@ -22,7 +22,5 @@ export const policyRouter = router({
   save: requiring("policy.manage")
     .input(accessProfileInput)
     .mutation(({ input, ctx }) => service.savePolicy(input, ctx.access!)),
-  audit: requiring("policy.view").query(({ ctx }) =>
-    service.denials(ctx.access!)
-  ),
+  audit: requiring("policy.view").query(() => service.denials()),
 });

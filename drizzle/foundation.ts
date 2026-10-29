@@ -1,19 +1,16 @@
 import { sql } from "drizzle-orm";
 import {
   check,
-  datetime,
   index,
   int,
   json,
-  mysqlEnum,
   mysqlTable,
-  text,
   timestamp,
   uniqueIndex,
   varchar,
+  text,
 } from "drizzle-orm/mysql-core";
 import { users } from "./schema";
-
 export const documentSequences = mysqlTable(
   "document_sequences",
   {
@@ -63,23 +60,4 @@ export const scmAuditEvents = mysqlTable(
     index("scm_audit_entity").on(t.entityType, t.entityId),
     index("scm_audit_actor_time").on(t.actorId, t.createdAt),
   ]
-);
-
-export const scmOutbox = mysqlTable(
-  "scm_outbox",
-  {
-    id: int("id").autoincrement().primaryKey(),
-    eventId: varchar("event_id", { length: 36 }).notNull().unique(),
-    type: varchar("event_type", { length: 100 }).notNull(),
-    entityType: varchar("entity_type", { length: 80 }).notNull(),
-    entityId: int("entity_id").notNull(),
-    payload: json("payload").$type<Record<string, unknown>>().notNull(),
-    status: mysqlEnum("status", ["pending", "processing", "sent", "failed"])
-      .default("pending")
-      .notNull(),
-    attempts: int("attempts").default(0).notNull(),
-    nextAttemptAt: datetime("next_attempt_at"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  t => [index("outbox_dispatch").on(t.status, t.nextAttemptAt)]
 );

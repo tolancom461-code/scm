@@ -24,7 +24,6 @@ describe("central access policy", () => {
       "p1.payments.record",
       "p1.retention.release",
       "p1.company.manage",
-      "reports.export",
       "documents.view_confidential",
     ])
       expect(permissionAllowed(manager, code), code).toBe(true);
@@ -91,6 +90,9 @@ describe("central access policy", () => {
         code
       );
     expect(allowed("preparer", "p1.certificates.create")).toBe(true);
+    expect(allowed("preparer", "p1.inspections.manage")).toBe(true);
+    expect(allowed("accountant", "p1.inspections.view")).toBe(true);
+    expect(allowed("accountant", "p1.inspections.manage")).toBe(false);
     expect(allowed("preparer", "p1.certificates.approve")).toBe(false);
     expect(allowed("preparer", "p1.payments.view")).toBe(false);
     expect(allowed("approver", "p1.certificates.approve")).toBe(true);
@@ -118,7 +120,6 @@ describe("central access policy", () => {
       version: 1,
       template: "custom",
       allProjects: false,
-      legacyAccess: false,
       permissions: [],
       projectIds: [1, 1, 2],
     };
@@ -152,7 +153,6 @@ describe("central access policy", () => {
   it("has no fallback to all projects for an empty scope", () => {
     const scope = {
       allProjects: false,
-      legacyAccess: false,
       projectIds: [],
       template: "custom" as const,
       version: 1,

@@ -1,6 +1,7 @@
 import type { Locale } from "@/lib/i18n";
 import { systemBrand } from "@/lib/branding";
 const labels = {
+ projectModule:["وحدة المشاريع","Project module","منصوبوں کی اکائی"],
   waitingTurn: [
     "بانتظار استكمال الدفعات السابقة",
     "Awaiting earlier installments",
@@ -84,6 +85,11 @@ const labels = {
   value: ["القيمة", "Value", "رقم"],
   brand: [systemBrand.ar, systemBrand.en, systemBrand.ur],
   contracts: ["المشاريع والعقود", "Projects & contracts", "منصوبے اور معاہدے"],
+  inspections: [
+    "فحص أعمال - FIR",
+    "Work inspection - FIR",
+    "کام کا معائنہ - FIR",
+  ],
   certificates: ["المستخلصات", "Certificates", "مستخلص"],
   accounts: [
     "حسابات الموردين والدفعات",
@@ -97,7 +103,6 @@ const labels = {
   ],
   settings: ["تهيئة البيانات", "Setup", "بنیادی ترتیبات"],
   users: ["المستخدمون والصلاحيات", "Users & permissions", "صارفین اور اجازتیں"],
-  previous: ["الدورة السابقة", "Previous workflow", "پچھلا طریقہ کار"],
   newContract: ["إضافة عقد", "Add contract", "معاہدہ شامل کریں"],
   newSupplier: ["إضافة مورد", "Add supplier", "سپلائر شامل کریں"],
   newCertificate: ["إعداد مستخلص", "Prepare certificate", "مستخلص تیار کریں"],
@@ -351,11 +356,6 @@ const labels = {
     "الدفعات مخططة على قيمة العقد. المتاح للصرف محدود بصافي المستخلصات المعتمدة؛ الخصومات والضمان قد يخفضان قيمة الصرف.",
     "Installments are planned against the contract total. Available disbursement is capped by approved certificate net; deductions and retention reduce it.",
     "اقساط معاہدے کی رقم پر طے ہیں۔ دستیاب ادائیگی منظور شدہ خالص مستخلص تک محدود ہے؛ کٹوتیاں اور ضمانت اسے کم کرتی ہیں۔",
-  ],
-  previousHint: [
-    "السجلات السابقة محفوظة في الدورة السابقة. الأرصدة هنا تخص عمليات المرحلة الأولى.",
-    "Earlier records remain in the previous workflow. These balances cover phase-one transactions.",
-    "پہلے کے ریکارڈ پچھلے طریقہ کار میں محفوظ ہیں۔ یہ بیلنس پہلے مرحلے کے معاملات کے ہیں۔",
   ],
 } as const;
 export type PhaseLabel = keyof typeof labels;

@@ -1,3 +1,4 @@
+import { constructionProjects } from "./construction";
 import {
   boolean,
   index,
@@ -15,7 +16,6 @@ export const accessProfiles = mysqlTable("access_profiles", {
     .references(() => users.id, { onDelete: "cascade" }),
   template: varchar("template", { length: 30 }).default("custom").notNull(),
   allProjects: boolean("all_projects").default(false).notNull(),
-  legacyAccess: boolean("legacy_access").default(false).notNull(),
   version: int("version").default(1).notNull(),
 });
 export const accessProjects = mysqlTable(
@@ -46,4 +46,21 @@ export const accessDenials = mysqlTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   t => [index("access_denial_actor_time").on(t.actorId, t.createdAt)]
+);
+
+export const accessConstructionProjects = mysqlTable(
+  "access_construction_projects",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("user_id")
+      .notNull()
+      .references(() => accessProfiles.userId, { onDelete: "cascade" }),
+    projectId: int("project_id")
+      .notNull()
+      .references(() => constructionProjects.id, { onDelete: "cascade" }),
+  },
+  t => [
+    uniqueIndex("access_pm_user_project_unique").on(t.userId, t.projectId),
+    index("access_pm_project_idx").on(t.projectId),
+  ]
 );

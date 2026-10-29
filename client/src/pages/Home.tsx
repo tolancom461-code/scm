@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense } from "react";
 import { trpc } from "@/lib/trpc";
 import type { Locale } from "@/lib/i18n";
 import { AuthScreen } from "@/features/auth/AuthScreen";
@@ -8,7 +8,7 @@ const PhaseOneWorkspace = lazy(() =>
     default: m.PhaseOneWorkspace,
   }))
 );
-const LegacyWorkspace = lazy(() => import("./LegacyWorkspace"));
+
 type User = {
   id: number;
   username: string | null;
@@ -19,8 +19,6 @@ type User = {
   role: "user" | "admin";
 };
 export default function Home() {
-  const [previousMode, setPreviousMode] = useState(false);
-
   const me = trpc.auth.me.useQuery(undefined, {
     refetchOnWindowFocus: true,
     retry: false,
@@ -61,44 +59,11 @@ export default function Home() {
         </div>
       }
     >
-      {previousMode &&
-      me.data.policy?.legacyAccess &&
-      me.data.policy.allProjects ? (
-        <>
-          <button
-            style={{
-              position: "fixed",
-              bottom: 12,
-              insetInlineEnd: 18,
-              zIndex: 60,
-              background: "#142e40",
-              color: "#eefaff",
-              border: "1px solid #406680",
-              borderRadius: 8,
-              padding: 10,
-            }}
-            onClick={() => setPreviousMode(false)}
-          >
-            {locale === "ar"
-              ? "العودة إلى المرحلة الأولى"
-              : locale === "en"
-                ? "Return to phase one"
-                : "پہلے مرحلے پر واپس جائیں"}
-          </button>
-          <LegacyWorkspace
-            user={me.data as User}
-            locale={locale}
-            setLocale={setLocale}
-          />
-        </>
-      ) : (
-        <PhaseOneWorkspace
-          user={me.data as User}
-          locale={locale}
-          setLocale={setLocale}
-          previous={() => setPreviousMode(true)}
-        />
-      )}
+      <PhaseOneWorkspace
+        user={me.data as User}
+        locale={locale}
+        setLocale={setLocale}
+      />
     </Suspense>
   );
 }

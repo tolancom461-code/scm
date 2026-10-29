@@ -1,12 +1,10 @@
+import { constructionProjects } from "../../../drizzle/construction";
+import { recordChange } from "../../core/audit";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, inArray } from "drizzle-orm";
+import { users, permissions, userPermissions } from "../../../drizzle/schema";
 import {
-  users,
-  permissions,
-  userPermissions,
-  auditLogs,
-} from "../../../drizzle/schema";
-import {
+  accessConstructionProjects,
   accessProfiles,
   accessProjects,
   accessDenials,
@@ -23,6 +21,7 @@ import {
   canAccess,
   loadAccess,
   projectScope,
+  constructionScope,
   type AccessContext,
 } from "../../core/policy";
 import { database, type Transaction } from "../../core/database";
@@ -57,9 +56,16 @@ export async function catalog(access: AccessContext) {
       })
       .from(simpleProjects)
       .where(projectScope(access, simpleProjects.id)),
+    constructionProjects: await db
+      .select({
+        id: constructionProjects.id,
+        name: constructionProjects.name,
+        number: constructionProjects.number,
+      })
+      .from(constructionProjects)
+      .where(constructionScope(access, constructionProjects.id)),
     canManage: canAccess(access, "policy.manage"),
     canDelegateAll: access.scope.allProjects,
-    canDelegateLegacy: access.scope.legacyAccess && access.scope.allProjects,
   };
 }
 export async function userPolicy(userId: number, access: AccessContext) {
@@ -94,13 +100,23 @@ export async function userPolicy(userId: number, access: AccessContext) {
     .select({ id: accessProjects.projectId })
     .from(accessProjects)
     .where(eq(accessProjects.userId, userId));
+  const pmProjects = await db
+    .select({ id: accessConstructionProjects.projectId })
+    .from(accessConstructionProjects)
+    .where(eq(accessConstructionProjects.userId, userId));
+  if (
+    !access.scope.allProjects &&
+    pmProjects.some(
+      p => !(access.scope.constructionProjectIds ?? []).includes(p.id)
+    )
+  )
+    throw new DomainError("USER_ADMIN_REQUIRED");
   if (
     access.user.role !== "admin" &&
     (grants.some(g => !canAccess(access, g.code)) ||
       (!access.scope.allProjects &&
         (profile?.allProjects ||
-          projects.some(p => !access.scope.projectIds.includes(p.id)))) ||
-      (profile?.legacyAccess && !access.scope.legacyAccess))
+          projects.some(p => !access.scope.projectIds.includes(p.id)))))
   )
     throw new DomainError("USER_ADMIN_REQUIRED");
   return {
@@ -108,7 +124,7 @@ export async function userPolicy(userId: number, access: AccessContext) {
     version: profile?.version ?? 0,
     template: (profile?.template ?? "custom") as AccessTemplate,
     allProjects: profile?.allProjects ?? false,
-    legacyAccess: profile?.legacyAccess ?? false,
+    constructionProjectIds: pmProjects.map(p => p.id),
     projectIds: projects.map(p => p.id),
     permissions: grants.map(p => p.code),
   };
@@ -140,11 +156,25 @@ export async function savePolicyInside(
   if (
     codes.some(code => !canAccess(access, code)) ||
     (data.allProjects && !access.scope.allProjects) ||
-    (data.legacyAccess && (!data.allProjects || !access.scope.legacyAccess)) ||
     (!access.scope.allProjects &&
       data.projectIds.some(id => !access.scope.projectIds.includes(id)))
   )
     throw new DomainError("USER_ADMIN_REQUIRED");
+  if (
+    !access.scope.allProjects &&
+    data.constructionProjectIds.some(
+      id => !(access.scope.constructionProjectIds ?? []).includes(id)
+    )
+  )
+    throw new DomainError("USER_ADMIN_REQUIRED");
+  if (data.constructionProjectIds.length) {
+    const found = await tx
+      .select({ id: constructionProjects.id })
+      .from(constructionProjects)
+      .where(inArray(constructionProjects.id, data.constructionProjectIds));
+    if (found.length !== data.constructionProjectIds.length)
+      throw new DomainError("INVALID_REFERENCE");
+  }
   if (data.projectIds.length) {
     const found = await tx
       .select({ id: simpleProjects.id })
@@ -172,26 +202,45 @@ export async function savePolicyInside(
     .select({ id: accessProjects.projectId })
     .from(accessProjects)
     .where(eq(accessProjects.userId, data.userId));
+  const oldPM = await tx
+    .select({ id: accessConstructionProjects.projectId })
+    .from(accessConstructionProjects)
+    .where(eq(accessConstructionProjects.userId, data.userId));
+  if (
+    !access.scope.allProjects &&
+    oldPM.some(p => !(access.scope.constructionProjectIds ?? []).includes(p.id))
+  )
+    throw new DomainError("USER_ADMIN_REQUIRED");
   if (
     access.user.role !== "admin" &&
     (oldGrants.some(g => !canAccess(access, g.code)) ||
       (!access.scope.allProjects &&
         (before?.allProjects ||
-          oldProjects.some(p => !access.scope.projectIds.includes(p.id)))) ||
-      (before?.legacyAccess && !access.scope.legacyAccess))
+          oldProjects.some(p => !access.scope.projectIds.includes(p.id)))))
   )
     throw new DomainError("USER_ADMIN_REQUIRED");
   const next = {
     userId: data.userId,
     template: data.template,
     allProjects: data.allProjects,
-    legacyAccess: data.legacyAccess,
     version: data.version + 1,
   };
   await tx
     .insert(accessProfiles)
     .values(next)
     .onDuplicateKeyUpdate({ set: next });
+  await tx
+    .delete(accessConstructionProjects)
+    .where(eq(accessConstructionProjects.userId, data.userId));
+  if (!data.allProjects && data.constructionProjectIds.length)
+    await tx
+      .insert(accessConstructionProjects)
+      .values(
+        data.constructionProjectIds.map(projectId => ({
+          userId: data.userId,
+          projectId,
+        }))
+      );
   await tx.delete(accessProjects).where(eq(accessProjects.userId, data.userId));
   if (!data.allProjects && data.projectIds.length)
     await tx
@@ -207,21 +256,25 @@ export async function savePolicyInside(
     await tx
       .insert(userPermissions)
       .values(selected.map(p => ({ userId: data.userId, permissionId: p.id })));
-  await tx.insert(auditLogs).values({
-    userId: access.user.id,
+  await recordChange(tx, {
+    actorId: access.user.id,
     action: "policy.updated",
     entityType: "user",
     entityId: data.userId,
-    oldValue: JSON.stringify({
+    before: {
       profile: before,
       permissions: oldGrants.map(p => p.code),
+      constructionProjectIds: oldPM.map(p => p.id),
       projectIds: oldProjects.map(p => p.id),
-    }),
-    newValue: JSON.stringify({
+    },
+    after: {
       ...next,
       permissions: codes,
+      constructionProjectIds: data.allProjects
+        ? []
+        : data.constructionProjectIds,
       projectIds: data.allProjects ? [] : data.projectIds,
-    }),
+    },
   });
   return { success: true, version: next.version };
 }
@@ -235,23 +288,7 @@ export async function savePolicy(
     savePolicyInside(tx, data, access)
   );
 }
-/** Existing grant editor also uses the same center and preserves the project scope. */
-export async function saveCustomGrants(
-  userId: number,
-  codes: string[],
-  access: AccessContext
-) {
-  const profile = await userPolicy(userId, access);
-  return savePolicy(
-    accessProfileInput.parse({
-      ...profile,
-      template: "custom",
-      permissions: codes,
-    }),
-    access
-  );
-}
-export async function denials(access: AccessContext) {
+export async function denials() {
   return (await database())
     .select({
       id: accessDenials.id,

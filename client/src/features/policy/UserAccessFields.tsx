@@ -14,7 +14,7 @@ export type UserAccessForm = {
   permissions: string[];
   allProjects: boolean;
   projectIds: number[];
-  legacyAccess: boolean;
+  constructionProjectIds?: number[];
 };
 type Catalog = inferRouterOutputs<AppRouter>["policy"]["catalog"];
 export function UserAccessFields({
@@ -44,7 +44,6 @@ export function UserAccessFields({
               ...form,
               template,
               permissions: [...roleTemplates[template].permissions],
-              legacyAccess: false,
             });
           }}
         >
@@ -75,7 +74,6 @@ export function UserAccessFields({
               onChange({
                 ...form,
                 allProjects: false,
-                legacyAccess: false,
               })
             }
           />
@@ -117,80 +115,93 @@ export function UserAccessFields({
                 </label>
               ))}
             </div>
-            {!form.projectIds.length && <p className="p1-hint">{p("none")}</p>}
+            <b>
+              {locale === "en"
+                ? "Project module"
+                : locale === "ur"
+                  ? "منصوبوں کی اکائی"
+                  : "وحدة المشاريع"}
+            </b>
+            <div className="policy-options">
+              {catalog.constructionProjects.map(project => (
+                <label key={project.id}>
+                  <input
+                    type="checkbox"
+                    checked={(form.constructionProjectIds ?? []).includes(
+                      project.id
+                    )}
+                    onChange={() =>
+                      onChange({
+                        ...form,
+                        constructionProjectIds: (
+                          form.constructionProjectIds ?? []
+                        ).includes(project.id)
+                          ? (form.constructionProjectIds ?? []).filter(
+                              id => id !== project.id
+                            )
+                          : [
+                              ...(form.constructionProjectIds ?? []),
+                              project.id,
+                            ],
+                      })
+                    }
+                  />
+                  <span>
+                    <bdi>{project.number}</bdi> — {project.name}
+                  </span>
+                </label>
+              ))}
+            </div>
+            {!form.projectIds.length &&
+              !form.constructionProjectIds?.length && (
+                <p className="p1-hint">{p("none")}</p>
+              )}
           </>
-        )}
-        {catalog?.canDelegateLegacy && (
-          <label>
-            <input
-              type="checkbox"
-              checked={form.legacyAccess}
-              disabled={!form.allProjects}
-              onChange={e =>
-                onChange({ ...form, legacyAccess: e.target.checked })
-              }
-            />
-            {p("legacy")}
-          </label>
         )}
       </fieldset>
       <h3>{p("permissions")}</h3>
       <p className="p1-hint">{p("extra")}</p>
-      {(["current", "shared", "previous"] as const)
-        .filter(group => group !== "previous" || form.legacyAccess)
-        .map(group => (
-          <fieldset key={group}>
-            <legend>{p(group)}</legend>
-            <div className="policy-options">
-              {catalog?.permissions
-                .filter(permission =>
-                  group === "current"
+      {(["construction", "current", "shared"] as const).map(group => (
+        <fieldset key={group}>
+          <legend>{p(group)}</legend>
+          <div className="policy-options">
+            {catalog?.permissions
+              .filter(permission =>
+                group === "construction"
+                  ? permission.code.startsWith("pm.")
+                  : group === "current"
                     ? permission.code.startsWith("p1.")
-                    : group === "shared"
-                      ? [
-                          "users",
-                          "suppliers",
-                          "documents",
-                          "policy",
-                          "permissions",
-                        ].includes(permission.module)
-                      : !permission.code.startsWith("p1.") &&
-                        ![
-                          "users",
-                          "suppliers",
-                          "documents",
-                          "policy",
-                          "permissions",
-                        ].includes(permission.module)
-                )
-                .map(permission => (
-                  <label key={permission.code}>
-                    <input
-                      type="checkbox"
-                      checked={checked.includes(permission.code)}
-                      onChange={e =>
-                        onChange({
-                          ...form,
-                          permissions: togglePermission(
-                            form.permissions,
-                            permission.code,
-                            e.target.checked
-                          ),
-                        })
-                      }
-                    />
-                    <span>
-                      {
-                        permission[
-                          locale === "en" ? "en" : locale === "ur" ? "ur" : "ar"
-                        ]
-                      }
-                    </span>
-                  </label>
-                ))}
-            </div>
-          </fieldset>
-        ))}
+                    : !permission.code.startsWith("p1.") &&
+                      !permission.code.startsWith("pm.")
+              )
+              .map(permission => (
+                <label key={permission.code}>
+                  <input
+                    type="checkbox"
+                    checked={checked.includes(permission.code)}
+                    onChange={e =>
+                      onChange({
+                        ...form,
+                        permissions: togglePermission(
+                          form.permissions,
+                          permission.code,
+                          e.target.checked
+                        ),
+                      })
+                    }
+                  />
+                  <span>
+                    {
+                      permission[
+                        locale === "en" ? "en" : locale === "ur" ? "ur" : "ar"
+                      ]
+                    }
+                  </span>
+                </label>
+              ))}
+          </div>
+        </fieldset>
+      ))}
       <p className="p1-hint">{p("scopeWarning")}</p>
     </div>
   );

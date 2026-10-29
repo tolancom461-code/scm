@@ -27,33 +27,3 @@ export function formatDecimal(value: bigint, places = 2): string {
 export function multiply(a: bigint, b: bigint): bigint {
   return roundedDivide(a * b, SCALE);
 }
-export function lineAmounts(
-  quantity: string,
-  unitPrice: string,
-  discountPercent = "0",
-  taxPercent = "0"
-) {
-  const q = decimal(quantity),
-    p = decimal(unitPrice),
-    d = decimal(discountPercent),
-    t = decimal(taxPercent);
-  if (
-    q <= 0n ||
-    p < 0n ||
-    d < 0n ||
-    d > 100n * SCALE ||
-    t < 0n ||
-    t > 100n * SCALE
-  )
-    throw new Error("INVALID_LINE");
-  const gross = multiply(q, p);
-  const discount = roundedDivide(multiply(gross, d), 100n);
-  // Round net and tax independently to currency precision before totaling.
-  const net = decimal(formatDecimal(gross - discount));
-  const tax = decimal(formatDecimal(roundedDivide(multiply(net, t), 100n)));
-  return {
-    subtotal: formatDecimal(net),
-    tax: formatDecimal(tax),
-    total: formatDecimal(net + tax),
-  };
-}

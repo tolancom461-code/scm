@@ -9,10 +9,12 @@ import {
   index,
   uniqueIndex,
   foreignKey,
+  boolean,
 } from "drizzle-orm/mysql-core";
 import { suppliers, users } from "./schema";
 import type { ContractItem } from "../shared/phase-one";
 import type { AnyMySqlColumn } from "drizzle-orm/mysql-core";
+import type { InspectionAllocation } from "../shared/inspections";
 const money = (name: string) =>
   decimal(name, { precision: 18, scale: 2 }).notNull();
 export const simpleCompany = mysqlTable("p1_company", {
@@ -55,7 +57,6 @@ export const simpleContracts = mysqlTable(
     siteDate: varchar("site_date", { length: 10 }).notNull(),
     durationDays: int("duration_days").notNull(),
     warrantyDays: int("warranty_days").notNull().default(0),
-    warrantyMonths: int("warranty_months").notNull().default(0),
     handoverDate: varchar("handover_date", { length: 10 }),
     handoverBy: int("handover_by").references(() => users.id),
     handoverReason: text("handover_reason"),
@@ -63,6 +64,8 @@ export const simpleContracts = mysqlTable(
     terms: text("terms").notNull(),
     revision: int("revision").default(0).notNull(),
     status: varchar("status", { length: 20 }).default("active").notNull(),
+    inspectionRequired: boolean("inspection_required").notNull().default(false),
+    inspectionBaseline: json("inspection_baseline").$type<string[]>(),
     correctionReason: text("correction_reason"),
     correctedBy: int("corrected_by").references(() => users.id),
     correctedAt: timestamp("corrected_at"),
@@ -112,6 +115,9 @@ export const simpleCertificates = mysqlTable(
     certificateDate: varchar("certificate_date", { length: 10 }).notNull(),
     status: varchar("status", { length: 20 }).default("pending").notNull(),
     quantities: json("quantities").$type<string[]>().notNull(),
+    inspectionAllocations: json("inspection_allocations").$type<
+      InspectionAllocation[]
+    >(),
     progress: decimal("progress", { precision: 7, scale: 4 }).notNull(),
     cumulativeGross: money("cumulative_gross"),
     previousGross: money("previous_gross"),
@@ -218,3 +224,45 @@ export const paymentReversals = mysqlTable("p1_payment_reversals", {
   decidedAt: timestamp("decided_at"),
   decisionReason: text("decision_reason"),
 });
+
+export const workInspections = mysqlTable(
+  "p1_work_inspections",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    number: varchar("number", { length: 50 }).notNull().unique(),
+    contractId: int("contract_id")
+      .notNull()
+      .references(() => simpleContracts.id),
+    itemIndex: int("item_index").notNull(),
+    inspectionDate: varchar("inspection_date", { length: 10 }).notNull(),
+    location: varchar("location", { length: 500 }).notNull(),
+    description: text("description").notNull(),
+    executed: decimal("executed", { precision: 14, scale: 4 }).notNull(),
+    accepted: decimal("accepted", { precision: 14, scale: 4 }).notNull(),
+    status: varchar("status", { length: 24 }).notNull(),
+    notes: text("notes").notNull(),
+    additionalSignatures: json("additional_signatures")
+      .$type<{ role: string; name: string }[]>()
+      .notNull(),
+    supplierName: varchar("supplier_name", { length: 500 }).notNull(),
+    representative: varchar("representative", { length: 500 }).notNull(),
+    previousInspectionId: int("previous_inspection_id"),
+    revision: int("revision").notNull().default(0),
+    createdBy: int("created_by")
+      .notNull()
+      .references(() => users.id),
+    updatedBy: int("updated_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  t => [
+    index("p1_inspection_contract_idx").on(t.contractId),
+    foreignKey({
+      name: "p1_fir_previous_fk",
+      columns: [t.previousInspectionId],
+      foreignColumns: [t.id],
+    }),
+  ]
+);

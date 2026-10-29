@@ -1,3 +1,5 @@
+import { saveInspection } from "./inspections";
+import { inspectionInput } from "../../../shared/inspections";
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
 import {
@@ -73,7 +75,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
       expect(
         (await state()).projects.filter(p => p.name === project.name)
       ).toHaveLength(1);
-    });
+    }, 60000);
     it("creates one pending certificate and requires independent approval", async () => {
       certificateId = (
         await service.createCertificate(
@@ -371,12 +373,27 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
       expect(
         updated.corrections.filter(x => x.contractId === c.id)
       ).toHaveLength(3);
+      const fir = await saveInspection(
+        inspectionInput.parse({
+          contractId: c.id,
+          itemIndex: 0,
+          inspectionDate: f.date,
+          location: "QA",
+          description: "Review work completed",
+          executed: "1",
+          accepted: "1",
+          status: "accepted",
+        }),
+        f.actors[0],
+        randomUUID()
+      );
       const cert = await service.createCertificate(
         simpleCertificateInput.parse({
           contractId: c.id,
           certificateDate: f.date,
           mode: "percent",
           progress: "100",
+          inspectionAllocations: [{ inspectionId: fir.id, quantity: "1" }],
         }),
         f.actors[0],
         randomUUID()
