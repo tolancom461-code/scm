@@ -1,5 +1,5 @@
 import type { State } from "./Forms";
-import type { Locale } from "@/lib/i18n";
+import { localeMeta, type Locale } from "@/lib/i18n";
 import { phaseText } from "./copy";
 export function PaymentQueue({
   state,
@@ -24,10 +24,10 @@ export function PaymentQueue({
 }) {
   const p = (k: Parameters<typeof phaseText>[1]) => phaseText(locale, k);
   const money = (s: string, currency = "SAR") =>
-    new Intl.NumberFormat(
-      locale === "ar" ? "ar-SA" : locale === "ur" ? "ur-PK" : "en-US",
-      { style: "currency", currency }
-    ).format(Number(s));
+    new Intl.NumberFormat(localeMeta[locale].formatting, {
+      style: "currency",
+      currency,
+    }).format(Number(s));
   return (
     <div className="p1-payment-queue">
       {contracts.map(c => {

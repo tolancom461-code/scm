@@ -3,7 +3,7 @@ import type { Express } from "express";
 import { parse } from "cookie";
 import { getDocumentByStorageKey, getUserBySessionToken } from "../db";
 import { LOCAL_SESSION_COOKIE } from "../localAuth";
-import { localDocumentPath } from "../storage";
+import { localDocumentPath, readStoredDocument } from "../storage";
 import {
   assertDocumentTarget,
   canAccess,
@@ -64,6 +64,15 @@ export function registerDocumentDownloads(app: Express) {
           if (error && !res.headersSent)
             res.status(404).send("Document unavailable");
         });
+        return;
+      }
+      if (key.startsWith("s3/")) {
+        const content = await readStoredDocument(key);
+        res.set("Cache-Control", "no-store");
+        res.set("X-Content-Type-Options", "nosniff");
+        res.attachment(document.fileName);
+        res.type(document.mimeType || "application/octet-stream");
+        res.send(content);
         return;
       }
       res.status(404).send("Document unavailable");

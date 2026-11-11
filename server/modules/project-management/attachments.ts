@@ -1,10 +1,9 @@
 import { createHash } from "node:crypto";
-import { unlink } from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { documents } from "../../../drizzle/schema";
 import { validateProjectFile } from "../../../shared/construction";
-import { storeDocument, localDocumentPath } from "../../storage";
+import { deleteStoredDocument, storeDocument } from "../../storage";
 import { database } from "../../core/database";
 import { allocateDocumentNumber } from "../../core/numbering";
 import { recordChange } from "../../core/audit";
@@ -108,10 +107,10 @@ export async function uploadProjectManagementDocument(
       return { id, url: stored.url, key: stored.key };
     });
     if (result.key !== stored.key)
-      await unlink(localDocumentPath(stored.key)).catch(() => {});
+      await deleteStoredDocument(stored.key).catch(() => {});
     return { id: result.id, url: result.url };
   } catch (error) {
-    await unlink(localDocumentPath(stored.key)).catch(() => {});
+    await deleteStoredDocument(stored.key).catch(() => {});
     throw error;
   }
 }

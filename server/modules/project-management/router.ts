@@ -17,11 +17,19 @@ export const projectManagementRouter = router({
         .object({
           q: z.string().trim().max(100).default(""),
           status: z.enum(["", ...projectStates]).default(""),
+          beforeId: z.number().int().positive().optional(),
+          pageSize: z.number().int().min(1).max(200).optional(),
         })
         .default({ q: "", status: "" })
     )
     .query(({ input, ctx }) =>
-      service.listProjects(ctx.access!, input.q, input.status)
+      service.listProjects(
+        ctx.access!,
+        input.q,
+        input.status,
+        input.beforeId,
+        input.pageSize
+      )
     ),
   directory: requiring("pm.view").query(() => service.directory()),
   detail: requiring("pm.view")

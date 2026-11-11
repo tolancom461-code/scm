@@ -86,6 +86,12 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
               .from(s.projectTasks)
               .where(inArray(s.projectTasks.projectId, projectIds));
             if (tasks.length) {
+              await tx.delete(s.ganttTaskSettings).where(
+                inArray(
+                  s.ganttTaskSettings.taskId,
+                  tasks.map(task => task.id)
+                )
+              );
               await tx.delete(s.taskAssignees).where(
                 inArray(
                   s.taskAssignees.taskId,
@@ -111,6 +117,9 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
             await tx
               .delete(s.projectEvents)
               .where(inArray(s.projectEvents.projectId, projectIds));
+            await tx
+              .delete(s.ganttStudioStates)
+              .where(inArray(s.ganttStudioStates.projectId, projectIds));
             await tx
               .delete(s.constructionProjects)
               .where(inArray(s.constructionProjects.id, projectIds));
@@ -304,6 +313,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         id: projectId,
         version: (await detail()).project.version,
         action: "start",
+        actualStartDate: "2026-10-01",
       });
       expect((await detail()).events.map(e => e.action)).toEqual([
         "start",
@@ -350,6 +360,25 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
       expect((await regular.projectManagement.list()).map(p => p.id)).toEqual([
         projectId,
       ]);
+      const [newest] = await owner.projectManagement.list({
+        q: prefix,
+        pageSize: 1,
+      });
+      expect(newest.id).toBe(other.id);
+      expect(
+        (
+          await owner.projectManagement.list({
+            q: prefix,
+            beforeId: newest.id,
+            pageSize: 1,
+          })
+        ).map(p => p.id)
+      ).toEqual([projectId]);
+      expect(
+        (await regular.projectManagement.list({ q: prefix, pageSize: 1 })).map(
+          p => p.id
+        )
+      ).toEqual([projectId]);
     }, 60000);
     it("stores employees, five levels and multiple assignees, and denies a sixth level", async () => {
       for (const name of ["Engineer", "Supervisor"])
@@ -399,7 +428,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
       expect(tasks.map(t => t.level)).toEqual([1, 2, 3, 4, 5]);
       expect(tasks.every(t => t.employeeIds.length === 2)).toBe(true);
     }, 60000);
-    it("blocks parent shortening, child overflow and stale writes without altering existing tasks", async () => {
+    it("blocks parent shortening, dates before actual start, and stale writes", async () => {
       const tasks = (await detail()).tasks,
         main = tasks[0],
         child = tasks[1];

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "../routers";
-import { routePolicies } from "./policy-registry";
+import { httpRoutePolicies, routePolicies } from "./policy-registry";
 import {
   permissionAllowed,
   isKnownPermission,
@@ -46,7 +46,14 @@ describe("central access policy", () => {
     expect(Object.keys(routePolicies).sort()).toEqual(
       Object.keys(appRouter._def.procedures).sort()
     );
-    for (const [path, policy] of Object.entries(routePolicies)) {
+    expect(Object.keys(httpRoutePolicies).sort()).toEqual([
+      "materialRequisitions.catalogImage",
+      "materialRequisitions.catalogPreview",
+    ]);
+    for (const [path, policy] of Object.entries({
+      ...routePolicies,
+      ...httpRoutePolicies,
+    })) {
       expect(
         policy.public || policy.session || !!policy.any?.length,
         path

@@ -207,7 +207,9 @@ export function InspectionForm({
           toast.error(
             locale === "ar"
               ? "المرفق يجب أن يكون صورة أو PDF بحجم لا يتجاوز 6 MB"
-              : "Use an image or PDF up to 6 MB"
+              : locale === "ur"
+                ? "تصویر یا PDF فائل استعمال کریں، زیادہ سے زیادہ 6 MB۔"
+                : "Use an image or PDF up to 6 MB"
           );
           return;
         }

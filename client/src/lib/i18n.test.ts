@@ -14,6 +14,23 @@ describe("واجهة اللغات الثلاث", () => {
     expect(localeMeta.en.direction).toBe("ltr");
   });
 
+  it("يستخدم الأرقام الغربية في عرض المبالغ والتواريخ بكل اللغات", () => {
+    for (const { formatting } of Object.values(localeMeta)) {
+      expect(new Intl.NumberFormat(formatting).format(123.5)).toBe("123.5");
+      const parts = new Intl.DateTimeFormat(formatting, {
+        timeZone: "UTC",
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+      }).formatToParts(new Date("2026-11-11T00:00:00Z"));
+      for (const part of parts.filter(({ type }) =>
+        ["year", "month", "day"].includes(type)
+      )) {
+        expect(part.value).toMatch(/^\d+$/);
+      }
+    }
+  });
+
   it("يوفر عناوين تقنية مترجمة للصفحات الداخلية في اللغات الثلاث", () => {
     for (const locale of ["ar", "en", "ur"] as const) {
       expect(chrome(locale, "module")).toBeTruthy();

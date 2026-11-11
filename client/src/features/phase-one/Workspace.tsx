@@ -10,6 +10,8 @@ import {
   Globe2,
   ShieldCheck,
   ClipboardCheck,
+  ChartGantt,
+  PackageSearch,
 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -57,6 +59,14 @@ const ProjectModule = lazy(() =>
     default: m.ProjectModule,
   }))
 );
+const GanttModule = lazy(() =>
+  import("../gantt/GanttModule").then(m => ({ default: m.GanttModule }))
+);
+const MaterialRequisitions = lazy(() =>
+  import("../material-requisitions/MaterialRequisitions").then(m => ({
+    default: m.MaterialRequisitions,
+  }))
+);
 type User = {
   id: number;
   name: string | null;
@@ -72,6 +82,8 @@ type User = {
 };
 type Page =
   | "projectModule"
+  | "gantt"
+  | "materialRequisitions"
   | "contracts"
   | "inspections"
   | "certificates"
@@ -143,6 +155,18 @@ export function PhaseOneWorkspace({
       permission: "pm.view",
     },
     {
+      page: "gantt" as const,
+      label: "gantt" as const,
+      icon: ChartGantt,
+      permission: "pm.view",
+    },
+    {
+      page: "materialRequisitions" as const,
+      label: "materialRequisitions" as const,
+      icon: PackageSearch,
+      permission: "materialRequisitions.view",
+    },
+    {
       page: "contracts" as const,
       label: "contracts" as const,
       icon: Building2,
@@ -205,6 +229,8 @@ export function PhaseOneWorkspace({
   const query = trpc.phaseOne.state.useQuery(undefined, {
     enabled:
       page !== "projectModule" &&
+      page !== "gantt" &&
+      page !== "materialRequisitions" &&
       [
         "p1.projects.view",
         "p1.contracts.view",
@@ -447,6 +473,14 @@ export function PhaseOneWorkspace({
           ) : page === "projectModule" ? (
             <Suspense fallback={<p>…</p>}>
               <ProjectModule locale={locale} user={user} />
+            </Suspense>
+          ) : page === "gantt" ? (
+            <Suspense fallback={<p>…</p>}>
+              <GanttModule locale={locale} user={user} />
+            </Suspense>
+          ) : page === "materialRequisitions" ? (
+            <Suspense fallback={<p>…</p>}>
+              <MaterialRequisitions locale={locale} user={user} />
             </Suspense>
           ) : page === "policy" ? (
             <PolicyCenter
@@ -908,6 +942,8 @@ export function PhaseOneWorkspace({
             />
           ) : dialog.kind === "payment" ? (
             <PaymentForm
+              initialCertificateId={dialog.certificateId}
+              initialKind={dialog.paymentKind}
               state={state}
               contractId={dialog.id}
               locale={locale}

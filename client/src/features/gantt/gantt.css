@@ -1,0 +1,163 @@
+.gantt-studio-shell {
+  margin: -24px;
+  min-height: calc(100vh - 64px);
+  background: #f4f6f8;
+}
+.gantt-project-switcher {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 18px;
+  background: #102536;
+  color: #fff;
+  border-bottom: 1px solid #284052;
+}
+.gantt-project-switcher > label {
+  font-size: 11px;
+  color: #9fb1bd;
+}
+.gantt-project-switcher > select {
+  min-width: 270px;
+  max-width: 38vw;
+  border: 1px solid #496170;
+  border-radius: 6px;
+  background: #fff;
+  color: #172b3a;
+  padding: 6px 9px;
+}
+.gantt-project-switcher > span {
+  margin-inline-start: auto;
+  font-size: 10px;
+}
+.gantt-project-switcher .saved {
+  color: #83c6ad;
+}
+.gantt-project-switcher .saving {
+  color: #f0c879;
+}
+.gantt-schedule-actions {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.gantt-schedule-actions button {
+  border: 1px solid #496170;
+  border-radius: 6px;
+  color: #d9e7ec;
+  background: #18364a;
+  padding: 6px 8px;
+  font-size: 10px;
+}
+.gantt-schedule-actions button:hover {
+  background: #24516c;
+}
+.gantt-studio-frame {
+  display: block;
+  width: 100%;
+  height: calc(100vh - 112px);
+  border: 0;
+  background: #f4f6f8;
+}
+.gantt-frame-loading,
+.gantt-frame-error {
+  display: grid;
+  place-items: center;
+  min-height: 70vh;
+}
+.gantt-frame-error {
+  color: #b42318;
+}
+.gantt-control-form {
+  display: grid;
+  gap: 14px;
+}
+.gantt-control-form > label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.gantt-control-form input,
+.gantt-control-form textarea {
+  width: 100%;
+}
+.gantt-control-form p {
+  background: #eef6f7;
+  border-radius: 8px;
+  padding: 10px;
+  line-height: 1.7;
+  color: #38576a;
+}
+.gantt-control-form .gantt-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gantt-control-form .gantt-check input {
+  width: auto;
+}
+.gantt-shared-list {
+  max-height: 46vh;
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+}
+.gantt-shared-list fieldset {
+  border: 1px solid #334863;
+  border-radius: 8px;
+  padding: 10px;
+}
+.gantt-shared-list legend {
+  padding: 0 6px;
+  font-weight: 700;
+}
+.gantt-shared-list fieldset label {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 7px;
+  border-bottom: 1px solid #253952;
+}
+.gantt-shared-list fieldset label:last-child {
+  border-bottom: 0;
+}
+.gantt-shared-list small {
+  display: block;
+  color: #8294ad;
+  margin-top: 3px;
+}
+.gantt-shared-list .occupied {
+  opacity: 0.55;
+}
+@media (max-width: 900px) {
+  .gantt-project-switcher {
+    height: auto;
+    flex-wrap: wrap;
+  }
+  .gantt-project-switcher > select {
+    max-width: none;
+    flex: 1;
+  }
+  .gantt-project-switcher > span {
+    margin-inline-start: 0;
+  }
+  .gantt-studio-frame {
+    height: calc(100vh - 160px);
+  }
+}
+@media (max-width: 700px) {
+  .gantt-studio-shell {
+    margin: -14px;
+  }
+  .gantt-project-switcher {
+    padding: 8px;
+  }
+  .gantt-project-switcher > select {
+    min-width: 0;
+    width: 100%;
+    flex-basis: 100%;
+  }
+  .gantt-studio-frame {
+    height: calc(100vh - 190px);
+  }
+}

@@ -30,7 +30,7 @@ export default function Home() {
     staleTime: 60000,
     refetchOnWindowFocus: false,
   });
-  const [locale, setLocale] = useLocale((me.data?.locale ?? "ar") as Locale);
+  const [locale, setLocale] = useLocale(me.data?.locale, me.data?.id);
   if (!me.data)
     return (
       <AuthScreen

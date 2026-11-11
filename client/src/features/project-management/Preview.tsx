@@ -18,7 +18,8 @@ export function FilePreview({
     [zoom, setZoom] = useState(1),
     dwg = /\.dwg$/i.test(file.fileName),
     pdf = /\.pdf$/i.test(file.fileName),
-    t = (ar: string, en: string) => (locale === "ar" ? ar : en);
+    t = (ar: string, en: string, ur: string) =>
+      locale === "ar" ? ar : locale === "en" ? en : ur;
   useEffect(() => {
     let alive = true,
       objectUrl = "",
@@ -30,9 +31,11 @@ export function FilePreview({
       worker?.terminate();
       if (alive)
         setError(
-          locale === "ar"
-            ? "تعذر استعراض هذا الملف. قد يكون إصدار الرسم أو بعض عناصره غير مدعومة."
-            : "Unable to preview this file. Its drawing version or entities may be unsupported."
+          t(
+            "تعذر استعراض هذا الملف. قد يكون إصدار الرسم أو بعض عناصره غير مدعومة.",
+            "Unable to preview this file. Its drawing version or entities may be unsupported.",
+            "فائل کا پیش منظر دستیاب نہیں۔ ہو سکتا ہے کہ ڈرائنگ کے ورژن یا کچھ اجزا کو سپورٹ حاصل نہ ہو۔"
+          )
         );
     };
     const ready = (blob: Blob) => {
@@ -106,7 +109,9 @@ export function FilePreview({
     <div className="pm-preview-wrap">
       <Modal
         title={
-          t("استعراض المرفق", "Attachment preview") + " — " + file.fileName
+          t("استعراض المرفق", "Attachment preview", "منسلکہ کا پیش منظر") +
+          " — " +
+          file.fileName
         }
         close={close}
       >
@@ -114,16 +119,17 @@ export function FilePreview({
           <p className="pm-preview-note">
             {t(
               "معاينة ثنائية الأبعاد داخل البرنامج. قد تختلف النصوص أو العناصر المتقدمة عن الملف الأصلي.",
-              "In-app 2D preview. Text and advanced entities may differ from the original drawing."
+              "In-app 2D preview. Text and advanced entities may differ from the original drawing.",
+              "ایپ میں دو جہتی پیش منظر۔ متن اور پیچیدہ اجزا اصل ڈرائنگ سے مختلف ہو سکتے ہیں۔"
             )}
           </p>
         )}
         {!pdf && url && (
           <div className="pm-preview-toolbar">
             <label>
-              {t("التكبير", "Zoom")}{" "}
+              {t("التكبير", "Zoom", "بڑا کریں")}{" "}
               <input
-                aria-label={t("تكبير الرسم", "Drawing zoom")}
+                aria-label={t("تكبير الرسم", "Drawing zoom", "ڈرائنگ کا زوم")}
                 type="range"
                 min="1"
                 max="6"
@@ -133,7 +139,7 @@ export function FilePreview({
               />
             </label>
             <button onClick={() => setZoom(1)}>
-              {t("ملاءمة الشاشة", "Fit to screen")}
+              {t("ملاءمة الشاشة", "Fit to screen", "اسکرین کے مطابق دکھائیں")}
             </button>
           </div>
         )}
@@ -145,7 +151,11 @@ export function FilePreview({
           <p role="alert">{error}</p>
         ) : !url ? (
           <p role="status">
-            {t("جاري تجهيز الاستعراض…", "Preparing preview…")}
+            {t(
+              "جاري تجهيز الاستعراض…",
+              "Preparing preview…",
+              "پیش منظر تیار ہو رہا ہے…"
+            )}
           </p>
         ) : (
           <div className={"pm-preview-frame" + (dwg ? " pm-cad-frame" : "")}>

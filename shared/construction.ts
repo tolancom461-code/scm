@@ -8,12 +8,26 @@ export const projectStates = [
   "approved",
   "active",
 ] as const;
-export const projectData = z.object({
-  name: z.string().trim().min(2).max(255),
-  site: z.string().trim().max(500).default(""),
-  description: z.string().trim().max(10000).default(""),
-  requirements: z.string().trim().max(10000).default(""),
-});
+export const projectData = z
+  .object({
+    name: z.string().trim().min(2).max(255),
+    site: z.string().trim().max(500).default(""),
+    description: z.string().trim().max(10000).default(""),
+    requirements: z.string().trim().max(10000).default(""),
+    plannedStartDate: dateInput.nullable().default(null),
+    plannedEndDate: dateInput.nullable().default(null),
+  })
+  .refine(
+    v =>
+      !v.plannedStartDate ||
+      !v.plannedEndDate ||
+      v.plannedStartDate <= v.plannedEndDate,
+    {
+      path: ["plannedEndDate"],
+      message:
+        "تاريخ نهاية المشروع يجب ألا يسبق البداية / Project end must not precede start",
+    }
+  );
 const id = z.number().int().positive();
 export const projectSaveInput = z.object({
   key: z.string().uuid(),
@@ -27,6 +41,7 @@ export const projectActionInput = z.object({
   version: z.number().int().nonnegative(),
   action: z.enum(["submit", "approve", "return", "reject", "start"]),
   comment: z.string().trim().max(4000).default(""),
+  actualStartDate: dateInput.optional(),
 });
 export function projectTransition(state: string, action: string) {
   const target: Record<string, string> = {

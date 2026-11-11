@@ -5,7 +5,50 @@ export type RoutePolicy = {
   any?: string[];
 };
 export const routePolicies: Record<string, RoutePolicy> = {
-"projectManagement.list":{any:["pm.view"]},"projectManagement.directory":{any:["pm.view"]},"projectManagement.detail":{any:["pm.view"]},"projectManagement.save":{any:["pm.create","pm.edit"]},"projectManagement.action":{any:["pm.submit","pm.review","pm.start"]},"projectManagement.saveTask":{any:["pm.tasks.manage"]},"projectManagement.saveEmployee":{any:["pm.employees.manage"]},"projectManagement.saveStatus":{any:["pm.statuses.manage"]},
+  "projectManagement.list": { any: ["pm.view"] },
+  "projectManagement.directory": { any: ["pm.view"] },
+  "projectManagement.detail": { any: ["pm.view"] },
+  "projectManagement.save": { any: ["pm.create", "pm.edit"] },
+  "projectManagement.action": { any: ["pm.submit", "pm.review", "pm.start"] },
+  "projectManagement.saveTask": { any: ["pm.tasks.manage"] },
+  "projectManagement.saveEmployee": { any: ["pm.employees.manage"] },
+  "projectManagement.saveStatus": { any: ["pm.statuses.manage"] },
+  "gantt.projects": { any: ["pm.view"] },
+  "gantt.detail": { any: ["pm.view"] },
+  "gantt.sharedDirectory": { any: ["pm.view"] },
+  "gantt.saveProjectSchedule": { any: ["pm.tasks.manage"] },
+  "gantt.saveSharedGroup": { any: ["pm.tasks.manage"] },
+  "gantt.saveSettings": { any: ["pm.tasks.manage"] },
+  "gantt.saveLink": { any: ["pm.tasks.manage"] },
+  "gantt.saveSchedule": { any: ["pm.tasks.manage"] },
+  "gantt.captureBaseline": { any: ["pm.tasks.manage"] },
+  "gantt.saveStudioState": { any: ["pm.tasks.manage"] },
+  "materialRequisitions.directory": { any: ["materialRequisitions.view"] },
+  "materialRequisitions.catalogStatus": {
+    any: ["materialRequisitions.create"],
+  },
+  "materialRequisitions.catalogSearch": {
+    any: ["materialRequisitions.create"],
+  },
+  "materialRequisitions.catalogImport": {
+    any: ["materialRequisitions.create"],
+  },
+  "materialRequisitions.allUnits": {
+    any: ["materialRequisitions.units.manage"],
+  },
+  "materialRequisitions.exportApproved": {
+    any: ["materialRequisitions.integration"],
+  },
+  "materialRequisitions.list": { any: ["materialRequisitions.view"] },
+  "materialRequisitions.detail": { any: ["materialRequisitions.view"] },
+  "materialRequisitions.save": { any: ["materialRequisitions.create"] },
+  "materialRequisitions.approve": { any: ["materialRequisitions.approve"] },
+  "materialRequisitions.saveUnit": {
+    any: ["materialRequisitions.units.manage"],
+  },
+  "materialRequisitions.updateExternal": {
+    any: ["materialRequisitions.integration"],
+  },
   "phaseOne.saveInspection": { any: ["p1.inspections.manage"] },
   "phaseOne.enableInspections": { any: ["p1.inspections.manage"] },
   "phaseOne.configureSchedule": { any: ["p1.certificates.schedule"] },
@@ -105,5 +148,13 @@ export const routePolicies: Record<string, RoutePolicy> = {
   },
   "policy.audit": {
     any: ["policy.view"],
+  },
+};
+
+/** HTTP media endpoints use the same central authorizer as the typed API. */
+export const httpRoutePolicies: Record<string, RoutePolicy> = {
+  "materialRequisitions.catalogImage": { any: ["materialRequisitions.view"] },
+  "materialRequisitions.catalogPreview": {
+    any: ["materialRequisitions.create"],
   },
 };

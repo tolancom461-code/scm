@@ -19,14 +19,14 @@ export function payloadHash(value: unknown) {
   return createHash("sha256").update(canonical(value)).digest("hex");
 }
 /** Must run inside the SAME transaction as the business mutation. */
-export async function once(
+export async function once<T extends { id: number }>(
   tx: Transaction,
   actorId: number,
   operation: string,
   key: string,
   payload: unknown,
-  execute: () => Promise<{ id: number }>
-) {
+  execute: () => Promise<T>
+): Promise<T> {
   const hash = payloadHash(payload);
   await tx
     .insert(operationKeys)
@@ -44,7 +44,7 @@ export async function once(
     .for("update");
   if (!existing || existing.payloadHash !== hash)
     throw new DomainError("CONFLICT");
-  if (existing.result) return existing.result;
+  if (existing.result) return existing.result as T;
   const result = await execute();
   await tx.update(operationKeys).set({ result }).where(filter);
   return result;

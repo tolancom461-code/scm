@@ -32,7 +32,7 @@ import {
 } from "../../shared/policy";
 import type { LocalUser } from "../_core/context";
 import { database, type Transaction } from "./database";
-import { routePolicies } from "./policy-registry";
+import { httpRoutePolicies, routePolicies } from "./policy-registry";
 
 export type AccessContext = { user: LocalUser; scope: AccessScope };
 export const canAccess = (access: AccessContext, code: string) =>
@@ -370,7 +370,7 @@ export async function authorizeRequest(
   const access = await loadAccess(userId);
   if (!access) throw new TRPCError({ code: "UNAUTHORIZED" });
   try {
-    const rule = routePolicies[path];
+    const rule = routePolicies[path] ?? httpRoutePolicies[path];
     if (!rule || rule.public) forbidden("UNREGISTERED_ACTION");
     if (!rule.session && !rule.any?.some(code => canAccess(access, code)))
       forbidden();

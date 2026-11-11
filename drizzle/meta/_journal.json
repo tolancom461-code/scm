@@ -15,6 +15,48 @@
       "when": 1793106081019,
       "tag": "0001_project_module",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1793615389639,
+      "tag": "0002_real_jazinda",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1793695411861,
+      "tag": "0003_rich_giant_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1793711061629,
+      "tag": "0004_glorious_the_hood",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1794319671799,
+      "tag": "0005_yielding_typhoid_mary",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1794321824884,
+      "tag": "0006_brainy_darwin",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1794380876487,
+      "tag": "0007_gantt_history_and_state_size",
+      "breakpoints": true
     }
   ]
 }

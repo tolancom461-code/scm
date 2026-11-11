@@ -5,7 +5,7 @@ export const ATOMIC_PERMISSIONS = [
     action: "view",
     ar: "عرض وحدة المشاريع",
     en: "View project module",
-    ur: "View project module",
+    ur: "منصوبوں کا ماڈیول دیکھیں",
   },
 
   {
@@ -14,7 +14,7 @@ export const ATOMIC_PERMISSIONS = [
     action: "create",
     ar: "إنشاء مشروع وحفظ المسودة",
     en: "Create project drafts",
-    ur: "Create project drafts",
+    ur: "منصوبوں کے مسودے بنائیں",
   },
 
   {
@@ -23,7 +23,7 @@ export const ATOMIC_PERMISSIONS = [
     action: "edit",
     ar: "تعديل مسودات المشاريع",
     en: "Edit project drafts",
-    ur: "Edit project drafts",
+    ur: "منصوبوں کے مسودوں میں ترمیم کریں",
   },
 
   {
@@ -32,7 +32,7 @@ export const ATOMIC_PERMISSIONS = [
     action: "submit",
     ar: "إرسال المشروع للاعتماد",
     en: "Submit projects",
-    ur: "Submit projects",
+    ur: "منصوبے منظوری کے لیے بھیجیں",
   },
 
   {
@@ -41,7 +41,7 @@ export const ATOMIC_PERMISSIONS = [
     action: "review",
     ar: "مراجعة واعتماد المشاريع — الإدارة العليا",
     en: "Review and approve projects",
-    ur: "Review and approve projects",
+    ur: "منصوبوں کا جائزہ لیں اور منظوری دیں",
   },
 
   {
@@ -50,7 +50,7 @@ export const ATOMIC_PERMISSIONS = [
     action: "start",
     ar: "بدء تنفيذ المشروع المعتمد",
     en: "Start approved projects",
-    ur: "Start approved projects",
+    ur: "منظور شدہ منصوبے شروع کریں",
   },
 
   {
@@ -59,7 +59,7 @@ export const ATOMIC_PERMISSIONS = [
     action: "tasks_manage",
     ar: "إدارة مهام المشروع",
     en: "Manage project tasks",
-    ur: "Manage project tasks",
+    ur: "منصوبوں کے کام منظم کریں",
   },
 
   {
@@ -68,7 +68,7 @@ export const ATOMIC_PERMISSIONS = [
     action: "employees_manage",
     ar: "إدارة قائمة الموظفين",
     en: "Manage employee directory",
-    ur: "Manage employee directory",
+    ur: "ملازمین کی فہرست منظم کریں",
   },
 
   {
@@ -77,7 +77,56 @@ export const ATOMIC_PERMISSIONS = [
     action: "statuses_manage",
     ar: "تعديل حالات المهام وإضافة حالات",
     en: "Manage task statuses",
-    ur: "Manage task statuses",
+    ur: "کاموں کی حالتیں منظم کریں",
+  },
+
+  {
+    code: "materialRequisitions.view",
+    module: "materialRequisitions",
+    action: "view",
+    ar: "عرض طلبات الاحتياج",
+    en: "View material requisitions",
+    ur: "مواد کی ضرورت کی درخواستیں دیکھیں",
+  },
+  {
+    code: "materialRequisitions.create",
+    module: "materialRequisitions",
+    action: "create",
+    ar: "إنشاء وتعديل مسودات طلبات الاحتياج",
+    en: "Create and edit material requisition drafts",
+    ur: "مواد کی ضرورت کے مسودے بنائیں اور تبدیل کریں",
+  },
+  {
+    code: "materialRequisitions.approve",
+    module: "materialRequisitions",
+    action: "approve",
+    ar: "اعتماد طلبات الاحتياج الرسمية",
+    en: "Approve official material requisitions",
+    ur: "مواد کی سرکاری درخواستیں منظور کریں",
+  },
+  {
+    code: "materialRequisitions.units.manage",
+    module: "materialRequisitions",
+    action: "units_manage",
+    ar: "إدارة وحدات قياس طلبات الاحتياج",
+    en: "Manage material requisition units",
+    ur: "مواد کی درخواست کی اکائیاں منظم کریں",
+  },
+  {
+    code: "materialRequisitions.integration",
+    module: "materialRequisitions",
+    action: "integration",
+    ar: "تحديث ربط طلبات الاحتياج مع نظام الشراء الخارجي",
+    en: "Update external purchasing integration",
+    ur: "بیرونی خریداری نظام کا ربط اپ ڈیٹ کریں",
+  },
+  {
+    code: "materialRequisitions.print",
+    module: "materialRequisitions",
+    action: "print",
+    ar: "طباعة طلبات الاحتياج",
+    en: "Print material requisitions",
+    ur: "مواد کی درخواستیں پرنٹ کریں",
   },
 
   {
@@ -87,11 +136,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "inspections_view",
 
-    ar: "ط¹ط±ط¶ ظپط­طµ ط§ظ„ط£ط¹ظ…ط§ظ„ FIR",
+    ar: "عرض فحص الأعمال FIR",
 
     en: "View work inspections FIR",
 
-    ur: "ع©ط§ظ… ع©غ’ ظ…ط¹ط§ط¦ظ†غ’ ط¯غŒع©ع¾غŒع؛",
+    ur: "کام کے معائنے دیکھیں",
   },
 
   {
@@ -101,11 +150,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "inspections_manage",
 
-    ar: "ط¥ظ†ط´ط§ط، ظپط­طµ ط§ظ„ط£ط¹ظ…ط§ظ„ ظˆطھط¹ط¯ظٹظ„ ظ†طھظٹط¬طھظ‡",
+    ar: "إنشاء فحص الأعمال وتعديل نتيجته",
 
     en: "Create work inspections and record results",
 
-    ur: "ع©ط§ظ… ع©غ’ ظ…ط¹ط§ط¦ظ†غ’ ط¨ظ†ط§ط¦غŒع؛ ط§ظˆط± ظ†طھط§ط¦ط¬ ط¯ط±ط¬ ع©ط±غŒع؛",
+    ur: "کام کے معائنے بنائیں اور نتائج درج کریں",
   },
 
   {
@@ -115,11 +164,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "certificates_schedule",
 
-    ar: "ط§ط¹طھظ…ط§ط¯ ط¬ط¯ظˆظ„ ط¯ظپط¹ط§طھ ط§ظ„ظ…ط³طھط®ظ„طµ ظˆطھط¹ط¯ظٹظ„ طھظˆط²ظٹط¹ ط§ظ„ط³ظ†ط¯ط§طھ",
+    ar: "اعتماد جدول دفعات المستخلص وتعديل توزيع السندات",
 
     en: "Approve certificate installment schedules and voucher allocation",
 
-    ur: "ظ…ط³طھط®ظ„طµ ع©غŒ ط§ظ‚ط³ط§ط· ع©ط§ ط´غŒعˆظˆظ„ ظ…ظ†ط¸ظˆط± ع©ط±غŒع؛",
+    ur: "مستخلص کی اقساط کا شیڈول منظور کریں",
   },
 
   {
@@ -129,11 +178,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "payments_reverse_approve",
 
-    ar: "ط§ط¹طھظ…ط§ط¯ ط£ظˆ ط±ظپط¶ ط¹ظƒط³ ط³ط¬ظ„ ط§ظ„طµط±ظپ",
+    ar: "اعتماد أو رفض عكس سجل الصرف",
 
     en: "Approve or reject disbursement record reversals",
 
-    ur: "ط§ط¯ط§ط¦غŒع¯غŒ ع©غŒ ظˆط§ظ¾ط³غŒ ظ…ظ†ط¸ظˆط± غŒط§ ظ…ط³طھط±ط¯ ع©ط±غŒع؛",
+    ur: "ادائیگی کی واپسی منظور یا مسترد کریں",
   },
 
   {
@@ -143,11 +192,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "contracts_handover",
 
-    ar: "ط§ط¹طھظ…ط§ط¯ ط§ظ„طھط³ظ„ظٹظ… ط§ظ„ظ†ظ‡ط§ط¦ظٹ ظˆط¨ط¯ط§ظٹط© ط§ظ„ط¶ظ…ط§ظ†",
+    ar: "اعتماد التسليم النهائي وبداية الضمان",
 
     en: "Approve final handover and warranty commencement",
 
-    ur: "ط¢ط®ط±غŒ ط­ظˆط§ظ„ع¯غŒ ط§ظˆط± ط¶ظ…ط§ظ†طھ ع©ط§ ط¢ط؛ط§ط² ظ…ظ†ط¸ظˆط± ع©ط±غŒع؛",
+    ur: "آخری حوالگی اور ضمانت کا آغاز منظور کریں",
   },
 
   {
@@ -157,11 +206,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "view",
 
-    ar: "ط¹ط±ط¶ ظ…ط±ظƒط² ط§ظ„ط³ظٹط§ط³ط§طھ",
+    ar: "عرض مركز السياسات",
 
     en: "View policy center",
 
-    ur: "ظ¾ط§ظ„غŒط³غŒ ظ…ط±ع©ط² ط¯غŒع©ع¾غŒع؛",
+    ur: "پالیسی مرکز دیکھیں",
   },
 
   {
@@ -171,11 +220,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "manage",
 
-    ar: "ط¥ط¯ط§ط±ط© ط§ظ„ط£ط¯ظˆط§ط± ظˆط§ظ„طµظ„ط§ط­ظٹط§طھ ظˆظ†ط·ط§ظ‚ ط§ظ„ظ…ط´ط§ط±ظٹط¹",
+    ar: "إدارة الأدوار والصلاحيات ونطاق المشاريع",
 
     en: "Manage roles, permissions and project scope",
 
-    ur: "ع©ط±ط¯ط§ط±طŒ ط§ط¬ط§ط²طھغŒع؛ ط§ظˆط± ظ…ظ†طµظˆط¨ظˆع؛ ع©ط§ ط¯ط§ط¦ط±غپ ظ…ظ†ط¸ظ… ع©ط±غŒع؛",
+    ur: "کردار، اجازتیں اور منصوبوں کا دائرہ منظم کریں",
   },
 
   {
@@ -185,11 +234,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "projects_view",
 
-    ar: "ط¹ط±ط¶ ظ…ط´ط§ط±ظٹط¹ ط§ظ„ظ…ط±ط­ظ„ط© ط§ظ„ط£ظˆظ„ظ‰",
+    ar: "عرض مشاريع المرحلة الأولى",
 
     en: "View current projects",
 
-    ur: "ظ…ظˆط¬ظˆط¯غپ ظ…ظ†طµظˆط¨غ’ ط¯غŒع©ع¾غŒع؛",
+    ur: "موجودہ منصوبے دیکھیں",
   },
 
   {
@@ -199,11 +248,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "projects_create",
 
-    ar: "ط¥ط¶ط§ظپط© ظ…ط´ط±ظˆط¹",
+    ar: "إضافة مشروع",
 
     en: "Create project",
 
-    ur: "ظ…ظ†طµظˆط¨غپ ط¨ظ†ط§ط¦غŒع؛",
+    ur: "منصوبہ بنائیں",
   },
 
   {
@@ -213,11 +262,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "company_view",
 
-    ar: "ط¹ط±ط¶ طھظ‡ظٹط¦ط© ط§ظ„ط´ط±ظƒط©",
+    ar: "عرض تهيئة الشركة",
 
     en: "View company setup",
 
-    ur: "ع©ظ…ظ¾ظ†غŒ ع©غŒ طھط±طھغŒط¨ط§طھ ط¯غŒع©ع¾غŒع؛",
+    ur: "کمپنی کی ترتیبات دیکھیں",
   },
 
   {
@@ -227,11 +276,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "company_manage",
 
-    ar: "طھط¹ط¯ظٹظ„ طھظ‡ظٹط¦ط© ط§ظ„ط´ط±ظƒط©",
+    ar: "تعديل تهيئة الشركة",
 
     en: "Edit company setup",
 
-    ur: "ع©ظ…ظ¾ظ†غŒ ع©غŒ طھط±طھغŒط¨ط§طھ طھط¨ط¯غŒظ„ ع©ط±غŒع؛",
+    ur: "کمپنی کی ترتیبات تبدیل کریں",
   },
 
   {
@@ -241,11 +290,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "contracts_view",
 
-    ar: "ط¹ط±ط¶ ط§ظ„ط¹ظ‚ظˆط¯ ظˆظ‚ظٹظ…ظ‡ط§ ظˆط¬ط¯ظˆظ„ ط¯ظپط¹ط§طھظ‡ط§",
+    ar: "عرض العقود وقيمها وجدول دفعاتها",
 
     en: "View contracts, values and schedules",
 
-    ur: "ظ…ط¹ط§غپط¯غ’طŒ ط±ظ‚ظ… ط§ظˆط± ط´غŒعˆظˆظ„ ط¯غŒع©ع¾غŒع؛",
+    ur: "معاہدے، رقم اور شیڈول دیکھیں",
   },
 
   {
@@ -255,11 +304,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "contracts_create",
 
-    ar: "ط¥ظ†ط´ط§ط، ط§ظ„ط¹ظ‚ظˆط¯ ظˆطھطµط­ظٹط­ ط´ط±ظˆط·ظ‡ط§ ط§ظ„ظˆطµظپظٹط© ظˆط¥ظ„ط؛ط§ط، ط؛ظٹط± ط§ظ„ظ…ط³طھط®ط¯ظ…",
+    ar: "إنشاء العقود وتصحيح شروطها الوصفية وإلغاء غير المستخدم",
 
     en: "Create contracts, correct descriptive terms and cancel unused contracts",
 
-    ur: "ظ…ط¹ط§غپط¯غ’ ط¨ظ†ط§ط¦غŒع؛طŒ ط´ط±ط§ط¦ط· ط¯ط±ط³طھ ع©ط±غŒع؛ ط§ظˆط± ط؛غŒط± ط§ط³طھط¹ظ…ط§ظ„ ط´ط¯غپ ظ…ط¹ط§غپط¯غ’ ظ…ظ†ط³ظˆط® ع©ط±غŒع؛",
+    ur: "معاہدے بنائیں، شرائط درست کریں اور غیر استعمال شدہ معاہدے منسوخ کریں",
   },
 
   {
@@ -269,11 +318,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "certificates_view",
 
-    ar: "ط¹ط±ط¶ ط§ظ„ظ…ط³طھط®ظ„طµط§طھ ظˆظ‚ظٹظ…ظ‡ط§",
+    ar: "عرض المستخلصات وقيمها",
 
     en: "View certificates and values",
 
-    ur: "ظ…ط³طھط®ظ„طµ ط§ظˆط± ط±ظ‚ظ… ط¯غŒع©ع¾غŒع؛",
+    ur: "مستخلص اور رقم دیکھیں",
   },
 
   {
@@ -283,11 +332,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "certificates_create",
 
-    ar: "ط¥ط¹ط¯ط§ط¯ ظ…ط³طھط®ظ„طµ ظ…ط±ط­ظ„ط© ط£ظˆظ„ظ‰",
+    ar: "إعداد مستخلص مرحلة أولى",
 
     en: "Prepare current certificate",
 
-    ur: "ظ…ظˆط¬ظˆط¯غپ ظ…ط³طھط®ظ„طµ طھغŒط§ط± ع©ط±غŒع؛",
+    ur: "موجودہ مستخلص تیار کریں",
   },
 
   {
@@ -297,11 +346,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "certificates_approve",
 
-    ar: "ط§ط¹طھظ…ط§ط¯ ط£ظˆ ط±ظپط¶ ط§ظ„ظ…ط³طھط®ظ„طµ",
+    ar: "اعتماد أو رفض المستخلص",
 
     en: "Approve or reject certificate",
 
-    ur: "ظ…ط³طھط®ظ„طµ ظ…ظ†ط¸ظˆط± غŒط§ ظ…ط³طھط±ط¯ ع©ط±غŒع؛",
+    ur: "مستخلص منظور یا مسترد کریں",
   },
 
   {
@@ -311,11 +360,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "payments_view",
 
-    ar: "ط¹ط±ط¶ ط§ظ„ظ…طµط±ظˆظپ ظˆط§ظ„ط£ط±طµط¯ط© ظˆط§ظ„ط¯ظپط¹ط© ط§ظ„ظ‚ط§ط¯ظ…ط©",
+    ar: "عرض المصروف والأرصدة والدفعة القادمة",
 
     en: "View disbursements, balances and next installment",
 
-    ur: "ط§ط¯ط§ط¦غŒع¯غŒطŒ ط¨ظ‚ط§غŒط§ ط§ظˆط± ط§ع¯ظ„غŒ ظ‚ط³ط· ط¯غŒع©ع¾غŒع؛",
+    ur: "ادائیگی، بقایا اور اگلی قسط دیکھیں",
   },
 
   {
@@ -325,11 +374,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "payments_record",
 
-    ar: "طھط³ط¬ظٹظ„ ط§ظ„طµط±ظپ ط§ظ„ظپط¹ظ„ظٹ",
+    ar: "تسجيل الصرف الفعلي",
 
     en: "Record actual disbursement",
 
-    ur: "ط§طµظ„ ط§ط¯ط§ط¦غŒع¯غŒ ط¯ط±ط¬ ع©ط±غŒع؛",
+    ur: "اصل ادائیگی درج کریں",
   },
 
   {
@@ -339,11 +388,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "retention_release",
 
-    ar: "ط§ظ„ط¥ظپط±ط§ط¬ ط¹ظ† ط¶ظ…ط§ظ† ط§ظ„ط£ط¹ظ…ط§ظ„",
+    ar: "الإفراج عن ضمان الأعمال",
 
     en: "Release retention",
 
-    ur: "ط±ظˆع©غŒ ع¯ط¦غŒ ط¶ظ…ط§ظ†طھ ط¬ط§ط±غŒ ع©ط±غŒع؛",
+    ur: "روکی گئی ضمانت جاری کریں",
   },
 
   {
@@ -353,11 +402,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "print",
 
-    ar: "ط·ط¨ط§ط¹ط© ط§ظ„ط¹ظ‚ظˆط¯ ظˆط§ظ„ظ…ط³طھط®ظ„طµط§طھ",
+    ar: "طباعة العقود والمستخلصات",
 
     en: "Print contracts and certificates",
 
-    ur: "ظ…ط¹ط§غپط¯غ’ ط§ظˆط± ظ…ط³طھط®ظ„طµ ظ¾ط±ظ†ظ¹ ع©ط±غŒع؛",
+    ur: "معاہدے اور مستخلص پرنٹ کریں",
   },
 
   {
@@ -367,11 +416,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "edit",
 
-    ar: "طھط¹ط¯ظٹظ„ ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ط³طھط®ط¯ظ…",
+    ar: "تعديل بيانات المستخدم",
 
     en: "Edit user details",
 
-    ur: "طµط§ط±ظپ ع©غŒ ظ…ط¹ظ„ظˆظ…ط§طھ طھط¨ط¯غŒظ„ ع©ط±غŒع؛",
+    ur: "صارف کی معلومات تبدیل کریں",
   },
 
   {
@@ -381,11 +430,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "password_reset",
 
-    ar: "طھط؛ظٹظٹط± ظƒظ„ظ…ط§طھ ظ…ط±ظˆط± ط§ظ„ظ…ط³طھط®ط¯ظ…ظٹظ†",
+    ar: "تغيير كلمات مرور المستخدمين",
 
     en: "Reset user passwords",
 
-    ur: "طµط§ط±ظپ ع©ط§ ظ¾ط§ط³ ظˆط±عˆ طھط¨ط¯غŒظ„ ع©ط±غŒع؛",
+    ur: "صارف کا پاس ورڈ تبدیل کریں",
   },
 
   {
@@ -395,11 +444,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "status_manage",
 
-    ar: "طھط¹ط·ظٹظ„ ط§ظ„ظ…ط³طھط®ط¯ظ…ظٹظ† ظˆطھظپط¹ظٹظ„ظ‡ظ…",
+    ar: "تعطيل المستخدمين وتفعيلهم",
 
     en: "Deactivate and activate users",
 
-    ur: "طµط§ط±ظپ ظپط¹ط§ظ„ غŒط§ ط؛غŒط± ظپط¹ط§ظ„ ع©ط±غŒع؛",
+    ur: "صارف فعال یا غیر فعال کریں",
   },
 
   {
@@ -409,11 +458,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "view",
 
-    ar: "ط¹ط±ط¶ ط§ظ„ظ…ظˆط±ط¯ظٹظ†",
+    ar: "عرض الموردين",
 
     en: "View suppliers",
 
-    ur: "ط³ظ¾ظ„ط§ط¦ط±ط² ط¯غŒع©ع¾غŒع؛",
+    ur: "سپلائرز دیکھیں",
   },
 
   {
@@ -423,11 +472,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "create",
 
-    ar: "ط¥ط¶ط§ظپط© ظ…ظˆط±ط¯",
+    ar: "إضافة مورد",
 
     en: "Create supplier",
 
-    ur: "ط³ظ¾ظ„ط§ط¦ط± ط´ط§ظ…ظ„ ع©ط±غŒع؛",
+    ur: "سپلائر شامل کریں",
   },
 
   {
@@ -437,11 +486,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "edit",
 
-    ar: "طھط¹ط¯ظٹظ„ ظ…ظˆط±ط¯",
+    ar: "تعديل مورد",
 
     en: "Edit supplier",
 
-    ur: "ط³ظ¾ظ„ط§ط¦ط± طھط¨ط¯غŒظ„ ع©ط±غŒع؛",
+    ur: "سپلائر تبدیل کریں",
   },
 
   {
@@ -451,11 +500,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "view",
 
-    ar: "ط¹ط±ط¶ ط§ظ„ظˆط«ط§ط¦ظ‚",
+    ar: "عرض الوثائق",
 
     en: "View documents",
 
-    ur: "ط¯ط³طھط§ظˆغŒط²ط§طھ ط¯غŒع©ع¾غŒع؛",
+    ur: "دستاویزات دیکھیں",
   },
 
   {
@@ -465,11 +514,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "view_confidential",
 
-    ar: "ط¹ط±ط¶ ط§ظ„ظˆط«ط§ط¦ظ‚ ط§ظ„ط³ط±ظٹط©",
+    ar: "عرض الوثائق السرية",
 
     en: "View confidential documents",
 
-    ur: "ط®ظپغŒغپ ط¯ط³طھط§ظˆغŒط²ط§طھ ط¯غŒع©ع¾غŒع؛",
+    ur: "خفیہ دستاویزات دیکھیں",
   },
 
   {
@@ -479,11 +528,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "upload",
 
-    ar: "ط±ظپط¹ ظˆط«ط§ط¦ظ‚",
+    ar: "رفع وثائق",
 
     en: "Upload documents",
 
-    ur: "ط¯ط³طھط§ظˆغŒط²ط§طھ ط§ظ¾ ظ„ظˆعˆ ع©ط±غŒع؛",
+    ur: "دستاویزات اپ لوڈ کریں",
   },
 
   {
@@ -493,11 +542,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "view",
 
-    ar: "ط¹ط±ط¶ ط§ظ„ظ…ط³طھط®ط¯ظ…ظٹظ†",
+    ar: "عرض المستخدمين",
 
     en: "View users",
 
-    ur: "طµط§ط±ظپغŒظ† ط¯غŒع©ع¾غŒع؛",
+    ur: "صارفین دیکھیں",
   },
 
   {
@@ -507,11 +556,11 @@ export const ATOMIC_PERMISSIONS = [
 
     action: "create",
 
-    ar: "ط¥ظ†ط´ط§ط، ظ…ط³طھط®ط¯ظ…",
+    ar: "إنشاء مستخدم",
 
     en: "Create user",
 
-    ur: "طµط§ط±ظپ ط¨ظ†ط§ط¦غŒع؛",
+    ur: "صارف بنائیں",
   },
 ] as const;
 

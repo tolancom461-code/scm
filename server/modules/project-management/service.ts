@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq, inArray, desc, like, or } from "drizzle-orm";
+import { and, eq, inArray, desc, like, or, lt } from "drizzle-orm";
 import type { z } from "zod";
 import * as s from "../../../drizzle/construction";
 import { users } from "../../../drizzle/schema";
@@ -24,6 +24,16 @@ import { allocateRecordNumber } from "../../core/numbering";
 import { once } from "../../core/idempotency";
 import { recordChange } from "../../core/audit";
 import { DomainError } from "../../core/errors";
+import { assertApprovedRequisitionDates } from "../material-requisitions/schedule-guards";
+import {
+  calendarDays,
+  enforceProjectBounds,
+  ensureTaskSettings,
+  propagateScheduleChanges,
+  rollUpAncestors,
+  shiftIso,
+} from "../gantt/scheduling";
+import { touchGanttStudioStates } from "../gantt/studio-state";
 function invalid(message: string): never {
   throw new TRPCError({ code: "BAD_REQUEST", message });
 }
@@ -55,7 +65,13 @@ export function assertEditable(p: { status: string }, a: AccessContext) {
       "يمكن تعديل المسودة أو المشروع المعاد للتعديل فقط / Only drafts and returned projects can be edited"
     );
 }
-export async function listProjects(a: AccessContext, q = "", status = "") {
+export async function listProjects(
+  a: AccessContext,
+  q = "",
+  status = "",
+  beforeId?: number,
+  pageSize = 200
+) {
   return (await database())
     .select()
     .from(s.constructionProjects)
@@ -68,11 +84,14 @@ export async function listProjects(a: AccessContext, q = "", status = "") {
               like(s.constructionProjects.number, "%" + q + "%")
             )
           : undefined,
-        status ? eq(s.constructionProjects.status, status) : undefined
+        status ? eq(s.constructionProjects.status, status) : undefined,
+        beforeId === undefined
+          ? undefined
+          : lt(s.constructionProjects.id, beforeId)
       )
     )
     .orderBy(desc(s.constructionProjects.id))
-    .limit(200);
+    .limit(pageSize);
 }
 export async function directory() {
   const db = await database();
@@ -133,10 +152,16 @@ export async function saveProject(
         const p = await lockedProject(tx, input.id, a);
         assertEditable(p, a);
         if (p.version !== input.version) throw new DomainError("CONFLICT");
+        if (p.startLocked && p.plannedStartDate !== input.data.plannedStartDate)
+          invalid("بداية المشروع مقفلة. افتح القفل أولًا.");
+        if (p.endLocked && p.plannedEndDate !== input.data.plannedEndDate)
+          invalid("نهاية المشروع مقفلة. افتح القفل أولًا.");
         await tx
           .update(s.constructionProjects)
           .set({ ...input.data, version: p.version + 1, updatedAt: new Date() })
           .where(eq(s.constructionProjects.id, p.id));
+        await assertApprovedRequisitionDates(tx, [p.id]);
+        await touchGanttStudioStates(tx, [p.id], a.user.id);
         await recordChange(tx, {
           actorId: a.user.id,
           action: "pm.project.edited",
@@ -207,7 +232,30 @@ export async function projectAction(
           status: target,
           version: p.version + 1,
           updatedAt: new Date(),
-          ...(target === "active" ? { startedAt: new Date() } : {}),
+          ...(target === "active"
+            ? (() => {
+                const actual =
+                  input.actualStartDate ??
+                  new Date().toISOString().slice(0, 10);
+                const planned = p.plannedStartDate ?? actual;
+                const delta = calendarDays(planned, actual);
+                if (p.startLocked && actual !== planned)
+                  invalid("بداية المشروع مقفلة. افتح القفل أولًا.");
+                const forecastEndDate = p.plannedEndDate
+                  ? shiftIso(p.plannedEndDate, delta)
+                  : p.forecastEndDate;
+                if (
+                  p.endLocked &&
+                  forecastEndDate !== (p.forecastEndDate ?? p.plannedEndDate)
+                )
+                  invalid("نهاية المشروع مقفلة. افتح القفل أولًا.");
+                return {
+                  startedAt: new Date(`${actual}T00:00:00Z`),
+                  actualStartDate: actual,
+                  forecastEndDate,
+                };
+              })()
+            : {}),
         })
         .where(eq(s.constructionProjects.id, p.id));
       await tx.insert(s.projectEvents).values({
@@ -216,6 +264,8 @@ export async function projectAction(
         comment: input.comment,
         actorId: a.user.id,
       });
+      await assertApprovedRequisitionDates(tx, [p.id]);
+      await touchGanttStudioStates(tx, [p.id], a.user.id);
       await recordChange(tx, {
         actorId: a.user.id,
         action: "pm.project." + input.action,
@@ -244,7 +294,8 @@ export async function saveTask(
       const tasks = await tx
         .select()
         .from(s.projectTasks)
-        .where(eq(s.projectTasks.projectId, project.id));
+        .where(eq(s.projectTasks.projectId, project.id))
+        .for("update");
       const original = input.id
         ? tasks.find(t => t.id === input.id)
         : undefined;
@@ -263,7 +314,10 @@ export async function saveTask(
         invalid(
           "الحد الأقصى مهمة رئيسية وأربعة مستويات فرعية / Maximum: one main task and four sublevels"
         );
-      const conflicts = taskDateConflicts(input, tasks);
+      const conflicts = taskDateConflicts(
+        input,
+        tasks.filter(task => task.id !== input.parentId)
+      );
       if (conflicts.length)
         invalid(
           "التواريخ خارج فترة المهمة الأم أو المهام التابعة: " +
@@ -281,10 +335,14 @@ export async function saveTask(
         let ancestor = parent;
         while (ancestor) {
           ancestors.push(ancestor);
-          ancestor = ancestor.parentId ? byId.get(ancestor.parentId)! : undefined!;
+          ancestor = ancestor.parentId
+            ? byId.get(ancestor.parentId)!
+            : undefined!;
         }
         const ancestorStatuses = await tx.select().from(s.taskStatuses);
-        const statusById = new Map(ancestorStatuses.map(item => [item.id, item]));
+        const statusById = new Map(
+          ancestorStatuses.map(item => [item.id, item])
+        );
         const notStarted = ancestors.filter(
           task => statusById.get(task.statusId)?.code === "not_started"
         );
@@ -319,6 +377,18 @@ export async function saveTask(
       };
       let id = input.id;
       if (original) {
+        await ensureTaskSettings(tx, [original.id]);
+        const [schedule] = await tx
+          .select()
+          .from(s.ganttTaskSettings)
+          .where(eq(s.ganttTaskSettings.taskId, original.id))
+          .for("update");
+        if (schedule?.startLocked && original.startDate !== input.startDate)
+          invalid("بداية المهمة مقفلة. افتح القفل من Gantt قبل تغيير التاريخ.");
+        if (schedule?.endLocked && original.endDate !== input.endDate)
+          invalid("نهاية المهمة مقفلة. افتح القفل من Gantt قبل تغيير التاريخ.");
+      }
+      if (original) {
         await tx
           .update(s.projectTasks)
           .set({ ...data, version: original.version + 1 })
@@ -337,6 +407,34 @@ export async function saveTask(
         .values(
           input.employeeIds.map(employeeId => ({ taskId: id!, employeeId }))
         );
+      await ensureTaskSettings(tx, [id!]);
+      const [taskSchedule] = await tx
+        .select()
+        .from(s.ganttTaskSettings)
+        .where(eq(s.ganttTaskSettings.taskId, id!));
+      await tx
+        .update(s.ganttTaskSettings)
+        .set({
+          plannedStartDate: taskSchedule?.plannedStartDate ?? input.startDate,
+          plannedEndDate: taskSchedule?.plannedEndDate ?? input.endDate,
+          version: (taskSchedule?.version ?? 0) + 1,
+        })
+        .where(eq(s.ganttTaskSettings.taskId, id!));
+      const ancestors = await rollUpAncestors(tx, id!, a);
+      const datesChanged =
+        !original ||
+        original.startDate !== data.startDate ||
+        original.endDate !== data.endDate;
+      const affected = await propagateScheduleChanges(
+        tx,
+        {
+          sharedTaskIds: [id!, ...ancestors],
+          dependencyTaskIds: datesChanged ? [id!, ...ancestors] : ancestors,
+        },
+        a
+      );
+      await enforceProjectBounds(tx, project.id, a);
+      await touchGanttStudioStates(tx, [project.id, ...affected], a.user.id);
       await recordChange(tx, {
         actorId: a.user.id,
         action: original ? "pm.task.edited" : "pm.task.created",

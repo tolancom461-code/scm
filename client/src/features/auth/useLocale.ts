@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
 import { localeMeta, type Locale } from "@/lib/i18n";
-export function useLocale(initial: Locale = "ar") {
+export function useLocale(preferred?: Locale, accountId?: number) {
   const [locale, setLocale] = useState<Locale>(() => {
+    if (preferred) return preferred;
     try {
       const stored = localStorage.getItem("procureflow.locale");
       return stored === "ar" || stored === "en" || stored === "ur"
         ? stored
-        : initial;
+        : "ar";
     } catch {
-      return initial;
+      return "ar";
     }
   });
   const applyLocale = (next: Locale) => {
@@ -23,6 +24,9 @@ export function useLocale(initial: Locale = "ar") {
   useEffect(() => {
     applyLocale(locale);
   }, [locale]);
+  useEffect(() => {
+    if (preferred) setLocale(preferred);
+  }, [preferred, accountId]);
   const updateLocale = (next: Locale) => {
     applyLocale(next);
     setLocale(next);

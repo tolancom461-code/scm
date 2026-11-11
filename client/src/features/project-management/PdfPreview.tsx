@@ -15,7 +15,8 @@ export function PdfPreview({ url, locale }: { url: string; locale: Locale }) {
     [rendering, setRendering] = useState(false),
     canvas = useRef<HTMLCanvasElement>(null),
     frame = useRef<HTMLDivElement>(null),
-    t = (ar: string, en: string) => (locale === "ar" ? ar : en);
+    t = (ar: string, en: string, ur: string) =>
+      locale === "ar" ? ar : locale === "en" ? en : ur;
   useEffect(() => {
     let alive = true;
     const task = getDocument({ url, withCredentials: true });
@@ -26,9 +27,11 @@ export function PdfPreview({ url, locale }: { url: string; locale: Locale }) {
       .catch(() => {
         if (alive)
           setError(
-            locale === "ar"
-              ? "تعذر قراءة مستند PDF."
-              : "Unable to read the PDF document."
+            t(
+              "تعذر قراءة مستند PDF.",
+              "Unable to read the PDF document.",
+              "PDF دستاویز نہیں پڑھی جا سکی۔"
+            )
           );
       });
     return () => {
@@ -69,9 +72,11 @@ export function PdfPreview({ url, locale }: { url: string; locale: Locale }) {
       .catch(e => {
         if (alive && e?.name !== "RenderingCancelledException") {
           setError(
-            locale === "ar"
-              ? "تعذر عرض صفحة PDF."
-              : "Unable to display this PDF page."
+            t(
+              "تعذر عرض صفحة PDF.",
+              "Unable to display this PDF page.",
+              "PDF کا یہ صفحہ نہیں دکھایا جا سکا۔"
+            )
           );
           setRendering(false);
         }
@@ -88,16 +93,16 @@ export function PdfPreview({ url, locale }: { url: string; locale: Locale }) {
           disabled={!doc || page <= 1}
           onClick={() => setPage(p => p - 1)}
         >
-          {t("السابقة", "Previous")}
+          {t("السابقة", "Previous", "پچھلا")}
         </button>
         <span>
-          {t("صفحة", "Page")} {page} / {doc?.numPages ?? "—"}
+          {t("صفحة", "Page", "صفحہ")} {page} / {doc?.numPages ?? "—"}
         </span>
         <button
           disabled={!doc || page >= doc.numPages}
           onClick={() => setPage(p => p + 1)}
         >
-          {t("التالية", "Next")}
+          {t("التالية", "Next", "اگلا")}
         </button>
         <button
           disabled={zoom <= 1}
@@ -117,13 +122,23 @@ export function PdfPreview({ url, locale }: { url: string; locale: Locale }) {
       ) : (
         <>
           {(!doc || rendering) && (
-            <p role="status">{t("جاري عرض الصفحة…", "Rendering page…")}</p>
+            <p role="status">
+              {t(
+                "جاري عرض الصفحة…",
+                "Rendering page…",
+                "صفحہ دکھایا جا رہا ہے…"
+              )}
+            </p>
           )}
           <div ref={frame} className="pm-pdf-frame">
             <canvas
               dir="ltr"
               ref={canvas}
-              aria-label={t("صفحة مستند PDF", "PDF document page")}
+              aria-label={t(
+                "صفحة مستند PDF",
+                "PDF document page",
+                "PDF دستاویز کا صفحہ"
+              )}
             />
           </div>
         </>

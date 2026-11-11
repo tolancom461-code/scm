@@ -5,9 +5,9 @@ export const localeMeta: Record<
   Locale,
   { label: string; direction: "rtl" | "ltr"; formatting: string }
 > = {
-  ar: { label: "العربية", direction: "rtl", formatting: "ar-SA" },
-  en: { label: "English", direction: "ltr", formatting: "en-US" },
-  ur: { label: "اردو", direction: "rtl", formatting: "ur-PK" },
+  ar: { label: "العربية", direction: "rtl", formatting: "ar-SA-u-nu-latn" },
+  en: { label: "English", direction: "ltr", formatting: "en-US-u-nu-latn" },
+  ur: { label: "اردو", direction: "rtl", formatting: "ur-PK-u-nu-latn" },
 };
 
 export const translations = {

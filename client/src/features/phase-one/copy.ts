@@ -1,7 +1,13 @@
 import type { Locale } from "@/lib/i18n";
 import { systemBrand } from "@/lib/branding";
 const labels = {
- projectModule:["وحدة المشاريع","Project module","منصوبوں کی اکائی"],
+  projectModule: ["وحدة المشاريع", "Project module", "منصوبوں کی اکائی"],
+  gantt: ["مخطط جانت", "Gantt chart", "گینٹ چارٹ"],
+  materialRequisitions: [
+    "طلبات الاحتياج",
+    "Material requisitions",
+    "مواد کی ضرورت کی درخواستیں",
+  ],
   waitingTurn: [
     "بانتظار استكمال الدفعات السابقة",
     "Awaiting earlier installments",

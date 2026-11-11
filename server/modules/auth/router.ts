@@ -5,6 +5,7 @@ import { publicProcedure, router } from "../../_core/trpc";
 import { roleTemplates } from "../../../shared/policy";
 import * as db from "../../db";
 import {
+  admitLoginSource,
   clearLoginFailures,
   generateSessionToken,
   hashPassword,
@@ -75,7 +76,7 @@ export const authRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const loginKey = `${ctx.req.ip}:${input.username.toLowerCase()}`;
-      if (isLoginRateLimited(loginKey))
+      if (!admitLoginSource(ctx.req.ip ?? "") || isLoginRateLimited(loginKey))
         throw new TRPCError({
           code: "TOO_MANY_REQUESTS",
           message: "محاولات دخول كثيرة؛ أعد المحاولة لاحقاً.",
