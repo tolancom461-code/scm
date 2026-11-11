@@ -152,7 +152,6 @@ export async function projects(a: AccessContext) {
 export async function detail(projectId: number, a: AccessContext) {
   return (await database()).transaction(tx => readDetail(projectId, a, tx), {
     isolationLevel: "repeatable read",
-    accessMode: "read only",
   });
 }
 
