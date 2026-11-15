@@ -153,7 +153,14 @@ export async function saveProject(
 ) {
   return (await database()).transaction(tx =>
     once(tx, a.user.id, "pm.project.save", input.key, input, async () => {
-      const { cmmsLocation, ...data } = input.data;
+      const { cmmsLocation, directLocation, ...data } = input.data;
+      const directLocationFields =
+        directLocation === undefined
+          ? undefined
+          : {
+              directLatitude: directLocation?.lat ?? null,
+              directLongitude: directLocation?.lng ?? null,
+            };
       if (input.id) {
         // Only location changes contact CMMS. Verify scope and version before
         // the remote reads, then recheck the version under the project lock.
@@ -171,6 +178,15 @@ export async function saveProject(
         const p = await lockedProject(tx, input.id, a);
         assertEditable(p, a);
         if (p.version !== input.version) throw new DomainError("CONFLICT");
+        if (
+          directLocationFields &&
+          p.status !== "draft" &&
+          (directLocationFields.directLatitude !== p.directLatitude ||
+            directLocationFields.directLongitude !== p.directLongitude)
+        )
+          invalid(
+            "يمكن تغيير الموقع المباشر في حالة المسودة فقط / The direct location can only be changed while the project is a draft"
+          );
         if (p.startLocked && p.plannedStartDate !== input.data.plannedStartDate)
           invalid("بداية المشروع مقفلة. افتح القفل أولًا.");
         if (p.endLocked && p.plannedEndDate !== input.data.plannedEndDate)
@@ -178,6 +194,7 @@ export async function saveProject(
         const changes = {
           ...data,
           ...location,
+          ...(p.status === "draft" ? directLocationFields : undefined),
           site: location?.cmmsSiteName ?? p.cmmsSiteName ?? data.site,
         };
         await tx
@@ -207,6 +224,7 @@ export async function saveProject(
       const project = {
         ...data,
         ...location,
+        ...directLocationFields,
         site: location?.cmmsSiteName ?? data.site,
       };
       const number = await allocateRecordNumber(tx, "project");

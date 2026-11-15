@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
 import { localeMeta, type Locale } from "@/lib/i18n";
@@ -8,6 +8,10 @@ import { businessDate } from "@shared/date";
 import { projectStates, projectFileExtensions } from "@shared/construction";
 import { toast } from "sonner";
 import { FilePreview } from "./Preview";
+import {
+  GoogleProjectMap,
+  type GoogleProjectMapPoint,
+} from "./GoogleProjectMap";
 import { MaterialRequisitionForm } from "../material-requisitions/MaterialRequisitions";
 import { mrText } from "../material-requisitions/copy";
 import "./projects.css";
@@ -49,6 +53,16 @@ const defaultStatuses: Record<string, LocalizedLabel> = {
 };
 const text = (locale: Locale) => (ar: string, en: string, ur: string) =>
   locale === "ar" ? ar : locale === "en" ? en : ur;
+function directLocationOf(project?: Project): GoogleProjectMapPoint | null {
+  const lat = project?.directLatitude;
+  const lng = project?.directLongitude;
+  return typeof lat === "number" && typeof lng === "number"
+    ? { lat, lng }
+    : null;
+}
+function directLocationCoordinates({ lat, lng }: GoogleProjectMapPoint) {
+  return lat.toFixed(6) + ", " + lng.toFixed(6);
+}
 function statusName(status: Directory["statuses"][number], locale: Locale) {
   return status.version === 0 && defaultStatuses[status.code]
     ? defaultStatuses[status.code][localeIndex[locale]]
@@ -592,17 +606,29 @@ function ProjectForm({
       sectionId: project?.cmmsSectionId ?? null,
       assetId: project?.cmmsAssetId ?? null,
     }),
+    [directLocation, setDirectLocation] = useState(() =>
+      directLocationOf(project)
+    ),
+    [locationPicker, setLocationPicker] = useState<{
+      point: GoogleProjectMapPoint | null;
+    } | null>(null),
     [files, setFiles] = useState<File[]>([]),
     [busy, setBusy] = useState(false);
   const save = trpc.projectManagement.save.useMutation(),
     upload = trpc.documents.upload.useMutation();
   const cmms = trpc.cmmsReferences.status.useQuery();
+  const canEditDirectLocation = !project || project.status === "draft";
+  const directLocationChanged =
+    canEditDirectLocation &&
+    ((directLocation?.lat ?? null) !== (project?.directLatitude ?? null) ||
+      (directLocation?.lng ?? null) !== (project?.directLongitude ?? null));
   const locationConfigured = cmms.data?.configured === true;
   const locationChanged =
     location.siteId !== (project?.cmmsSiteId ?? null) ||
     location.sectionId !== (project?.cmmsSectionId ?? null) ||
     location.assetId !== (project?.cmmsAssetId ?? null);
-  const mustSelectLocation = locationConfigured && (!project || locationChanged);
+  const mustSelectLocation =
+    locationConfigured && (!project || locationChanged);
   const locationIncomplete =
     mustSelectLocation && (!location.siteId || !location.sectionId);
   const loadingLocationConfig = !project && !cmms.data;
@@ -619,6 +645,7 @@ function ProjectForm({
         version: project?.version ?? 0,
         data: {
           ...form,
+          ...(directLocationChanged ? { directLocation } : {}),
           ...(locationConfigured &&
           locationChanged &&
           location.siteId !== null &&
@@ -669,15 +696,66 @@ function ProjectForm({
   return (
     <Modal
       title={
-        project
-          ? t("تعديل المشروع", "Edit project", "منصوبے میں ترمیم کریں")
-          : t("إنشاء مشروع", "Create project", "منصوبہ بنائیں")
+        locationPicker
+          ? t(
+              "تحديد الموقع المباشر",
+              "Select the direct location",
+              "براہ راست مقام منتخب کریں"
+            )
+          : project
+            ? t("تعديل المشروع", "Edit project", "منصوبے میں ترمیم کریں")
+            : t("إنشاء مشروع", "Create project", "منصوبہ بنائیں")
       }
       close={() => {
-        if (!busy) close();
+        if (busy) return;
+        if (locationPicker) setLocationPicker(null);
+        else close();
       }}
     >
-      <form className="pm-form" onSubmit={submit}>
+      {locationPicker && (
+        <div className="pm-direct-location-map">
+          <p className="pm-help">
+            {t(
+              "اضغط على الخريطة لتحديد نقطة المشروع.",
+              "Click the map to place the project pin.",
+              "منصوبے کا پن لگانے کے لیے نقشے پر کلک کریں۔"
+            )}
+          </p>
+          <GoogleProjectMap
+            locale={locale}
+            point={locationPicker.point}
+            mode="pick"
+            onPick={point => setLocationPicker({ point })}
+          />
+          <div className="pm-actions">
+            <button
+              type="button"
+              className="primary"
+              disabled={!locationPicker.point}
+              onClick={() => {
+                if (!locationPicker.point) return;
+                setDirectLocation(locationPicker.point);
+                setLocationPicker(null);
+              }}
+            >
+              {t("اختيار هذه النقطة", "Use this point", "یہ مقام منتخب کریں")}
+            </button>
+            <button type="button" onClick={() => setLocationPicker(null)}>
+              {t("رجوع", "Back", "واپس")}
+            </button>
+            {locationPicker.point && (
+              <bdi dir="ltr" aria-live="polite">
+                {directLocationCoordinates(locationPicker.point)}
+              </bdi>
+            )}
+          </div>
+        </div>
+      )}
+      <form
+        className="pm-form"
+        hidden={locationPicker !== null}
+        onSubmit={submit}
+      >
         <p className="pm-help">
           {t(
             "الحفظ هنا كمسودة فقط. الإرسال للإدارة العليا خطوة مستقلة من تفاصيل المشروع.",
@@ -702,6 +780,52 @@ function ProjectForm({
           required={mustSelectLocation}
           onChange={setLocation}
         />
+        <div className="pm-field">
+          <span>
+            {t("الموقع المباشر", "Direct location", "براہ راست مقام")}
+          </span>
+          {canEditDirectLocation ? (
+            <div className="pm-actions">
+              <button
+                type="button"
+                onClick={() => setLocationPicker({ point: directLocation })}
+                disabled={busy}
+              >
+                {directLocation
+                  ? t(
+                      "تغيير الموقع المباشر",
+                      "Change direct location",
+                      "براہ راست مقام تبدیل کریں"
+                    )
+                  : t(
+                      "تحديد الموقع على الخريطة",
+                      "Choose a location on the map",
+                      "نقشے پر مقام منتخب کریں"
+                    )}
+              </button>
+              {directLocation && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setDirectLocation(null)}
+                >
+                  {t("إزالة الموقع", "Remove location", "مقام ہٹائیں")}
+                </button>
+              )}
+            </div>
+          ) : (
+            <small>
+              {t(
+                "تعديل الموقع المباشر متاح في المسودة.",
+                "Direct location can be edited in a draft.",
+                "براہ راست مقام مسودے میں تبدیل کیا جا سکتا ہے۔"
+              )}
+            </small>
+          )}
+          {directLocation && (
+            <bdi dir="ltr">{directLocationCoordinates(directLocation)}</bdi>
+          )}
+        </div>
         {cmms.data?.configured === false && (
           <p className="pm-help">
             {t(
@@ -829,6 +953,130 @@ function ProjectForm({
         </div>
       </form>
     </Modal>
+  );
+}
+function ProjectDirectLocationDetails({
+  project,
+  locale,
+}: {
+  project: Project;
+  locale: Locale;
+}) {
+  const t = text(locale);
+  const point = directLocationOf(project);
+  const [dialog, setDialog] = useState<"share" | "map" | null>(null);
+  const urlInput = useRef<HTMLInputElement>(null);
+  if (!point) return null;
+
+  const showActions =
+    project.status === "approved" || project.status === "active";
+  const mapUrl = new URL("https://www.google.com/maps/search/");
+  mapUrl.searchParams.set("api", "1");
+  mapUrl.searchParams.set("query", point.lat + "," + point.lng);
+  const url = mapUrl.href;
+  const share = async () => {
+    try {
+      const data = { title: project.name, url };
+      if (
+        typeof navigator.share === "function" &&
+        (typeof navigator.canShare !== "function" || navigator.canShare(data))
+      ) {
+        await navigator.share(data);
+        return;
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+    }
+    setDialog("share");
+  };
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success(t("تم نسخ الرابط", "Link copied", "لنک کاپی ہو گیا"));
+    } catch {
+      urlInput.current?.focus();
+      urlInput.current?.select();
+      toast.info(
+        t(
+          "انسخ الرابط من الحقل.",
+          "Copy the selected link.",
+          "منتخب لنک کاپی کریں۔"
+        )
+      );
+    }
+  };
+  return (
+    <div>
+      <dt>{t("الموقع المباشر", "Direct location", "براہ راست مقام")}</dt>
+      <dd>
+        <bdi dir="ltr">{directLocationCoordinates(point)}</bdi>
+        {showActions && (
+          <div className="pm-actions pm-direct-location-actions">
+            <button type="button" onClick={() => void share()}>
+              {t("مشاركة الموقع", "Share location", "مقام شیئر کریں")}
+            </button>
+            <button type="button" onClick={() => setDialog("map")}>
+              {t("عرض على الخريطة", "View on map", "نقشے پر دیکھیں")}
+            </button>
+          </div>
+        )}
+        {showActions && dialog === "map" && (
+          <Modal
+            title={t("الموقع المباشر", "Direct location", "براہ راست مقام")}
+            close={() => setDialog(null)}
+          >
+            <div className="pm-direct-location-map">
+              <GoogleProjectMap
+                locale={locale}
+                point={point}
+                mode="satellite"
+              />
+            </div>
+          </Modal>
+        )}
+        {showActions && dialog === "share" && (
+          <Modal
+            title={t("مشاركة الموقع", "Share location", "مقام شیئر کریں")}
+            close={() => setDialog(null)}
+          >
+            <div className="pm-direct-location-share">
+              <Field label={t("رابط الموقع", "Location link", "مقام کا لنک")}>
+                <input
+                  ref={urlInput}
+                  value={url}
+                  readOnly
+                  dir="ltr"
+                  onFocus={e => e.currentTarget.select()}
+                />
+              </Field>
+              <div className="pm-actions">
+                <button type="button" onClick={() => void copyLink()}>
+                  {t("نسخ الرابط", "Copy link", "لنک کاپی کریں")}
+                </button>
+                <a
+                  href={"https://wa.me/?text=" + encodeURIComponent(url)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {t(
+                    "مشاركة عبر واتساب",
+                    "Share on WhatsApp",
+                    "واٹس ایپ پر شیئر کریں"
+                  )}
+                </a>
+                <a href={url} target="_blank" rel="noreferrer">
+                  {t(
+                    "فتح في خرائط Google",
+                    "Open in Google Maps",
+                    "گوگل میپس میں کھولیں"
+                  )}
+                </a>
+              </div>
+            </div>
+          </Modal>
+        )}
+      </dd>
+    </div>
   );
 }
 function ProjectDetail({
@@ -1131,6 +1379,7 @@ function ProjectDetail({
             </div>
           </>
         )}
+        <ProjectDirectLocationDetails project={project} locale={locale} />
         <div>
           <dt>{t("وصف المشروع", "Project description", "منصوبے کی تفصیل")}</dt>
           <dd>{project.description || "—"}</dd>

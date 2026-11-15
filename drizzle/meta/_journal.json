@@ -64,6 +64,13 @@
       "when": 1794744000000,
       "tag": "0008_cmms_requisition_integration",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1794754800000,
+      "tag": "0009_project_direct_location",
+      "breakpoints": true
     }
   ]
 }

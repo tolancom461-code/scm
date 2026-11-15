@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   boolean,
   decimal,
+  double,
   foreignKey,
   type AnyMySqlColumn,
 } from "drizzle-orm/mysql-core";
@@ -26,6 +27,8 @@ export const constructionProjects = mysqlTable(
     cmmsSectionName: varchar("cmms_section_name", { length: 255 }),
     cmmsAssetId: int("cmms_asset_id"),
     cmmsAssetName: varchar("cmms_asset_name", { length: 255 }),
+    directLatitude: double("direct_latitude"),
+    directLongitude: double("direct_longitude"),
     description: text("description").notNull(),
     requirements: text("requirements").notNull(),
     plannedStartDate: varchar("planned_start_date", { length: 10 }),

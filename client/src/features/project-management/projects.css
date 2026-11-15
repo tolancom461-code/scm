@@ -135,6 +135,9 @@
   gap: 18px;
   margin-top: 20px;
 }
+.pm-form[hidden] {
+  display: none;
+}
 .pm-field {
   display: grid;
   gap: 8px;
@@ -210,6 +213,25 @@
   white-space: pre-wrap;
   line-height: 1.85;
   overflow-wrap: anywhere;
+}
+.modal-card:has(> .pm-direct-location-map) {
+  width: min(960px, 100%);
+}
+.pm-direct-location-map,
+.pm-direct-location-share {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  white-space: normal;
+}
+.pm-direct-location-map .pm-help {
+  margin: 0;
+}
+.pm-direct-location-actions {
+  margin-top: 8px;
+}
+.pm-direct-location-share a {
+  color: #8ad8eb;
 }
 .pm-panel {
   border: 1px solid #2d3c52;

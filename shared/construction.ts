@@ -7,6 +7,10 @@ export const cmmsProjectLocationInput = z.object({
   assetId: id.nullable().default(null),
   locale: z.enum(["ar", "en", "ur"]).optional(),
 });
+const projectDirectLocationInput = z.strictObject({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+});
 export const projectStates = [
   "draft",
   "pending",
@@ -24,6 +28,7 @@ export const projectData = z
     plannedStartDate: dateInput.nullable().default(null),
     plannedEndDate: dateInput.nullable().default(null),
     cmmsLocation: cmmsProjectLocationInput.optional(),
+    directLocation: projectDirectLocationInput.nullable().optional(),
   })
   .refine(
     v =>
