@@ -34,6 +34,11 @@ import {
   shiftIso,
 } from "../gantt/scheduling";
 import { touchGanttStudioStates } from "../gantt/studio-state";
+import { cmmsReferencesConfigured } from "../cmms-integration/references";
+import {
+  matchesProjectLocation,
+  resolveProjectLocation,
+} from "./cmms-location";
 function invalid(message: string): never {
   throw new TRPCError({ code: "BAD_REQUEST", message });
 }
@@ -148,7 +153,21 @@ export async function saveProject(
 ) {
   return (await database()).transaction(tx =>
     once(tx, a.user.id, "pm.project.save", input.key, input, async () => {
+      const { cmmsLocation, ...data } = input.data;
       if (input.id) {
+        // Only location changes contact CMMS. Verify scope and version before
+        // the remote reads, then recheck the version under the project lock.
+        let location:
+          | Awaited<ReturnType<typeof resolveProjectLocation>>
+          | undefined;
+        if (cmmsLocation) {
+          const observed = await assertConstructionAccess(a, input.id, tx);
+          assertEditable(observed, a);
+          if (observed.version !== input.version)
+            throw new DomainError("CONFLICT");
+          if (!matchesProjectLocation(cmmsLocation, observed))
+            location = await resolveProjectLocation(cmmsLocation);
+        }
         const p = await lockedProject(tx, input.id, a);
         assertEditable(p, a);
         if (p.version !== input.version) throw new DomainError("CONFLICT");
@@ -156,9 +175,14 @@ export async function saveProject(
           invalid("بداية المشروع مقفلة. افتح القفل أولًا.");
         if (p.endLocked && p.plannedEndDate !== input.data.plannedEndDate)
           invalid("نهاية المشروع مقفلة. افتح القفل أولًا.");
+        const changes = {
+          ...data,
+          ...location,
+          site: location?.cmmsSiteName ?? p.cmmsSiteName ?? data.site,
+        };
         await tx
           .update(s.constructionProjects)
-          .set({ ...input.data, version: p.version + 1, updatedAt: new Date() })
+          .set({ ...changes, version: p.version + 1, updatedAt: new Date() })
           .where(eq(s.constructionProjects.id, p.id));
         await assertApprovedRequisitionDates(tx, [p.id]);
         await touchGanttStudioStates(tx, [p.id], a.user.id);
@@ -168,15 +192,27 @@ export async function saveProject(
           entityType: "pm_project",
           entityId: p.id,
           before: p,
-          after: input.data,
+          after: changes,
         });
         return { id: p.id };
       }
       requirePermission(a, "pm.create");
+      if (cmmsReferencesConfigured() && !cmmsLocation)
+        invalid(
+          "حدد الموقع والقسم من CMMS / Select the CMMS site and section / سی ایم ایم ایس سے مقام اور شعبہ منتخب کریں۔"
+        );
+      const location = cmmsLocation
+        ? await resolveProjectLocation(cmmsLocation)
+        : undefined;
+      const project = {
+        ...data,
+        ...location,
+        site: location?.cmmsSiteName ?? data.site,
+      };
       const number = await allocateRecordNumber(tx, "project");
       const [result] = await tx
         .insert(s.constructionProjects)
-        .values({ ...input.data, number, createdBy: a.user.id });
+        .values({ ...project, number, createdBy: a.user.id });
       const id = Number(result.insertId);
       await tx
         .insert(accessConstructionProjects)
@@ -186,7 +222,7 @@ export async function saveProject(
         action: "pm.project.created",
         entityType: "pm_project",
         entityId: id,
-        after: { ...input.data, number },
+        after: { ...project, number },
       });
       return { id };
     })

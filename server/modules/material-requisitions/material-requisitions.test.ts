@@ -4,6 +4,7 @@ import {
   externalPurchaseRequestUpdateInput,
   leadDays,
   materialRequisitionSaveInput,
+  projectHasCmmsLocation,
   requisitionItemInput,
 } from "../../../shared/material-requisitions";
 
@@ -42,6 +43,50 @@ describe("Material requisition constraints", () => {
     expect(leadDays("2026-12-10", "2026-12-08")).toBe(2);
     expect(dateFromLead("2027-01-03", 5)).toBe("2026-12-29");
     expect(dateFromLead("2028-03-02", 3)).toBe("2028-02-28");
+  });
+  it("accepts independent CMMS purchase choices per draft line", () => {
+    const request = materialRequisitionSaveInput.parse({
+      key: "ec85b526-7488-4931-ace7-7c6f3abe60f5",
+      projectId: 1,
+      items: [
+        {
+          ...item,
+          cmmsCategoryId: 23,
+          cmmsReviewRole: "construction_procurement_manager",
+        },
+        {
+          ...item,
+          cmmsCategoryId: 9,
+          cmmsReviewRole: "general_maintenance_manager",
+        },
+        item,
+      ],
+    });
+    expect(request.items.map(line => line.cmmsCategoryId)).toEqual([
+      23,
+      9,
+      undefined,
+    ]);
+    expect(request.items.map(line => line.cmmsReviewRole)).toEqual([
+      "construction_procurement_manager",
+      "general_maintenance_manager",
+      undefined,
+    ]);
+    expect(
+      requisitionItemInput.safeParse({ ...item, cmmsCategoryId: 0 }).success
+    ).toBe(false);
+    expect(
+      requisitionItemInput.safeParse({ ...item, cmmsReviewRole: "" }).success
+    ).toBe(false);
+  });
+  it("treats project site and section as the minimum CMMS location", () => {
+    expect(projectHasCmmsLocation({ cmmsSiteId: 5, cmmsSectionId: 17 })).toBe(
+      true
+    );
+    expect(projectHasCmmsLocation({ cmmsSiteId: 5, cmmsSectionId: null })).toBe(
+      false
+    );
+    expect(projectHasCmmsLocation(undefined)).toBe(false);
   });
   it("requires a returning purchase request number and safe navigation links", () => {
     const response = {

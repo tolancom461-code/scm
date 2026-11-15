@@ -199,6 +199,19 @@
 .mr-items td:nth-child(9) {
   min-width: 160px;
 }
+.mr-items .mr-cmms-items,
+.mr-view .mr-cmms-items {
+  min-width: 2020px;
+}
+.mr-items .mr-cmms-fixed,
+.mr-items .mr-cmms-option {
+  min-width: 130px;
+}
+.mr-items .mr-cmms-fixed {
+  background: #142b3a;
+  color: #a6ceda;
+  overflow-wrap: anywhere;
+}
 .mr-items input[readonly],
 .mr-items select:disabled {
   color: #a6ceda;

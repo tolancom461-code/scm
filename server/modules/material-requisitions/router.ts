@@ -10,6 +10,7 @@ import {
 } from "../../../shared/material-requisitions";
 import * as service from "./service";
 import * as catalog from "./catalog";
+import { dispatchApprovedCmmsRequisition } from "../cmms-integration/purchase-delivery";
 
 export const materialRequisitionsRouter = router({
   catalogStatus: requiring("materialRequisitions.create").query(() =>
@@ -59,7 +60,13 @@ export const materialRequisitionsRouter = router({
     .mutation(({ input, ctx }) => service.save(input, ctx.access!)),
   approve: requiring("materialRequisitions.approve")
     .input(materialRequisitionApproveInput)
-    .mutation(({ input, ctx }) => service.approve(input, ctx.access!)),
+    .mutation(async ({ input, ctx }) => {
+      const approved = await service.approve(input, ctx.access!);
+      void dispatchApprovedCmmsRequisition(approved.id).catch(() => {
+        console.error("[CMMS purchase delivery] Immediate delivery failed; the request remains queued.");
+      });
+      return approved;
+    }),
   saveUnit: requiring("materialRequisitions.units.manage")
     .input(materialUnitSaveInput)
     .mutation(({ input, ctx }) => service.saveUnit(input, ctx.access!)),

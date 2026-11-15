@@ -10,6 +10,7 @@ import {
   dateFromLead,
   leadDays,
   materialRequisitionListInput,
+  projectHasCmmsLocation,
 } from "@shared/material-requisitions";
 import { mrText, type MrKey } from "./copy";
 import "./material-requisitions.css";
@@ -30,6 +31,10 @@ type ItemDraft = {
   specifications: string;
   notes: string;
   needDate: string;
+  cmmsCategoryId: number | null;
+  cmmsCategoryName: string | null;
+  cmmsReviewRole: string | null;
+  cmmsReviewRoleName: string | null;
 };
 const defaults = () => materialRequisitionListInput.parse({});
 const compactNumber = (value: string) =>
@@ -51,6 +56,26 @@ function externalLabel(status: string | null, locale: Locale) {
     ? mrText(locale, status as MrKey)
     : "—";
 }
+function purchaseStatusRefresh(
+  records: readonly Pick<Row, "cmmsDispatchNextAt" | "externalStatus">[]
+) {
+  let interval: number | false = false;
+  for (const row of records) {
+    if (!row.cmmsDispatchNextAt) continue;
+    const next =
+      row.externalStatus === "sending"
+        ? 5_000
+        : Math.min(
+            60_000,
+            Math.max(
+              5_000,
+              new Date(row.cmmsDispatchNextAt).getTime() - Date.now()
+            )
+          );
+    interval = interval === false ? next : Math.min(interval, next);
+  }
+  return interval;
+}
 function initialItem(unitId: number, needDate = ""): ItemDraft {
   return {
     catalogEntryId: null,
@@ -62,6 +87,10 @@ function initialItem(unitId: number, needDate = ""): ItemDraft {
     specifications: "",
     notes: "",
     needDate,
+    cmmsCategoryId: null,
+    cmmsCategoryName: null,
+    cmmsReviewRole: null,
+    cmmsReviewRoleName: null,
   };
 }
 const occupiedItem = (item: ItemDraft) =>
@@ -70,8 +99,67 @@ const occupiedItem = (item: ItemDraft) =>
       item.itemName.trim() ||
       item.quantity ||
       item.specifications.trim() ||
-      item.notes.trim()
+      item.notes.trim() ||
+      item.cmmsCategoryId ||
+      item.cmmsReviewRole
   );
+
+function PurchaseRequestReference({
+  number,
+  url,
+}: {
+  number: string | null;
+  url: string | null;
+}) {
+  let href: string | null = null;
+  if (url) {
+    try {
+      const target = new URL(url);
+      if (
+        ["http:", "https:"].includes(target.protocol) &&
+        !target.username &&
+        !target.password
+      )
+        href = target.href;
+    } catch {
+      href = null;
+    }
+  }
+  return href && number ? (
+    <a href={href} target="_blank" rel="noreferrer">
+      {number}
+    </a>
+  ) : (
+    (number ?? "—")
+  );
+}
+
+const cmmsItemColumns = [
+  "cmmsSite",
+  "cmmsSection",
+  "cmmsAsset",
+  "cmmsCategory",
+  "cmmsReviewRole",
+] as const;
+type CmmsProjectNames = Pick<
+  Directory["projects"][number],
+  "cmmsSiteName" | "cmmsSectionName" | "cmmsAssetName"
+>;
+function CmmsLocationCells({ project }: { project?: CmmsProjectNames }) {
+  return (
+    <>
+      <td className="mr-cmms-fixed">
+        <bdi>{project?.cmmsSiteName ?? "—"}</bdi>
+      </td>
+      <td className="mr-cmms-fixed">
+        <bdi>{project?.cmmsSectionName ?? "—"}</bdi>
+      </td>
+      <td className="mr-cmms-fixed">
+        <bdi>{project?.cmmsAssetName ?? "—"}</bdi>
+      </td>
+    </>
+  );
+}
 
 function localImageUrl(value: string | null | undefined) {
   if (!value || !value.startsWith("/material-requisitions/")) return null;
@@ -186,7 +274,13 @@ export function MaterialRequisitions({
     }
   });
   const directory = trpc.materialRequisitions.directory.useQuery(),
-    list = trpc.materialRequisitions.list.useQuery(applied);
+    list = trpc.materialRequisitions.list.useQuery(applied, {
+      refetchInterval: query =>
+        query.state.data?.cmmsDispatchEnabled
+          ? purchaseStatusRefresh(query.state.data.rows)
+          : false,
+    });
+  const references = trpc.cmmsReferences.status.useQuery();
   const approve = trpc.materialRequisitions.approve.useMutation({
     onSuccess: () => {
       void utils.materialRequisitions.invalidate();
@@ -516,13 +610,20 @@ export function MaterialRequisitions({
                   <div>
                     <dt>{c("externalPr")}</dt>
                     <dd dir="ltr">
-                      {row.externalPurchaseRequestNumber ?? "—"}
+                      <PurchaseRequestReference
+                        number={row.externalPurchaseRequestNumber}
+                        url={row.externalReferenceUrl}
+                      />
                     </dd>
                   </div>
                 </dl>
                 {row.status === "approved" && (
                   <p className="mr-integration">
-                    {externalLabel(row.externalStatus, locale)}
+                    {references.data?.configured &&
+                    row.externalStatus === "pending_send" &&
+                    !projectHasCmmsLocation(row)
+                      ? c("cmmsLocalApproval")
+                      : externalLabel(row.externalStatus, locale)}
                   </p>
                 )}
                 <div className="mr-actions">
@@ -547,11 +648,20 @@ export function MaterialRequisitions({
                         className="primary"
                         disabled={approve.isPending}
                         onClick={() => {
-                          if (window.confirm(c("confirmApprove")))
+                          if (
+                            window.confirm(
+                              c(
+                                projectHasCmmsLocation(row)
+                                  ? "confirmApprove"
+                                  : "confirmApproveLocal"
+                              )
+                            )
+                          )
                             approve.mutate({
                               key: crypto.randomUUID(),
                               id: row.id,
                               version: row.version,
+                              locale,
                             });
                         }}
                       >
@@ -680,6 +790,10 @@ function RequisitionEditor({
         specifications: item.specifications,
         notes: item.notes,
         needDate: item.needDate,
+        cmmsCategoryId: item.cmmsCategoryId,
+        cmmsCategoryName: item.cmmsCategoryName,
+        cmmsReviewRole: item.cmmsReviewRole,
+        cmmsReviewRoleName: item.cmmsReviewRoleName,
       })) ?? [initialItem(initialUnit)]
   );
   const [error, setError] = useState(""),
@@ -691,6 +805,20 @@ function RequisitionEditor({
   const tasks = directory.tasks.filter(t => t.projectId === projectId),
     linkedTask = tasks.find(t => t.id === taskId),
     project = directory.projects.find(p => p.id === projectId);
+  const references = trpc.cmmsReferences.status.useQuery();
+  const purchaseOptions = trpc.cmmsReferences.purchaseOptions.useQuery(
+    { locale },
+    { enabled: Boolean(references.data?.configured) }
+  );
+  const categories = purchaseOptions.data?.categories ?? [];
+  const reviewRoles = purchaseOptions.data?.reviewRoles ?? [];
+  const cmmsControlsEnabled = Boolean(
+    references.data?.configured && purchaseOptions.data
+  );
+  const showCmmsFields =
+    references.data?.configured ||
+    projectHasCmmsLocation(project) ||
+    items.some(item => item.cmmsCategoryId || item.cmmsReviewRole);
   const startDate =
       linkedTask?.startDate ??
       project?.actualStartDate ??
@@ -734,8 +862,15 @@ function RequisitionEditor({
       projectId,
       taskId,
       expectedSourceStartDate: startDate,
+      locale,
       items: items.map(
-        ({ imageUrl: _imageUrl, importedUnit: _importedUnit, ...item }) => item
+        ({
+          imageUrl: _imageUrl,
+          importedUnit: _importedUnit,
+          cmmsCategoryName: _cmmsCategoryName,
+          cmmsReviewRoleName: _cmmsReviewRoleName,
+          ...item
+        }) => item
       ),
     });
   };
@@ -765,16 +900,13 @@ function RequisitionEditor({
                   return [
                     ...kept,
                     ...imported.map(item => ({
+                      ...initialItem(item.unitId, maxNeedDate ?? ""),
                       catalogEntryId: item.catalogEntryId,
                       catalogCode: item.catalogCode,
                       imageUrl: item.imageUrl,
                       importedUnit: item.unit,
                       itemName: item.itemName,
-                      quantity: "",
-                      unitId: item.unitId,
                       specifications: item.specifications,
-                      notes: "",
-                      needDate: maxNeedDate ?? "",
                     })),
                   ].slice(0, 20);
                 });
@@ -835,8 +967,29 @@ function RequisitionEditor({
                 <br />
                 {c("startDate")}: <bdi>{startDate || "—"}</bdi>
               </p>
+              {references.data?.configured &&
+                projectId > 0 &&
+                !projectHasCmmsLocation(project) && (
+                  <p className="mr-help">{c("cmmsProjectNotLinked")}</p>
+                )}
+              {cmmsControlsEnabled &&
+                projectHasCmmsLocation(project) &&
+                items.some(
+                  item => !item.cmmsCategoryId || !item.cmmsReviewRole
+                ) && <p className="mr-help">{c("cmmsApproveFields")}</p>}
+              {references.data?.configured && purchaseOptions.isError && (
+                <p className="mr-error" role="alert">
+                  {c("cmmsOptionsUnavailable")}{" "}
+                  <button
+                    type="button"
+                    onClick={() => void purchaseOptions.refetch()}
+                  >
+                    {c("retry")}
+                  </button>
+                </p>
+              )}
               <div className="mr-items">
-                <table>
+                <table className={showCmmsFields ? "mr-cmms-items" : undefined}>
                   <thead>
                     <tr>
                       <th>#</th>
@@ -848,6 +1001,10 @@ function RequisitionEditor({
                       <th>{c("specifications")}</th>
                       <th>{c("notes")}</th>
                       <th>{c("needDate")}</th>
+                      {showCmmsFields &&
+                        cmmsItemColumns.map(column => (
+                          <th key={column}>{c(column)}</th>
+                        ))}
                       <th />
                     </tr>
                   </thead>
@@ -961,6 +1118,81 @@ function RequisitionEditor({
                             }
                           />
                         </td>
+                        {showCmmsFields && (
+                          <>
+                            <CmmsLocationCells project={project} />
+                            <td className="mr-cmms-option">
+                              <select
+                                aria-label={
+                                  c("cmmsCategory") + " " + (index + 1)
+                                }
+                                value={item.cmmsCategoryId ?? ""}
+                                disabled={!cmmsControlsEnabled}
+                                onChange={event => {
+                                  const selected = categories.find(
+                                    option =>
+                                      String(option.id) === event.target.value
+                                  );
+                                  update(index, {
+                                    cmmsCategoryId: selected?.id ?? null,
+                                    cmmsCategoryName: selected?.name ?? null,
+                                  });
+                                }}
+                              >
+                                <option value="">{c("select")}</option>
+                                {item.cmmsCategoryId &&
+                                  !categories.some(
+                                    option => option.id === item.cmmsCategoryId
+                                  ) && (
+                                    <option value={item.cmmsCategoryId}>
+                                      {item.cmmsCategoryName ??
+                                        item.cmmsCategoryId}
+                                    </option>
+                                  )}
+                                {categories.map(option => (
+                                  <option key={option.id} value={option.id}>
+                                    {option.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="mr-cmms-option">
+                              <select
+                                aria-label={
+                                  c("cmmsReviewRole") + " " + (index + 1)
+                                }
+                                value={item.cmmsReviewRole ?? ""}
+                                disabled={!cmmsControlsEnabled}
+                                onChange={event => {
+                                  const selected = reviewRoles.find(
+                                    option => option.code === event.target.value
+                                  );
+                                  update(index, {
+                                    cmmsReviewRole: selected?.code ?? null,
+                                    cmmsReviewRoleName: selected?.name ?? null,
+                                  });
+                                }}
+                              >
+                                <option value="">{c("select")}</option>
+                                {item.cmmsReviewRole &&
+                                  !reviewRoles.some(
+                                    option =>
+                                      option.code === item.cmmsReviewRole
+                                  ) && (
+                                    <option value={item.cmmsReviewRole}>
+                                      {item.cmmsReviewRoleName ??
+                                        item.cmmsReviewRole}
+                                    </option>
+                                  )}
+                                {reviewRoles.map(option => (
+                                  <option key={option.code} value={option.code}>
+                                    {option.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                          </>
+                        )}
                         <td>
                           <button
                             type="button"
@@ -1235,8 +1467,21 @@ export function RequisitionView({
   locale: Locale;
   close: () => void;
 }) {
-  const c = (key: MrKey) => mrText(locale, key),
-    detail = trpc.materialRequisitions.detail.useQuery({ id });
+  const c = (key: MrKey) => mrText(locale, key);
+  const references = trpc.cmmsReferences.status.useQuery();
+  const detail = trpc.materialRequisitions.detail.useQuery(
+    { id },
+    {
+      refetchInterval: query =>
+        query.state.data?.cmmsDispatchEnabled
+          ? purchaseStatusRefresh([query.state.data])
+          : false,
+    }
+  );
+  const project = detail.data?.project;
+  const showCmmsFields =
+    projectHasCmmsLocation(project) ||
+    detail.data?.items.some(item => item.cmmsCategoryId || item.cmmsReviewRole);
   return (
     <div className="mr-modal">
       <Modal
@@ -1266,7 +1511,7 @@ export function RequisitionView({
                 <p className="mr-help">{c("lockedHint")}</p>
               )}
               <div className="mr-view-table">
-                <table>
+                <table className={showCmmsFields ? "mr-cmms-items" : undefined}>
                   <thead>
                     <tr>
                       <th>#</th>
@@ -1278,6 +1523,10 @@ export function RequisitionView({
                       <th>{c("specifications")}</th>
                       <th>{c("notes")}</th>
                       <th>{c("needDate")}</th>
+                      {showCmmsFields &&
+                        cmmsItemColumns.map(column => (
+                          <th key={column}>{c(column)}</th>
+                        ))}
                     </tr>
                   </thead>
                   <tbody>
@@ -1298,6 +1547,17 @@ export function RequisitionView({
                         <td>{item.specifications || "—"}</td>
                         <td>{item.notes || "—"}</td>
                         <td dir="ltr">{item.needDate}</td>
+                        {showCmmsFields && (
+                          <>
+                            <CmmsLocationCells project={project} />
+                            <td>
+                              <bdi>{item.cmmsCategoryName ?? "—"}</bdi>
+                            </td>
+                            <td>
+                              <bdi>{item.cmmsReviewRoleName ?? "—"}</bdi>
+                            </td>
+                          </>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -1316,12 +1576,21 @@ export function RequisitionView({
               {detail.data.status === "approved" && (
                 <p>
                   <b>{c("integrationStatus")}:</b>{" "}
-                  {externalLabel(detail.data.externalStatus, locale)}
+                  {references.data?.configured &&
+                  detail.data.externalStatus === "pending_send" &&
+                  !projectHasCmmsLocation(project)
+                    ? c("cmmsLocalApproval")
+                    : externalLabel(detail.data.externalStatus, locale)}
                 </p>
               )}
               <p>
                 <b>{c("externalPr")}:</b>{" "}
-                <bdi>{detail.data.externalPurchaseRequestNumber ?? "—"}</bdi>
+                <bdi>
+                  <PurchaseRequestReference
+                    number={detail.data.externalPurchaseRequestNumber}
+                    url={detail.data.externalReferenceUrl}
+                  />
+                </bdi>
               </p>
               {detail.data.externalMessage && (
                 <p>{detail.data.externalMessage}</p>

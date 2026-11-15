@@ -26,6 +26,7 @@ import {
   materialRequisitionSaveInput,
   materialUnitSaveInput,
   externalPurchaseRequestUpdateInput,
+  projectHasCmmsLocation,
 } from "../../../shared/material-requisitions";
 import { database, type Database, type Transaction } from "../../core/database";
 import {
@@ -37,6 +38,11 @@ import { allocateRecordNumber } from "../../core/numbering";
 import { once } from "../../core/idempotency";
 import { recordChange } from "../../core/audit";
 import { DomainError } from "../../core/errors";
+import {
+  cmmsReferencesConfigured,
+  readCmmsPurchaseOptions,
+} from "../cmms-integration/references";
+import { cmmsPurchaseSettings } from "../cmms-integration/purchase-client";
 import { catalogImageUrl } from "./catalog";
 
 function invalid(message: string): never {
@@ -115,9 +121,92 @@ type Item = typeof s.materialRequisitionItems.$inferSelect & {
   catalogItemId: string | null;
   imageUrl: string | null;
 };
+type CmmsProjectLocation = Pick<
+  typeof s.constructionProjects.$inferSelect,
+  | "cmmsSiteId"
+  | "cmmsSiteName"
+  | "cmmsSectionId"
+  | "cmmsSectionName"
+  | "cmmsAssetId"
+  | "cmmsAssetName"
+>;
+const projectLocationColumns = {
+  cmmsSiteId: s.constructionProjects.cmmsSiteId,
+  cmmsSiteName: s.constructionProjects.cmmsSiteName,
+  cmmsSectionId: s.constructionProjects.cmmsSectionId,
+  cmmsSectionName: s.constructionProjects.cmmsSectionName,
+  cmmsAssetId: s.constructionProjects.cmmsAssetId,
+  cmmsAssetName: s.constructionProjects.cmmsAssetName,
+};
+function cmmsProjectLocation(project: Partial<CmmsProjectLocation>) {
+  return {
+    cmmsSiteId: project.cmmsSiteId ?? null,
+    cmmsSiteName: project.cmmsSiteName ?? null,
+    cmmsSectionId: project.cmmsSectionId ?? null,
+    cmmsSectionName: project.cmmsSectionName ?? null,
+    cmmsAssetId: project.cmmsAssetId ?? null,
+    cmmsAssetName: project.cmmsAssetName ?? null,
+  };
+}
+type CmmsPurchaseOptions = Awaited<ReturnType<typeof readCmmsPurchaseOptions>>;
+type PurchaseReferences = {
+  itemName: string;
+  cmmsCategoryId?: number | null;
+  cmmsReviewRole?: string | null;
+};
+
+function cmmsPurchaseReferences(
+  item: PurchaseReferences,
+  options: CmmsPurchaseOptions | null,
+  required: boolean
+) {
+  const category = options?.categories.find(
+    option => option.id === item.cmmsCategoryId
+  );
+  const reviewer = options?.reviewRoles.find(
+    option => option.code === item.cmmsReviewRole
+  );
+  if (
+    (required && (!category || !reviewer)) ||
+    (item.cmmsCategoryId != null && !category) ||
+    (item.cmmsReviewRole != null && !reviewer)
+  )
+    invalid(
+      "تحقق من تصنيف وجهة مراجعة الصنف «" +
+        item.itemName +
+        "» في CMMS / Check the CMMS category and review department for “" +
+        item.itemName +
+        "” / اس صنف کا CMMS زمرہ اور جائزہ شعبہ چیک کریں۔"
+    );
+  return {
+    cmmsCategoryId: category?.id ?? null,
+    cmmsCategoryName: category?.name ?? null,
+    cmmsReviewRole: reviewer?.code ?? null,
+    cmmsReviewRoleName: reviewer?.name ?? null,
+  };
+}
+
+// Fetch once per request before taking database locks. Keep transport failures
+// available to the mutation without preventing replays of committed operations.
+async function cmmsOptions(
+  needed: boolean,
+  locale: z.infer<typeof materialRequisitionSaveInput>["locale"]
+) {
+  if (!needed) return { options: null, failure: null };
+  try {
+    return { options: await readCmmsPurchaseOptions(locale), failure: null };
+  } catch (error) {
+    return { options: null, failure: error };
+  }
+}
+
 type Snapshot = {
   schemaVersion: 1;
-  project: { id: number; number: string; name: string };
+  project: {
+    id: number;
+    number: string;
+    name: string;
+  } & Partial<CmmsProjectLocation>;
   task: {
     id: number;
     name: string;
@@ -187,6 +276,10 @@ function displayItems(
     catalogCode: item.catalogCode ?? "",
     catalogItemId: item.catalogItemId ?? null,
     imageUrl: item.imageUrl ?? null,
+    cmmsCategoryId: item.cmmsCategoryId ?? null,
+    cmmsCategoryName: item.cmmsCategoryName ?? null,
+    cmmsReviewRole: item.cmmsReviewRole ?? null,
+    cmmsReviewRoleName: item.cmmsReviewRoleName ?? null,
   }));
 }
 export async function directory(access: AccessContext) {
@@ -199,6 +292,7 @@ export async function directory(access: AccessContext) {
       name: s.constructionProjects.name,
       plannedStartDate: s.constructionProjects.plannedStartDate,
       actualStartDate: s.constructionProjects.actualStartDate,
+      ...projectLocationColumns,
     })
     .from(s.constructionProjects)
     .where(constructionScope(access, s.constructionProjects.id))
@@ -334,6 +428,7 @@ export async function list(
         requisition: s.materialRequisitions,
         projectNumber: s.constructionProjects.number,
         projectName: s.constructionProjects.name,
+        ...projectLocationColumns,
         taskName: s.projectTasks.name,
         taskLevel: s.projectTasks.level,
         taskParentId: s.projectTasks.parentId,
@@ -411,8 +506,12 @@ export async function list(
       return {
         ...row.requisition,
         approvedSnapshot: undefined,
+        cmmsDispatchSourceId: undefined,
+        cmmsDispatchLeaseId: undefined,
+        cmmsDispatchAttempts: undefined,
         projectNumber: official?.project.number ?? row.projectNumber,
         projectName: official?.project.name ?? row.projectName,
+        ...cmmsProjectLocation(official?.project ?? row),
         taskName: official?.task?.name ?? row.taskName,
         taskLevel: official?.task?.level ?? row.taskLevel,
         taskParentId: row.taskParentId,
@@ -427,6 +526,7 @@ export async function list(
     total: Number(totals[0].count),
     page: input.page,
     pageSize: input.pageSize,
+    cmmsDispatchEnabled: cmmsPurchaseSettings() !== null,
   };
 }
 
@@ -464,7 +564,15 @@ export async function detail(id: number, access: AccessContext) {
   return {
     ...row,
     approvedSnapshot: undefined,
-    project: { ...linked.project, ...official?.project },
+    cmmsDispatchSourceId: undefined,
+    cmmsDispatchLeaseId: undefined,
+    cmmsDispatchAttempts: undefined,
+    cmmsDispatchEnabled: cmmsPurchaseSettings() !== null,
+    project: {
+      ...linked.project,
+      ...official?.project,
+      ...cmmsProjectLocation(official?.project ?? linked.project),
+    },
     task: linked.task ? { ...linked.task, ...official?.task } : null,
     creatorName:
       official?.creatorName ??
@@ -488,6 +596,14 @@ export async function save(
   input: z.infer<typeof materialRequisitionSaveInput>,
   access: AccessContext
 ) {
+  const referencesConfigured = cmmsReferencesConfigured();
+  const { options, failure } = await cmmsOptions(
+    referencesConfigured &&
+      input.items.some(
+        item => item.cmmsCategoryId != null || item.cmmsReviewRole != null
+      ),
+    input.locale
+  );
   return (await database()).transaction(tx =>
     once(
       tx,
@@ -548,7 +664,14 @@ export async function save(
           : [];
         const oldLinks = before
           ? await tx
-              .select({ id: s.materialRequisitionItems.catalogEntryId })
+              .select({
+                id: s.materialRequisitionItems.catalogEntryId,
+                cmmsCategoryId: s.materialRequisitionItems.cmmsCategoryId,
+                cmmsCategoryName: s.materialRequisitionItems.cmmsCategoryName,
+                cmmsReviewRole: s.materialRequisitionItems.cmmsReviewRole,
+                cmmsReviewRoleName:
+                  s.materialRequisitionItems.cmmsReviewRoleName,
+              })
               .from(s.materialRequisitionItems)
               .where(eq(s.materialRequisitionItems.requisitionId, before.id))
           : [];
@@ -561,6 +684,19 @@ export async function save(
           )
         )
           throw new DomainError("INVALID_REFERENCE");
+        if (failure) throw failure;
+        const savedOptions: CmmsPurchaseOptions = {
+          categories: oldLinks.flatMap(item =>
+            item.cmmsCategoryId && item.cmmsCategoryName
+              ? [{ id: item.cmmsCategoryId, name: item.cmmsCategoryName }]
+              : []
+          ),
+          reviewRoles: oldLinks.flatMap(item =>
+            item.cmmsReviewRole && item.cmmsReviewRoleName
+              ? [{ code: item.cmmsReviewRole, name: item.cmmsReviewRoleName }]
+              : []
+          ),
+        };
         const resolvedItems = input.items.map(item => {
           const entry = imported.find(
             entry => entry.id === item.catalogEntryId
@@ -570,6 +706,11 @@ export async function save(
             catalogCode: entry?.catalogCode ?? "",
             itemName: entry?.itemName ?? item.itemName,
             unitId: entry?.unitId ?? item.unitId,
+            ...cmmsPurchaseReferences(
+              item,
+              referencesConfigured ? options : savedOptions,
+              false
+            ),
           };
         });
         const unitIds = [...new Set(resolvedItems.map(item => item.unitId))];
@@ -633,7 +774,33 @@ export async function approve(
   input: z.infer<typeof materialRequisitionApproveInput>,
   access: AccessContext
 ) {
-  return (await database()).transaction(tx =>
+  const referencesConfigured = cmmsReferencesConfigured();
+  const db = await database();
+  const [mappedProject] = referencesConfigured
+    ? await db
+        .select({
+          cmmsSiteId: s.constructionProjects.cmmsSiteId,
+          cmmsSectionId: s.constructionProjects.cmmsSectionId,
+        })
+        .from(s.materialRequisitions)
+        .innerJoin(
+          s.constructionProjects,
+          eq(s.constructionProjects.id, s.materialRequisitions.projectId)
+        )
+        .where(
+          and(
+            eq(s.materialRequisitions.id, input.id),
+            eq(s.materialRequisitions.status, "draft"),
+            eq(s.materialRequisitions.version, input.version),
+            constructionScope(access, s.constructionProjects.id)
+          )
+        )
+    : [];
+  const { options, failure } = await cmmsOptions(
+    projectHasCmmsLocation(mappedProject),
+    input.locale
+  );
+  return db.transaction(tx =>
     once(
       tx,
       access.user.id,
@@ -663,9 +830,20 @@ export async function approve(
         const items = await itemsFor(tx, [row.id]);
         if (!items.length || items.length > 20)
           throw new DomainError("INVALID_INPUT");
+        const sendToCmms = projectHasCmmsLocation(linked.project);
+        if (sendToCmms && !referencesConfigured) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "أعد تفعيل ربط قوائم CMMS قبل اعتماد احتياج هذا المشروع / Restore CMMS reference access before approving this project's requisition / اس منصوبے کی درخواست منظور کرنے سے پہلے CMMS حوالہ رابطہ بحال کریں۔",
+          });
+        }
+        if (sendToCmms && failure) throw failure;
+        if (sendToCmms && !options) throw new DomainError("CONFLICT");
         const officialItems = items.map(item => ({
           ...item,
           needDate: dateFromLead(linked.startDate, item.leadDays),
+          ...(sendToCmms ? cmmsPurchaseReferences(item, options, true) : {}),
         }));
         for (const item of officialItems) {
           if (item.leadDays < 3) throw new DomainError("INVALID_INPUT");
@@ -688,6 +866,7 @@ export async function approve(
             id: linked.project.id,
             number: linked.project.number,
             name: linked.project.name,
+            ...cmmsProjectLocation(linked.project),
           },
           task: linked.task
             ? {
@@ -705,6 +884,7 @@ export async function approve(
         const after = {
           status: "approved",
           externalStatus: "pending_send",
+          cmmsDispatchNextAt: sendToCmms ? new Date() : null,
           approvedBy: access.user.id,
           approvedAt: new Date(),
           approvedSnapshot: JSON.stringify(approvedSnapshot),
@@ -826,6 +1006,13 @@ export async function updateExternal(
         if (!row || row.status !== "approved")
           throw new DomainError("NOT_FOUND");
         await assertConstructionAccess(access, row.projectId, tx);
+        if (row.cmmsDispatchNextAt != null || row.cmmsDispatchAttempts > 0) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "يدير الإرسال التلقائي حالة الربط لهذا الطلب / Automatic delivery manages this requisition's integration status / اس درخواست کی انضمام حالت خودکار ارسال کے زیر انتظام ہے۔",
+          });
+        }
         if (
           row.externalPurchaseRequestNumber &&
           input.purchaseRequestNumber &&

@@ -5,6 +5,7 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerDocumentDownloads } from "./documentDownloads";
 import { registerCatalogImages } from "../modules/material-requisitions/catalog-routes";
+import { startCmmsPurchaseDelivery } from "../modules/cmms-integration/purchase-delivery";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -60,6 +61,7 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    startCmmsPurchaseDelivery();
   });
 }
 

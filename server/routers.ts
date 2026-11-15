@@ -8,6 +8,7 @@ import { usersRouter } from "./modules/users/router";
 import { suppliersRouter } from "./modules/suppliers/router";
 import { documentsRouter } from "./modules/documents/router";
 import { materialRequisitionsRouter } from "./modules/material-requisitions/router";
+import { cmmsReferencesRouter } from "./modules/cmms-integration/references-router";
 export const appRouter = router({
   projectManagement: projectManagementRouter,
   gantt: ganttRouter,
@@ -18,5 +19,6 @@ export const appRouter = router({
   suppliers: suppliersRouter,
   documents: documentsRouter,
   materialRequisitions: materialRequisitionsRouter,
+  cmmsReferences: cmmsReferencesRouter,
 });
 export type AppRouter = typeof appRouter;

@@ -13,6 +13,15 @@ export const routePolicies: Record<string, RoutePolicy> = {
   "projectManagement.saveTask": { any: ["pm.tasks.manage"] },
   "projectManagement.saveEmployee": { any: ["pm.employees.manage"] },
   "projectManagement.saveStatus": { any: ["pm.statuses.manage"] },
+  "cmmsReferences.status": {
+    any: ["pm.create", "pm.edit", "materialRequisitions.create", "materialRequisitions.approve"],
+  },
+  "cmmsReferences.sites": { any: ["pm.create", "pm.edit"] },
+  "cmmsReferences.sections": { any: ["pm.create", "pm.edit"] },
+  "cmmsReferences.assets": { any: ["pm.create", "pm.edit"] },
+  "cmmsReferences.purchaseOptions": {
+    any: ["materialRequisitions.create", "materialRequisitions.approve"],
+  },
   "gantt.projects": { any: ["pm.view"] },
   "gantt.detail": { any: ["pm.view"] },
   "gantt.sharedDirectory": { any: ["pm.view"] },

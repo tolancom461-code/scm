@@ -57,6 +57,13 @@
       "when": 1794380876487,
       "tag": "0007_gantt_history_and_state_size",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1794744000000,
+      "tag": "0008_cmms_requisition_integration",
+      "breakpoints": true
     }
   ]
 }

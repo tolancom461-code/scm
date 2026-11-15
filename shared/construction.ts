@@ -1,5 +1,12 @@
 import { z } from "zod";
 import { dateInput } from "./validation";
+const id = z.number().int().positive();
+export const cmmsProjectLocationInput = z.object({
+  siteId: id,
+  sectionId: id,
+  assetId: id.nullable().default(null),
+  locale: z.enum(["ar", "en", "ur"]).optional(),
+});
 export const projectStates = [
   "draft",
   "pending",
@@ -16,6 +23,7 @@ export const projectData = z
     requirements: z.string().trim().max(10000).default(""),
     plannedStartDate: dateInput.nullable().default(null),
     plannedEndDate: dateInput.nullable().default(null),
+    cmmsLocation: cmmsProjectLocationInput.optional(),
   })
   .refine(
     v =>
@@ -28,7 +36,6 @@ export const projectData = z
         "تاريخ نهاية المشروع يجب ألا يسبق البداية / Project end must not precede start",
     }
   );
-const id = z.number().int().positive();
 export const projectSaveInput = z.object({
   key: z.string().uuid(),
   id: id.optional(),

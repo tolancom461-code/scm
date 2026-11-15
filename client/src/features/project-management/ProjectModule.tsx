@@ -389,12 +389,174 @@ export function ProjectModule({
             setSelected(id);
             void utils.projectManagement.invalidate();
             void utils.gantt.projects.invalidate();
+            void utils.materialRequisitions.directory.invalidate();
           }}
         />
       )}
     </section>
   );
 }
+type ProjectLocationSelection = {
+  siteId: number | null;
+  sectionId: number | null;
+  assetId: number | null;
+};
+
+function CmmsLocationSelect({
+  label,
+  placeholder,
+  value,
+  options,
+  saved,
+  disabled,
+  required,
+  onChange,
+}: {
+  label: string;
+  placeholder: string;
+  value: number | null;
+  options?: { id: number; name: string }[];
+  saved?: { id: number | null; name: string | null };
+  disabled?: boolean;
+  required?: boolean;
+  onChange: (value: number | null) => void;
+}) {
+  return (
+    <Field label={label}>
+      <select
+        value={value ?? ""}
+        disabled={disabled}
+        required={required}
+        onChange={event =>
+          onChange(event.target.value ? Number(event.target.value) : null)
+        }
+      >
+        <option value="">{placeholder}</option>
+        {saved?.id != null &&
+          value === saved.id &&
+          !options?.some(option => option.id === saved.id) && (
+            <option value={saved.id}>{saved.name ?? saved.id}</option>
+          )}
+        {options?.map(option => (
+          <option key={option.id} value={option.id}>
+            {option.name}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+}
+
+function ProjectCmmsLocationFields({
+  locale,
+  project,
+  selection,
+  required,
+  onChange,
+}: {
+  locale: Locale;
+  project?: Project;
+  selection: ProjectLocationSelection;
+  required: boolean;
+  onChange: (value: ProjectLocationSelection) => void;
+}) {
+  const t = text(locale);
+  const { siteId, sectionId, assetId } = selection;
+  const sites = trpc.cmmsReferences.sites.useQuery({ locale });
+  const sections = trpc.cmmsReferences.sections.useQuery(
+    { siteId: siteId ?? 0, locale },
+    { enabled: siteId !== null }
+  );
+  const assets = trpc.cmmsReferences.assets.useQuery(
+    { siteId: siteId ?? 0, sectionId: sectionId ?? 0, locale },
+    { enabled: siteId !== null && sectionId !== null }
+  );
+  const failed = [sites, sections, assets].filter(query => query.isError);
+  const isLoading =
+    sites.isFetching || sections.isFetching || assets.isFetching;
+  return (
+    <fieldset className="pm-cmms-location">
+      <legend>
+        {t(
+          "موقع المشروع من CMMS",
+          "Project location from CMMS",
+          "سی ایم ایم ایس سے منصوبے کا مقام"
+        )}
+      </legend>
+      <div className="pm-cmms-location-fields">
+        <CmmsLocationSelect
+          label={t("الموقع", "Site", "مقام") + (required ? " *" : "")}
+          placeholder={t("اختر الموقع", "Select a site", "مقام منتخب کریں")}
+          value={siteId}
+          options={sites.data}
+          saved={
+            project && { id: project.cmmsSiteId, name: project.cmmsSiteName }
+          }
+          required={required}
+          disabled={sites.isLoading}
+          onChange={value =>
+            onChange({ siteId: value, sectionId: null, assetId: null })
+          }
+        />
+        <CmmsLocationSelect
+          label={t("القسم", "Section", "شعبہ") + (required ? " *" : "")}
+          placeholder={t("اختر القسم", "Select a section", "شعبہ منتخب کریں")}
+          value={sectionId}
+          options={sections.data}
+          saved={
+            project && {
+              id: project.cmmsSectionId,
+              name: project.cmmsSectionName,
+            }
+          }
+          required={required}
+          disabled={siteId === null || sections.isLoading}
+          onChange={value =>
+            onChange({ siteId, sectionId: value, assetId: null })
+          }
+        />
+        <CmmsLocationSelect
+          label={t("الأصل (اختياري)", "Asset (optional)", "اثاثہ (اختیاری)")}
+          placeholder={t("بدون أصل", "No asset", "اثاثہ نہیں")}
+          value={assetId}
+          options={assets.data}
+          saved={
+            project && { id: project.cmmsAssetId, name: project.cmmsAssetName }
+          }
+          disabled={sectionId === null || assets.isLoading}
+          onChange={value => onChange({ siteId, sectionId, assetId: value })}
+        />
+      </div>
+      {isLoading && (
+        <small role="status">
+          {t(
+            "جاري جلب قوائم CMMS…",
+            "Loading CMMS choices…",
+            "سی ایم ایم ایس کی فہرستیں لوڈ ہو رہی ہیں…"
+          )}
+        </small>
+      )}
+      {failed.length > 0 && (
+        <p className="pm-help" role="alert">
+          {t(
+            "تعذر جلب قوائم موقع المشروع من CMMS.",
+            "CMMS project locations could not be loaded.",
+            "سی ایم ایم ایس سے منصوبے کے مقامات لوڈ نہیں ہو سکے۔"
+          )}{" "}
+          <button
+            type="button"
+            onClick={() =>
+              void Promise.all(failed.map(query => query.refetch()))
+            }
+          >
+            {t("إعادة المحاولة", "Retry", "دوبارہ کوشش کریں")}
+          </button>
+        </p>
+      )}
+    </fieldset>
+  );
+}
+
 function ProjectForm({
   locale,
   user,
@@ -417,13 +579,29 @@ function ProjectForm({
       plannedStartDate: project?.plannedStartDate ?? null,
       plannedEndDate: project?.plannedEndDate ?? null,
     }),
+    [location, setLocation] = useState<ProjectLocationSelection>({
+      siteId: project?.cmmsSiteId ?? null,
+      sectionId: project?.cmmsSectionId ?? null,
+      assetId: project?.cmmsAssetId ?? null,
+    }),
     [files, setFiles] = useState<File[]>([]),
     [busy, setBusy] = useState(false);
   const save = trpc.projectManagement.save.useMutation(),
     upload = trpc.documents.upload.useMutation();
+  const cmms = trpc.cmmsReferences.status.useQuery();
+  const locationChanged =
+    location.siteId !== (project?.cmmsSiteId ?? null) ||
+    location.sectionId !== (project?.cmmsSectionId ?? null) ||
+    location.assetId !== (project?.cmmsAssetId ?? null);
+  const mustSelectLocation =
+    cmms.data?.configured === true && (!project || locationChanged);
+  const locationIncomplete =
+    mustSelectLocation && (!location.siteId || !location.sectionId);
+  const loadingLocationConfig = !project && !cmms.data;
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (busy || !validateFiles(files, t)) return;
+    if (loadingLocationConfig || locationIncomplete) return;
     setBusy(true);
     let id: number | undefined;
     try {
@@ -431,7 +609,22 @@ function ProjectForm({
         key: crypto.randomUUID(),
         id: project?.id,
         version: project?.version ?? 0,
-        data: form,
+        data: {
+          ...form,
+          ...(cmms.data?.configured &&
+          locationChanged &&
+          location.siteId !== null &&
+          location.sectionId !== null
+            ? {
+                cmmsLocation: {
+                  siteId: location.siteId,
+                  sectionId: location.sectionId,
+                  assetId: location.assetId,
+                  locale,
+                },
+              }
+            : {}),
+        },
       });
       id = result.id;
       for (const f of files)
@@ -493,13 +686,36 @@ function ProjectForm({
             onChange={e => setForm({ ...form, name: e.target.value })}
           />
         </Field>
-        <Field label={t("الموقع", "Location", "مقام")}>
-          <input
-            maxLength={500}
-            value={form.site}
-            onChange={e => setForm({ ...form, site: e.target.value })}
+        {cmms.data?.configured ? (
+          <ProjectCmmsLocationFields
+            locale={locale}
+            project={project}
+            selection={location}
+            required={mustSelectLocation}
+            onChange={setLocation}
           />
-        </Field>
+        ) : (
+          <Field label={t("الموقع", "Location", "مقام")}>
+            <input
+              readOnly={Boolean(project?.cmmsSiteId)}
+              maxLength={500}
+              value={form.site}
+              onChange={e => setForm({ ...form, site: e.target.value })}
+            />
+          </Field>
+        )}
+        {cmms.isError && (
+          <p className="pm-help" role="alert">
+            {t(
+              "تعذر التحقق من إعدادات ربط المواقع.",
+              "Location integration status is unavailable.",
+              "مقام کے انضمام کی حالت دستیاب نہیں۔"
+            )}{" "}
+            <button type="button" onClick={() => void cmms.refetch()}>
+              {t("إعادة المحاولة", "Retry", "دوبارہ کوشش کریں")}
+            </button>
+          </p>
+        )}
         <Field
           label={t("وصف المشروع", "Project description", "منصوبے کی تفصیل")}
         >
@@ -576,7 +792,11 @@ function ProjectForm({
             </Field>
           )}
         <div className="pm-actions">
-          <button type="submit" className="primary" disabled={busy}>
+          <button
+            type="submit"
+            className="primary"
+            disabled={busy || loadingLocationConfig || locationIncomplete}
+          >
             {busy
               ? t("جاري الحفظ…", "Saving…", "محفوظ ہو رہا ہے…")
               : t("حفظ كمسودة", "Save draft", "مسودہ محفوظ کریں")}
@@ -875,8 +1095,20 @@ function ProjectDetail({
         </div>
         <div>
           <dt>{t("الموقع", "Location", "مقام")}</dt>
-          <dd>{project.site || "—"}</dd>
+          <dd>{project.cmmsSiteName ?? (project.site || "—")}</dd>
         </div>
+        {project.cmmsSiteId && (
+          <>
+            <div>
+              <dt>{t("القسم", "Section", "شعبہ")}</dt>
+              <dd>{project.cmmsSectionName ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>{t("الأصل", "Asset", "اثاثہ")}</dt>
+              <dd>{project.cmmsAssetName ?? "—"}</dd>
+            </div>
+          </>
+        )}
         <div>
           <dt>{t("وصف المشروع", "Project description", "منصوبے کی تفصیل")}</dt>
           <dd>{project.description || "—"}</dd>
@@ -987,6 +1219,7 @@ function ProjectDetail({
             void utils.projectManagement.invalidate();
             void utils.gantt.projects.invalidate();
             void utils.gantt.detail.invalidate({ projectId: id });
+            void utils.materialRequisitions.directory.invalidate();
           }}
         />
       )}

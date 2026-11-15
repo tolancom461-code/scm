@@ -25,6 +25,13 @@ export const requisitionItemInput = z.object({
   specifications: z.string().trim().max(5000).default(""),
   notes: z.string().trim().max(5000).default(""),
   needDate: dateInput,
+  cmmsCategoryId: id.max(2_147_483_647).nullable().optional(),
+  cmmsReviewRole: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9_]{1,80}$/)
+    .nullable()
+    .optional(),
 });
 
 export const materialRequisitionSaveInput = z.object({
@@ -34,6 +41,7 @@ export const materialRequisitionSaveInput = z.object({
   projectId: id,
   taskId: id.nullable().default(null),
   expectedSourceStartDate: dateInput.optional(),
+  locale: z.enum(["ar", "en", "ur"]).optional(),
   items: z.array(requisitionItemInput).min(1).max(20),
 });
 
@@ -69,7 +77,17 @@ export const materialRequisitionApproveInput = z.object({
   key: z.string().uuid(),
   id,
   version: z.number().int().nonnegative(),
+  locale: z.enum(["ar", "en", "ur"]).optional(),
 });
+
+export function projectHasCmmsLocation(
+  project:
+    | { cmmsSiteId: number | null; cmmsSectionId: number | null }
+    | null
+    | undefined
+) {
+  return (project?.cmmsSiteId ?? 0) > 0 && (project?.cmmsSectionId ?? 0) > 0;
+}
 
 export const materialUnitSaveInput = z.object({
   key: z.string().uuid(),

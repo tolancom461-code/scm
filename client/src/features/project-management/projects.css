@@ -147,6 +147,24 @@
 .pm-field textarea {
   min-height: 100px;
 }
+.pm-cmms-location {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid #2d3c52;
+  border-radius: 8px;
+  padding: 12px;
+}
+.pm-cmms-location legend,
+.pm-cmms-location small {
+  padding-inline: 4px;
+  color: #a1aec9;
+  font-size: 0.87rem;
+}
+.pm-cmms-location-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: 12px;
+}
 .pm-two {
   display: grid;
   grid-template-columns: 1fr 1fr;
