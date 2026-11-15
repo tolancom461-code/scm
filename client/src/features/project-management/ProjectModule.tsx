@@ -451,29 +451,37 @@ function ProjectCmmsLocationFields({
   locale,
   project,
   selection,
+  configured,
   required,
   onChange,
 }: {
   locale: Locale;
   project?: Project;
   selection: ProjectLocationSelection;
+  configured: boolean;
   required: boolean;
   onChange: (value: ProjectLocationSelection) => void;
 }) {
   const t = text(locale);
   const { siteId, sectionId, assetId } = selection;
-  const sites = trpc.cmmsReferences.sites.useQuery({ locale });
+  const sites = trpc.cmmsReferences.sites.useQuery(
+    { locale },
+    { enabled: configured }
+  );
   const sections = trpc.cmmsReferences.sections.useQuery(
     { siteId: siteId ?? 0, locale },
-    { enabled: siteId !== null }
+    { enabled: configured && siteId !== null }
   );
   const assets = trpc.cmmsReferences.assets.useQuery(
     { siteId: siteId ?? 0, sectionId: sectionId ?? 0, locale },
-    { enabled: siteId !== null && sectionId !== null }
+    { enabled: configured && siteId !== null && sectionId !== null }
   );
-  const failed = [sites, sections, assets].filter(query => query.isError);
+  const failed = configured
+    ? [sites, sections, assets].filter(query => query.isError)
+    : [];
   const isLoading =
-    sites.isFetching || sections.isFetching || assets.isFetching;
+    configured &&
+    (sites.isFetching || sections.isFetching || assets.isFetching);
   return (
     <fieldset className="pm-cmms-location">
       <legend>
@@ -488,12 +496,12 @@ function ProjectCmmsLocationFields({
           label={t("الموقع", "Site", "مقام") + (required ? " *" : "")}
           placeholder={t("اختر الموقع", "Select a site", "مقام منتخب کریں")}
           value={siteId}
-          options={sites.data}
+          options={configured ? sites.data : undefined}
           saved={
             project && { id: project.cmmsSiteId, name: project.cmmsSiteName }
           }
           required={required}
-          disabled={sites.isLoading}
+          disabled={!configured || !sites.data}
           onChange={value =>
             onChange({ siteId: value, sectionId: null, assetId: null })
           }
@@ -502,7 +510,7 @@ function ProjectCmmsLocationFields({
           label={t("القسم", "Section", "شعبہ") + (required ? " *" : "")}
           placeholder={t("اختر القسم", "Select a section", "شعبہ منتخب کریں")}
           value={sectionId}
-          options={sections.data}
+          options={configured ? sections.data : undefined}
           saved={
             project && {
               id: project.cmmsSectionId,
@@ -510,7 +518,7 @@ function ProjectCmmsLocationFields({
             }
           }
           required={required}
-          disabled={siteId === null || sections.isLoading}
+          disabled={!configured || siteId === null || !sections.data}
           onChange={value =>
             onChange({ siteId, sectionId: value, assetId: null })
           }
@@ -519,11 +527,11 @@ function ProjectCmmsLocationFields({
           label={t("الأصل (اختياري)", "Asset (optional)", "اثاثہ (اختیاری)")}
           placeholder={t("بدون أصل", "No asset", "اثاثہ نہیں")}
           value={assetId}
-          options={assets.data}
+          options={configured ? assets.data : undefined}
           saved={
             project && { id: project.cmmsAssetId, name: project.cmmsAssetName }
           }
-          disabled={sectionId === null || assets.isLoading}
+          disabled={!configured || sectionId === null || !assets.data}
           onChange={value => onChange({ siteId, sectionId, assetId: value })}
         />
       </div>
@@ -589,12 +597,12 @@ function ProjectForm({
   const save = trpc.projectManagement.save.useMutation(),
     upload = trpc.documents.upload.useMutation();
   const cmms = trpc.cmmsReferences.status.useQuery();
+  const locationConfigured = cmms.data?.configured === true;
   const locationChanged =
     location.siteId !== (project?.cmmsSiteId ?? null) ||
     location.sectionId !== (project?.cmmsSectionId ?? null) ||
     location.assetId !== (project?.cmmsAssetId ?? null);
-  const mustSelectLocation =
-    cmms.data?.configured === true && (!project || locationChanged);
+  const mustSelectLocation = locationConfigured && (!project || locationChanged);
   const locationIncomplete =
     mustSelectLocation && (!location.siteId || !location.sectionId);
   const loadingLocationConfig = !project && !cmms.data;
@@ -611,7 +619,7 @@ function ProjectForm({
         version: project?.version ?? 0,
         data: {
           ...form,
-          ...(cmms.data?.configured &&
+          ...(locationConfigured &&
           locationChanged &&
           location.siteId !== null &&
           location.sectionId !== null
@@ -686,18 +694,32 @@ function ProjectForm({
             onChange={e => setForm({ ...form, name: e.target.value })}
           />
         </Field>
-        {cmms.data?.configured ? (
-          <ProjectCmmsLocationFields
-            locale={locale}
-            project={project}
-            selection={location}
-            required={mustSelectLocation}
-            onChange={setLocation}
-          />
-        ) : (
-          <Field label={t("الموقع", "Location", "مقام")}>
+        <ProjectCmmsLocationFields
+          locale={locale}
+          project={project}
+          selection={location}
+          configured={locationConfigured}
+          required={mustSelectLocation}
+          onChange={setLocation}
+        />
+        {cmms.data?.configured === false && (
+          <p className="pm-help">
+            {t(
+              "تتوفر خيارات الموقع والقسم والأصل بعد تفعيل الاتصال بـ CMMS.",
+              "Site, section and asset choices become available when the CMMS connection is enabled.",
+              "سی ایم ایم ایس سے رابطہ فعال ہونے پر مقام، شعبے اور اثاثے کے اختیارات دستیاب ہوں گے۔"
+            )}
+          </p>
+        )}
+        {cmms.data?.configured === false && !project?.cmmsSiteId && (
+          <Field
+            label={t(
+              "وصف الموقع (اختياري)",
+              "Location notes (optional)",
+              "مقام کی تفصیل (اختیاری)"
+            )}
+          >
             <input
-              readOnly={Boolean(project?.cmmsSiteId)}
               maxLength={500}
               value={form.site}
               onChange={e => setForm({ ...form, site: e.target.value })}

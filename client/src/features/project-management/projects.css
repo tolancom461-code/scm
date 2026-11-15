@@ -162,8 +162,12 @@
 }
 .pm-cmms-location-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
+}
+.pm-cmms-location-fields > .pm-field {
+  grid-template-columns: min(8rem, 38%) minmax(0, 1fr);
+  align-items: center;
 }
 .pm-two {
   display: grid;
