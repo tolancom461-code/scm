@@ -212,6 +212,24 @@
   flex-wrap: wrap;
   align-items: center;
 }
+.pm-save-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.pm-save-spinner {
+  animation: pm-save-spin 0.8s linear infinite;
+}
+@keyframes pm-save-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pm-save-spinner {
+    animation: none;
+  }
+}
 .pm-inline {
   flex-wrap: nowrap;
 }

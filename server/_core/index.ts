@@ -5,6 +5,7 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerDocumentDownloads } from "./documentDownloads";
 import { registerCatalogImages } from "../modules/material-requisitions/catalog-routes";
+import { registerProjectAttachmentUploads } from "../modules/project-management/attachment-routes";
 import { startCmmsPurchaseDelivery } from "../modules/cmms-integration/purchase-delivery";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -32,7 +33,8 @@ async function findAvailablePort(startPort: number = 3050): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
-  // Configure body parser with larger size limit for file uploads
+  // Project attachments stream directly without the JSON or form parsers.
+  registerProjectAttachmentUploads(app);
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerDocumentDownloads(app);

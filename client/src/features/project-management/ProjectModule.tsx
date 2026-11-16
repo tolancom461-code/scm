@@ -1,4 +1,5 @@
 import { useRef, useState, type FormEvent } from "react";
+import { LoaderCircle } from "lucide-react";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
 import { localeMeta, type Locale } from "@/lib/i18n";
@@ -7,11 +8,16 @@ import { Modal } from "@/components/Modal";
 import { businessDate } from "@shared/date";
 import {
   canLinkProjectCmmsLocation,
+  projectAttachmentMaxBytes,
   projectStates,
   projectFileExtensions,
 } from "@shared/construction";
 import { toast } from "sonner";
 import { FilePreview } from "./Preview";
+import {
+  ProjectAttachmentUploadStatus,
+  useProjectAttachmentUpload,
+} from "./ProjectAttachmentUpload";
 import {
   GoogleProjectMap,
   type GoogleProjectMapPoint,
@@ -98,33 +104,34 @@ function Field({
     </label>
   );
 }
-async function encoded(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(",")[1]);
-    reader.onerror = () => reject(Error("تعذر قراءة الملف / Cannot read file"));
-    reader.readAsDataURL(file);
-  });
-}
 function validateFiles(files: File[], t: ReturnType<typeof text>) {
   if (
     files.some(
       f =>
         !projectFileExtensions.test(f.name) ||
-        f.size > 20_000_000 ||
+        f.size > projectAttachmentMaxBytes ||
         f.size === 0
     )
   ) {
     toast.error(
       t(
-        "اختر صورًا أو PDF أو DWG، بحد أقصى 20 ميغابايت لكل ملف",
-        "Choose images, PDF or DWG, up to 20 MB per file",
-        "تصویر، PDF یا DWG منتخب کریں۔ ہر فائل زیادہ سے زیادہ 20 MB ہو۔"
+        "اختر صورًا أو PDF أو DWG، بحد أقصى 150 ميغابايت لكل ملف",
+        "Choose images, PDF or DWG, up to 150 MB per file",
+        "تصویر، PDF یا DWG منتخب کریں۔ ہر فائل زیادہ سے زیادہ 150 MB ہو۔"
       )
     );
     return false;
   }
   return true;
+}
+function notifyAttachmentsUploaded(locale: Locale) {
+  toast.success(
+    text(locale)(
+      "تم رفع المرفقات",
+      "Attachments uploaded",
+      "منسلکات اپ لوڈ ہو گئے"
+    )
+  );
 }
 export function ProjectModule({
   locale,
@@ -757,9 +764,10 @@ function ProjectForm({
       point: GoogleProjectMapPoint | null;
     } | null>(null),
     [files, setFiles] = useState<File[]>([]),
+    [savedProjectId, setSavedProjectId] = useState<number | null>(null),
     [busy, setBusy] = useState(false);
-  const save = trpc.projectManagement.save.useMutation(),
-    upload = trpc.documents.upload.useMutation();
+  const save = trpc.projectManagement.save.useMutation();
+  const attachmentUpload = useProjectAttachmentUpload(locale);
   const choices = useProjectCmmsChoices(locale, location);
   const canEditDirectLocation = !project || project.status === "draft";
   const directLocationChanged =
@@ -790,7 +798,6 @@ function ProjectForm({
       return;
     }
     setBusy(true);
-    let id: number | undefined;
     try {
       const result = await save.mutateAsync({
         key: crypto.randomUUID(),
@@ -811,17 +818,17 @@ function ProjectForm({
             : {}),
         },
       });
-      id = result.id;
-      for (const f of files)
-        await upload.mutateAsync({
-          entityType: "pm_project",
-          entityId: id,
-          title: f.name.length >= 2 ? f.name : "مرفق",
-          fileName: f.name,
-          mimeType: f.type || "application/octet-stream",
-          base64: await encoded(f),
-        });
       toast.success(t("تم حفظ المسودة", "Draft saved", "مسودہ محفوظ ہو گیا"));
+      const id = result.id;
+      if (files.length) {
+        setSavedProjectId(id);
+        const uploads = await attachmentUpload.upload(
+          { entityType: "pm_project", entityId: id },
+          files
+        );
+        if (!uploads || uploads.failed) return;
+        notifyAttachmentsUploaded(locale);
+      }
       saved(id);
     } catch (error) {
       toast.error(
@@ -829,19 +836,45 @@ function ProjectForm({
           ? error.message
           : t("تعذر الحفظ", "Could not save", "محفوظ نہیں ہو سکا")
       );
-      if (id) {
-        toast.info(
-          t(
-            "حُفظت المسودة. أعد رفع المرفق الذي لم يكتمل من تفاصيل المشروع.",
-            "Draft saved. Retry the failed attachment from project details.",
-            "مسودہ محفوظ ہو گیا۔ منصوبے کی تفصیلات سے ناکام منسلکہ دوبارہ اپ لوڈ کریں۔"
-          )
-        );
-        saved(id);
-      }
     } finally {
       setBusy(false);
     }
+  }
+  if (savedProjectId !== null) {
+    const uploading = busy || attachmentUpload.running;
+    return (
+      <Modal
+        title={t("مرفقات المشروع", "Project attachments", "منصوبے کے منسلکات")}
+        close={() => saved(savedProjectId)}
+        closeDisabled={uploading}
+      >
+        <div className="pm-form">
+          <p className="pm-help">
+            {t("تم حفظ المسودة", "Draft saved", "مسودہ محفوظ ہو گیا")}
+          </p>
+          <ProjectAttachmentUploadStatus
+            locale={locale}
+            state={attachmentUpload}
+            onRetry={async attachmentId => {
+              const result = await attachmentUpload.retry(attachmentId);
+              if (result?.failed === 0) {
+                notifyAttachmentsUploaded(locale);
+                saved(savedProjectId);
+              }
+            }}
+          />
+          <div className="pm-actions">
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={() => saved(savedProjectId)}
+            >
+              {t("فتح المشروع", "Open project", "منصوبہ کھولیں")}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    );
   }
   return (
     <Modal
@@ -861,6 +894,7 @@ function ProjectForm({
         if (locationPicker) setLocationPicker(null);
         else close();
       }}
+      closeDisabled={busy}
     >
       {locationPicker && (
         <div className="pm-direct-location-map">
@@ -1043,9 +1077,9 @@ function ProjectForm({
               />
               <small>
                 {t(
-                  "حتى 20 ميغابايت لكل ملف",
-                  "Up to 20 MB per file",
-                  "ہر فائل زیادہ سے زیادہ 20 MB"
+                  "حتى 150 ميغابايت لكل ملف",
+                  "Up to 150 MB per file",
+                  "ہر فائل زیادہ سے زیادہ 150 MB"
                 )}
               </small>
               {files.map((f, i) => (
@@ -1331,6 +1365,7 @@ function ProjectDetail({
       undefined,
       { enabled: can("materialRequisitions.create") }
     );
+  const attachmentUpload = useProjectAttachmentUpload(locale);
   const [edit, setEdit] = useState(false),
     [locationLink, setLocationLink] = useState<"closed" | "open" | "saved">(
       "closed"
@@ -1492,7 +1527,7 @@ function ProjectDetail({
       });
   return (
     <div className="pm-detail">
-      <button onClick={back}>
+      <button onClick={back} disabled={attachmentUpload.running}>
         ← {t("قائمة المشاريع", "Project list", "منصوبوں کی فہرست")}
       </button>
       <div className="pm-heading">
@@ -1638,6 +1673,7 @@ function ProjectDetail({
         locale={locale}
         editable={editable && can("pm.edit") && can("documents.upload")}
         canView={can("documents.view")}
+        uploader={attachmentUpload}
       />
       {project.status === "active" && (
         <section className="pm-panel">
@@ -1917,15 +1953,21 @@ function TaskForm({
     [addingStatus, setAddingStatus] = useState(false),
     [statusLabel, setStatusLabel] = useState(""),
     [formError, setFormError] = useState("");
+  const saveInFlight = useRef(false);
+  const attachmentUpload = useProjectAttachmentUpload(locale);
   const utils = trpc.useUtils(),
     save = trpc.projectManagement.saveTask.useMutation({
       onSuccess: () => {
         void utils.gantt.detail.invalidate({ projectId });
+        toast.success(t("تم حفظ المهمة", "Task saved", "کام محفوظ ہو گیا"));
         saved();
       },
       onError: e => {
         setFormError(e.message);
         toast.error(e.message);
+      },
+      onSettled: () => {
+        saveInFlight.current = false;
       },
     }),
     status = trpc.projectManagement.saveStatus.useMutation({
@@ -1937,6 +1979,11 @@ function TaskForm({
       },
       onError: e => toast.error(e.message),
     });
+  const taskBusy = save.isPending || attachmentUpload.running;
+  const inputsDisabled = !canManage || taskBusy;
+  const requestClose = () => {
+    if (!saveInFlight.current && !taskBusy) close();
+  };
   return (
     <Modal
       title={
@@ -1946,12 +1993,22 @@ function TaskForm({
             ? t("إضافة مهمة فرعية", "Add subtask", "ذیلی کام شامل کریں")
             : t("إضافة مهمة رئيسية", "Add main task", "مرکزی کام شامل کریں")
       }
-      close={close}
+      close={requestClose}
+      closeDisabled={taskBusy}
     >
       <form
         className="pm-form"
         onSubmit={e => {
           e.preventDefault();
+          if (
+            inputsDisabled ||
+            saveInFlight.current ||
+            status.isPending ||
+            !form.employeeIds.length ||
+            !form.statusId
+          )
+            return;
+          saveInFlight.current = true;
           setFormError("");
           save.mutate({
             ...form,
@@ -1978,7 +2035,7 @@ function TaskForm({
         <Field label={t("اسم المهمة *", "Task name *", "کام کا نام *")}>
           <input
             required
-            disabled={!canManage}
+            disabled={inputsDisabled}
             minLength={2}
             maxLength={255}
             value={form.name}
@@ -1989,7 +2046,7 @@ function TaskForm({
           <Field label={t("الحالة", "Status", "حالت")}>
             <div className="pm-inline">
               <select
-                disabled={!canManage}
+                disabled={inputsDisabled}
                 value={form.statusId}
                 onChange={e =>
                   setForm({ ...form, statusId: Number(e.target.value) })
@@ -2004,6 +2061,7 @@ function TaskForm({
               {canStatus && canManage && (
                 <button
                   type="button"
+                  disabled={taskBusy}
                   aria-label={t("إضافة حالة", "Add status", "حالت شامل کریں")}
                   onClick={() => setAddingStatus(!addingStatus)}
                 >
@@ -2014,7 +2072,7 @@ function TaskForm({
           </Field>
           <Field label={t("الأولوية", "Priority", "ترجیح")}>
             <select
-              disabled={!canManage}
+              disabled={inputsDisabled}
               value={form.priority}
               onChange={e => setForm({ ...form, priority: e.target.value })}
             >
@@ -2027,7 +2085,7 @@ function TaskForm({
           </Field>
           <Field label={t("تاريخ البداية *", "Start date *", "تاریخِ آغاز *")}>
             <input
-              disabled={!canManage}
+              disabled={inputsDisabled}
               required
               type="date"
               value={form.startDate}
@@ -2042,7 +2100,7 @@ function TaskForm({
           </Field>
           <Field label={t("تاريخ النهاية *", "End date *", "تاریخِ اختتام *")}>
             <input
-              disabled={!canManage}
+              disabled={inputsDisabled}
               required
               type="date"
               min={form.startDate}
@@ -2066,12 +2124,15 @@ function TaskForm({
                 "نئی حالت کا نام"
               )}
               value={statusLabel}
+              disabled={taskBusy}
               onChange={e => setStatusLabel(e.target.value)}
               maxLength={100}
             />
             <button
               type="button"
-              disabled={status.isPending || statusLabel.trim().length < 2}
+              disabled={
+                taskBusy || status.isPending || statusLabel.trim().length < 2
+              }
               onClick={() =>
                 status.mutate({ key: crypto.randomUUID(), name: statusLabel })
               }
@@ -2102,7 +2163,7 @@ function TaskForm({
                 <input
                   type="checkbox"
                   disabled={
-                    !canManage ||
+                    inputsDisabled ||
                     (!e.active && !form.employeeIds.includes(e.id))
                   }
                   checked={form.employeeIds.includes(e.id)}
@@ -2134,14 +2195,32 @@ function TaskForm({
         {canManage && (
           <div className="pm-actions">
             <button
-              className="primary"
+              className="primary pm-save-action"
               disabled={
-                save.isPending || !form.employeeIds.length || !form.statusId
+                taskBusy ||
+                status.isPending ||
+                !form.employeeIds.length ||
+                !form.statusId
               }
             >
-              {t("حفظ المهمة", "Save task", "کام محفوظ کریں")}
+              {save.isPending && (
+                <LoaderCircle
+                  size={16}
+                  className="pm-save-spinner"
+                  aria-hidden="true"
+                />
+              )}
+              <span role="status">
+                {save.isPending
+                  ? t(
+                      "جارٍ حفظ المهمة…",
+                      "Saving task…",
+                      "کام محفوظ ہو رہا ہے…"
+                    )
+                  : t("حفظ المهمة", "Save task", "کام محفوظ کریں")}
+              </span>
             </button>
-            <button type="button" onClick={close}>
+            <button type="button" disabled={taskBusy} onClick={requestClose}>
               {t("إلغاء", "Cancel", "منسوخ کریں")}
             </button>
           </div>
@@ -2154,6 +2233,8 @@ function TaskForm({
           locale={locale}
           editable={canManage && canDocumentsUpload}
           canView={canDocumentsView}
+          disabled={save.isPending}
+          uploader={attachmentUpload}
         />
       )}
     </Modal>
@@ -2354,48 +2435,38 @@ function ProjectAttachments({
   locale,
   editable,
   canView,
+  disabled = false,
+  uploader,
 }: {
   id: number;
   entityType: "pm_project" | "pm_task";
   locale: Locale;
   editable: boolean;
   canView: boolean;
+  disabled?: boolean;
+  uploader: ReturnType<typeof useProjectAttachmentUpload>;
 }) {
   const t = text(locale),
     utils = trpc.useUtils(),
-    list = trpc.documents.list.useQuery(
-      { entityType, entityId: id },
-      { enabled: canView }
-    ),
-    upload = trpc.documents.upload.useMutation(),
-    [busy, setBusy] = useState(false),
+    target = { entityType, entityId: id },
+    list = trpc.documents.list.useQuery(target, { enabled: canView }),
     [preview, setPreview] = useState<{ fileName: string; url: string } | null>(
       null
     ),
     [inputKey, setInputKey] = useState(0);
+  function finishUpload(result: { uploaded: number; failed: number } | null) {
+    if (!result?.uploaded) return;
+    void utils.documents.list.invalidate(target);
+    if (!result.failed) notifyAttachmentsUploaded(locale);
+  }
   async function add(files: File[]) {
-    if (!validateFiles(files, t) || busy) return;
-    setBusy(true);
-    try {
-      for (const f of files)
-        await upload.mutateAsync({
-          entityType,
-          entityId: id,
-          title: f.name,
-          fileName: f.name,
-          mimeType: f.type || "application/octet-stream",
-          base64: await encoded(f),
-        });
-      toast.success(
-        t("تم رفع المرفقات", "Attachments uploaded", "منسلکات اپ لوڈ ہو گئے")
-      );
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error");
-    } finally {
-      void utils.documents.list.invalidate();
-      setBusy(false);
+    if (!files.length || !editable || disabled || uploader.running) return;
+    if (!validateFiles(files, t)) {
       setInputKey(v => v + 1);
+      return;
     }
+    finishUpload(await uploader.upload(target, files));
+    setInputKey(v => v + 1);
   }
   if (!canView) return null;
   return (
@@ -2411,6 +2482,7 @@ function ProjectAttachments({
           <div key={f.id}>
             <span>{f.fileName}</span>
             <button
+              disabled={uploader.running}
               onClick={() => setPreview({ fileName: f.fileName, url: f.url })}
             >
               {t("استعراض", "Preview", "پیش منظر")}
@@ -2431,29 +2503,34 @@ function ProjectAttachments({
         </p>
       )}
       {editable && (
-        <Field
-          label={t(
-            "إضافة مرفقات — صور، PDF، DWG — 20 ميغابايت للملف",
-            "Add attachments — images, PDF, DWG — 20 MB per file",
-            "منسلکات شامل کریں — تصاویر، PDF، DWG — ہر فائل 20 MB تک"
-          )}
-        >
-          <input
-            key={inputKey}
-            type="file"
-            multiple
-            disabled={busy}
-            accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.dwg"
-            onChange={e => {
-              void add(Array.from(e.target.files ?? []));
+        <>
+          <Field
+            label={t(
+              "إضافة مرفقات — صور، PDF، DWG — 150 ميغابايت للملف",
+              "Add attachments — images, PDF, DWG — 150 MB per file",
+              "منسلکات شامل کریں — تصاویر، PDF، DWG — ہر فائل 150 MB تک"
+            )}
+          >
+            <input
+              key={inputKey}
+              type="file"
+              multiple
+              disabled={disabled || uploader.running}
+              accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.dwg"
+              onChange={e => {
+                void add(Array.from(e.target.files ?? []));
+              }}
+            />
+          </Field>
+          <ProjectAttachmentUploadStatus
+            locale={locale}
+            state={uploader}
+            retryDisabled={disabled}
+            onRetry={async fileId => {
+              if (!disabled) finishUpload(await uploader.retry(fileId));
             }}
           />
-          {busy && (
-            <small aria-live="polite">
-              {t("جاري الرفع…", "Uploading…", "اپ لوڈ ہو رہا ہے…")}
-            </small>
-          )}
-        </Field>
+        </>
       )}
       {preview && (
         <FilePreview

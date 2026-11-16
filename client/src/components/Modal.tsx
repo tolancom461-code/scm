@@ -6,20 +6,22 @@ export function Modal({
   children,
   close,
   eyebrow,
+  closeDisabled = false,
 }: {
   title: string;
   children: ReactNode;
   close: () => void;
   eyebrow?: string;
+  closeDisabled?: boolean;
 }) {
   const locale = (document.documentElement.lang || "ar") as Locale;
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
+      if (event.key === "Escape" && !closeDisabled) close();
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [close]);
+  }, [close, closeDisabled]);
   return (
     <div className="modal-backdrop">
       <section
@@ -37,6 +39,7 @@ export function Modal({
             type="button"
             className="icon-button"
             onClick={close}
+            disabled={closeDisabled}
             aria-label={t(locale, "close")}
           >
             <X size={18} />

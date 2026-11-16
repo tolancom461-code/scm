@@ -160,6 +160,7 @@ export function taskDateConflicts(
   return conflicts;
 }
 export const projectFileExtensions = /\.(png|jpe?g|webp|gif|pdf|dwg)$/i;
+export const projectAttachmentMaxBytes = 150_000_000;
 export function validateProjectFile(name: string, bytes: Uint8Array) {
   const ext = name.split(".").at(-1)?.toLowerCase();
   const header = String.fromCharCode(...bytes.slice(0, 12));

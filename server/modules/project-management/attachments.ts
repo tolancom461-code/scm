@@ -3,27 +3,76 @@ import { and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { documents } from "../../../drizzle/schema";
 import { validateProjectFile } from "../../../shared/construction";
-import { deleteStoredDocument, storeDocument } from "../../storage";
-import { database } from "../../core/database";
+import {
+  deleteStoredDocument,
+  storeDocument,
+  storeDocumentFromFile,
+} from "../../storage";
+import { database, type Transaction } from "../../core/database";
 import { allocateDocumentNumber } from "../../core/numbering";
 import { recordChange } from "../../core/audit";
-import { canAccess, type AccessContext } from "../../core/policy";
+import {
+  assertConstructionAccess,
+  canAccess,
+  type AccessContext,
+} from "../../core/policy";
 import { lockedProject, assertEditable } from "./service";
 import { projectTasks } from "../../../drizzle/construction";
+
+export type ProjectAttachmentTarget = {
+  entityType: "pm_project" | "pm_task";
+  entityId: number;
+};
+
+type ProjectAttachmentDetails = ProjectAttachmentTarget & {
+  fileName: string;
+  mimeType: string;
+  title: string;
+  classification:
+    | "normal"
+    | "internal"
+    | "confidential"
+    | "highly_confidential";
+};
+
+export async function assertProjectAttachmentUpload(
+  target: ProjectAttachmentTarget,
+  a: AccessContext,
+  tx?: Transaction
+) {
+  let projectId = target.entityId;
+  if (target.entityType === "pm_task") {
+    if (!canAccess(a, "pm.tasks.manage"))
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "لا تملك صلاحية تعديل المهام / Access denied",
+      });
+    const query = (tx ?? (await database()))
+      .select({ projectId: projectTasks.projectId })
+      .from(projectTasks)
+      .where(eq(projectTasks.id, target.entityId));
+    const [task] = await (tx ? query.for("update") : query);
+    if (!task)
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "المهمة غير موجودة / Task not found",
+      });
+    projectId = task.projectId;
+  }
+  const project = tx
+    ? await lockedProject(tx, projectId, a)
+    : await assertConstructionAccess(a, projectId);
+  if (target.entityType === "pm_project") assertEditable(project, a);
+  else if (project.status !== "active")
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message:
+        "مرفقات المهام متاحة أثناء تنفيذ المشروع / Task attachments are available while the project is active",
+    });
+}
+
 export async function uploadProjectManagementDocument(
-  input: {
-    entityType: "pm_project" | "pm_task";
-    entityId: number;
-    fileName: string;
-    mimeType: string;
-    title: string;
-    classification:
-      | "normal"
-      | "internal"
-      | "confidential"
-      | "highly_confidential";
-    base64: string;
-  },
+  input: ProjectAttachmentDetails & { base64: string },
   a: AccessContext
 ) {
   const content = Buffer.from(input.base64, "base64");
@@ -37,35 +86,48 @@ export async function uploadProjectManagementDocument(
       message:
         "يقبل المرفق صورة PNG/JPG/WEBP/GIF أو PDF أو DWG صالحًا بحد أقصى 20 ميغابايت / Upload a valid image, PDF or DWG, up to 20 MB",
     });
-  const checksum = createHash("sha256").update(content).digest("hex"),
-    stored = await storeDocument(content);
+  const checksum = createHash("sha256").update(content).digest("hex");
+  return persistProjectManagementDocument(
+    input,
+    content.length,
+    checksum,
+    a,
+    () => storeDocument(content)
+  );
+}
+
+export function uploadStagedProjectManagementDocument(
+  input: ProjectAttachmentTarget & {
+    filePath: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    checksum: string;
+  },
+  a: AccessContext
+) {
+  return persistProjectManagementDocument(
+    { ...input, title: input.fileName, classification: "internal" },
+    input.sizeBytes,
+    input.checksum,
+    a,
+    () => storeDocumentFromFile(input.filePath, input.sizeBytes)
+  );
+}
+
+async function persistProjectManagementDocument(
+  input: ProjectAttachmentDetails,
+  sizeBytes: number,
+  checksum: string,
+  a: AccessContext,
+  store: () => Promise<{ key: string; url: string }>
+) {
+  const stored = await store();
   try {
     const result = await (
       await database()
     ).transaction(async tx => {
-      let projectId = input.entityId;
-      if (input.entityType === "pm_task") {
-        if (!canAccess(a, "pm.tasks.manage"))
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "لا تملك صلاحية تعديل المهام / Access denied",
-          });
-        const [task] = await tx
-          .select({ projectId: projectTasks.projectId })
-          .from(projectTasks)
-          .where(eq(projectTasks.id, input.entityId))
-          .for("update");
-        if (!task)
-          throw new TRPCError({ code: "BAD_REQUEST", message: "المهمة غير موجودة / Task not found" });
-        projectId = task.projectId;
-      }
-      const project = await lockedProject(tx, projectId, a);
-      if (input.entityType === "pm_project") assertEditable(project, a);
-      else if (project.status !== "active")
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "مرفقات المهام متاحة أثناء تنفيذ المشروع / Task attachments are available while the project is active",
-        });
+      await assertProjectAttachmentUpload(input, a, tx);
       const [existing] = await tx
         .select()
         .from(documents)
@@ -89,7 +151,7 @@ export async function uploadProjectManagementDocument(
         classification: input.classification,
         storageKey: stored.key,
         url: stored.url,
-        sizeBytes: content.length,
+        sizeBytes,
         checksum,
         uploadedBy: a.user.id,
       });

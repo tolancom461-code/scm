@@ -1,9 +1,11 @@
 import type { Express } from "express";
+import { PassThrough } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 import { parse } from "cookie";
 import { getDocumentByStorageKey, getUserBySessionToken } from "../db";
 import { LOCAL_SESSION_COOKIE } from "../localAuth";
-import { localDocumentPath, readStoredDocument } from "../storage";
+import { localDocumentPath, openRemoteDocument } from "../storage";
 import {
   assertDocumentTarget,
   canAccess,
@@ -67,23 +69,52 @@ export function registerDocumentDownloads(app: Express) {
         return;
       }
       if (key.startsWith("s3/")) {
-        const content = await readStoredDocument(key);
-        res.set("Cache-Control", "no-store");
-        res.set("X-Content-Type-Options", "nosniff");
-        res.attachment(document.fileName);
-        res.type(document.mimeType || "application/octet-stream");
-        res.send(content);
+        const { content, contentLength } = await openRemoteDocument(key);
+        // Keep the response writable for an upstream failure before the body
+        // starts. Once a partial body is sent the catch below closes it.
+        const outgoing = new PassThrough();
+        const closeTransfer = () => outgoing.destroy();
+        try {
+          if (res.destroyed) return;
+          res.set("Cache-Control", "no-store");
+          res.set("X-Content-Type-Options", "nosniff");
+          res.attachment(document.fileName);
+          res.type(document.mimeType || "application/octet-stream");
+          if (
+            contentLength !== undefined &&
+            Number.isSafeInteger(contentLength) &&
+            contentLength >= 0
+          )
+            res.set("Content-Length", String(contentLength));
+          if (req.method === "HEAD") {
+            res.end();
+            return;
+          }
+          res.once("close", closeTransfer);
+          outgoing.pipe(res);
+          await pipeline(content, outgoing);
+        } finally {
+          res.off("close", closeTransfer);
+          if (!content.readableEnded) content.destroy();
+        }
         return;
       }
       res.status(404).send("Document unavailable");
     } catch (err) {
+      if (res.destroyed) return;
       console.error(
         JSON.stringify({
           event: "storage.download.failure",
           errorType: err instanceof Error ? err.name : "unknown",
         })
       );
-      res.status(502).send("Storage proxy error");
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      res.removeHeader("Content-Length");
+      res.removeHeader("Content-Disposition");
+      res.status(502).type("text/plain").send("Storage proxy error");
     }
   });
 }

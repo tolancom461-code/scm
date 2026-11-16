@@ -1,0 +1,44 @@
+.pm-attachment-upload-status,
+.pm-attachment-upload-progress,
+.pm-attachment-upload-failures {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pm-attachment-upload-progress progress {
+  width: 100%;
+  accent-color: #54d3ea;
+}
+
+.pm-attachment-upload-failures {
+  padding: 0;
+  margin: 8px 0 0;
+  list-style: none;
+}
+
+.pm-attachment-upload-failures li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid #503741;
+  border-radius: 8px;
+}
+
+.pm-attachment-upload-failures li > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pm-attachment-upload-failures li span {
+  display: block;
+  margin-top: 4px;
+  color: #ffb8b8;
+  font-size: 0.85rem;
+}
+
+.pm-attachment-upload-failures li button {
+  flex-shrink: 0;
+}
