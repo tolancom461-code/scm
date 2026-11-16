@@ -137,8 +137,7 @@ export function MaterialRequisitions({
       projectId?: number;
       taskId?: number | null;
     } | null>(null),
-    [viewId, setViewId] = useState(0),
-    [unitsOpen, setUnitsOpen] = useState(false);
+    [viewId, setViewId] = useState(0);
   const [filterName, setFilterName] = useState(""),
     [grouped, setGrouped] = useState(false);
   const filterKey = `pscm-mr-filters-${user.id ?? "local"}`;
@@ -203,9 +202,6 @@ export function MaterialRequisitions({
           <p>{c("draftHint")}</p>
         </div>
         <div className="mr-actions">
-          {can("materialRequisitions.units.manage") && (
-            <button onClick={() => setUnitsOpen(true)}>+ {c("addUnit")}</button>
-          )}
           {can("materialRequisitions.create") && (
             <button
               className="primary"
@@ -598,16 +594,6 @@ export function MaterialRequisitions({
           id={viewId}
           locale={locale}
           close={() => setViewId(0)}
-        />
-      )}
-      {unitsOpen && (
-        <UnitForm
-          locale={locale}
-          close={() => setUnitsOpen(false)}
-          saved={() => {
-            setUnitsOpen(false);
-            void utils.materialRequisitions.directory.invalidate();
-          }}
         />
       )}
     </section>
@@ -1145,73 +1131,6 @@ export function RequisitionView({
         )}
       </Modal>
     </div>
-  );
-}
-
-function UnitForm({
-  locale,
-  close,
-  saved,
-}: {
-  locale: Locale;
-  close: () => void;
-  saved: () => void;
-}) {
-  const c = (key: MrKey) => mrText(locale, key),
-    [form, setForm] = useState({
-      code: "",
-      nameAr: "",
-      nameEn: "",
-      nameUr: "",
-    });
-  const save = trpc.materialRequisitions.saveUnit.useMutation({
-    onSuccess: saved,
-    onError: e => toast.error(e.message),
-  });
-  return (
-    <Modal title={c("addUnit")} close={close}>
-      <form
-        className="mr-form"
-        dir={localeMeta[locale].direction}
-        onSubmit={e => {
-          e.preventDefault();
-          save.mutate({
-            key: crypto.randomUUID(),
-            version: 0,
-            active: true,
-            ...form,
-          });
-        }}
-      >
-        <div className="mr-form-grid">
-          {(
-            [
-              ["code", "unitCode"],
-              ["nameAr", "nameAr"],
-              ["nameEn", "nameEn"],
-              ["nameUr", "nameUr"],
-            ] as const
-          ).map(([key, label]) => (
-            <label key={key}>
-              <span>{c(label)} *</span>
-              <input
-                required
-                maxLength={key === "code" ? 30 : 100}
-                dir={key === "code" || key === "nameEn" ? "ltr" : "rtl"}
-                pattern={key === "code" ? "[A-Za-z0-9_]+" : undefined}
-                value={form[key]}
-                onChange={e => setForm({ ...form, [key]: e.target.value })}
-              />
-            </label>
-          ))}
-        </div>
-        <div className="mr-actions">
-          <button className="primary" disabled={save.isPending}>
-            {c("addUnit")}
-          </button>
-        </div>
-      </form>
-    </Modal>
   );
 }
 

@@ -227,11 +227,6 @@ const copy = {
   savedFilters: ["الفلاتر المحفوظة", "Saved filters", "محفوظ فلٹرز"],
   group: ["تجميع حسب المشروع", "Group by project", "منصوبے کے مطابق گروپ"],
   units: ["وحدات القياس", "Measurement units", "پیمائش کی اکائیاں"],
-  addUnit: ["إضافة وحدة", "Add unit", "اکائی شامل کریں"],
-  unitCode: ["رمز الوحدة", "Unit code", "اکائی کا رمز"],
-  nameAr: ["الاسم بالعربية", "Arabic name", "عربی نام"],
-  nameEn: ["الاسم بالإنجليزية", "English name", "انگریزی نام"],
-  nameUr: ["الاسم بالأوردو", "Urdu name", "اردو نام"],
   startDate: [
     "تاريخ البداية المرتبط",
     "Linked start date",
