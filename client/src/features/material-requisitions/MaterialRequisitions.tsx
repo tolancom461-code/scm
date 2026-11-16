@@ -181,6 +181,8 @@ export function MaterialRequisitions({
   const approve = trpc.materialRequisitions.approve.useMutation({
     onSuccess: () => {
       void utils.materialRequisitions.invalidate();
+      void utils.projectManagement.taskMaterialSummary.invalidate();
+      void utils.projectManagement.taskMaterialProgress.invalidate();
       toast.success(c("approvedDone"));
     },
     onError: e => toast.error(e.message),

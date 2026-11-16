@@ -126,6 +126,14 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
 .task-row[data-depth]:not([data-depth="0"]) .task-details b::before{content:"";display:inline-block;width:5px;height:5px;margin-inline-end:6px;border-radius:50%;background:#7aaea7;vertical-align:middle}
 
 .requisition-add{width:25px;height:25px;display:inline-flex;align-items:center;justify-content:center;flex:none;border:1px solid #b8d8d1;border-radius:5px;background:#edf8f4;color:#087f7b;font:700 14px/1 Arial,sans-serif}.requisition-add:hover{background:#dcefe9}
+.task-info{display:flex;align-items:center;gap:4px;flex:1;min-width:0;container-type:inline-size}
+.task-materials-badge{display:inline-flex;align-items:center;justify-content:center;gap:4px;flex:0 0 auto;padding:4px 5px;min-width:24px;border:1px solid #cad9de;border-radius:5px;background:#f2f6f8;color:#415d6d;font-size:9px;font-weight:600;white-space:nowrap}
+.task-materials-badge:hover{background:#e5eef2}
+.task-materials-badge.is-ready{border-color:#acd8b9;background:#e8f6ec;color:#196438}
+.task-materials-badge.is-ready:hover{background:#d6efde}
+.task-materials-short{display:none}
+@container (max-width:125px){.task-materials-long{display:none}.task-materials-short{display:inline}}
+@container (max-width:76px){.task-materials-short{display:none}}
 </style>
 </head>
 <body>
@@ -518,6 +526,33 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
 };
   Object.assign(catalogs.ar,{"بانتظار تحميل المشروع…":"بانتظار تحميل المشروع…","محفوظ محليًا":"محفوظ محليًا","تعديلات بانتظار الحفظ":"تعديلات بانتظار الحفظ","جارٍ الحفظ…":"جارٍ الحفظ…","تعذر الحفظ؛ التعديلات لا تزال مفتوحة":"تعذر الحفظ؛ التعديلات لا تزال مفتوحة","تعذر تحميل مخطط المشروع: ":"تعذر تحميل مخطط المشروع: ","تعذر مطابقة نتيجة الحفظ مع التعديلات.":"تعذر مطابقة نتيجة الحفظ مع التعديلات.","هذا المشروع للعرض فقط.":"هذا المشروع للعرض فقط.","طلب احتياج":"طلب احتياج","أقفال الجدولة":"أقفال الجدولة","قفل البداية":"قفل البداية","قفل النهاية":"قفل النهاية","القفل يمنع السحب أو التمديد من تجاوز هذا الحد.":"القفل يمنع السحب أو التمديد من تجاوز هذا الحد.","طي تفرعات ":"طي تفرعات ","فتح تفرعات ":"فتح تفرعات ","تحديد ":"تحديد ","تعديل ":"تعديل "});
   Object.assign(catalogs.en,{"بانتظار تحميل المشروع…":"Loading project…","محفوظ محليًا":"Saved locally","تعديلات بانتظار الحفظ":"Changes waiting to save","جارٍ الحفظ…":"Saving…","تعذر الحفظ؛ التعديلات لا تزال مفتوحة":"Save failed. Edits are still open.","تعذر تحميل مخطط المشروع: ":"Could not load the project chart: ","تعذر مطابقة نتيجة الحفظ مع التعديلات.":"Could not match the saved result to the edits.","هذا المشروع للعرض فقط.":"This project is read-only.","طلب احتياج":"Material requisition","أقفال الجدولة":"Schedule locks","قفل البداية":"Lock start","قفل النهاية":"Lock finish","القفل يمنع السحب أو التمديد من تجاوز هذا الحد.":"The lock prevents dragging or extending past this date.","طي تفرعات ":"Collapse branches of ","فتح تفرعات ":"Expand branches of ","تحديد ":"Select ","تعديل ":"Edit "});
+  Object.assign(catalogs.ar,{
+    "جاهز للصرف":"جاهز للصرف",
+    "جاهز":"جاهز",
+    "الاحتياجات":"الاحتياجات",
+    "طلبات":"طلبات",
+    "بند جاهز للصرف":"بند جاهز للصرف",
+    "بنود جاهزة للصرف ({0})":"بنود جاهزة للصرف ({0})",
+    "طلبات الاحتياج ({0})":"طلبات الاحتياج ({0})",
+  });
+  Object.assign(catalogs.en,{
+    "جاهز للصرف":"Ready to issue",
+    "جاهز":"Ready",
+    "الاحتياجات":"Requisitions",
+    "طلبات":"Requests",
+    "بند جاهز للصرف":"1 item ready to issue",
+    "بنود جاهزة للصرف ({0})":"{0} items ready to issue",
+    "طلبات الاحتياج ({0})":"Material requisitions ({0})",
+  });
+  Object.assign(catalogs.ur,{
+    "جاهز للصرف":"اجرا کے لیے تیار",
+    "جاهز":"تیار",
+    "الاحتياجات":"درخواستیں",
+    "طلبات":"درخواستیں",
+    "بند جاهز للصرف":"ایک آئٹم اجرا کے لیے تیار",
+    "بنود جاهزة للصرف ({0})":"اجرا کے لیے تیار آئٹمز ({0})",
+    "طلبات الاحتياج ({0})":"مواد کی درخواستیں ({0})",
+  });
   const demoEnglish = {
   "تجهيز مركز خدمات — مشروع تجريبي": "Service centre fit-out — Demo project",
   "نموذج اختبار للمهندس؛ جميع الأسماء والمواعيد والبيانات وهمية.": "An engineering test model. All names, dates and data are fictional.",
@@ -1254,6 +1289,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   let editingTask = null, editingLink = null, toastTimer, persistenceAvailable = true, startupError = '';
   let lastGeometry = new Map(), lastRange = null, suppressChartClickUntil = 0;
   let revision=0,savedRevision=0,serverVersion=0,readOnly=false;
+  let taskMaterialSummaries=new Map();
   let saveStatusKey=embedded?'بانتظار تحميل المشروع…':'محفوظ محليًا';
   const hostNotice=document.createElement('p');
   hostNotice.setAttribute('role','status');
@@ -1481,6 +1517,36 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     }
     svg.innerHTML=paths+dots;
   }
+  function renderTaskMaterialBadges() {
+    for(const badge of $('ganttGrid').querySelectorAll('[data-task-materials]')) {
+      const summary=taskMaterialSummaries.get(Number(badge.dataset.taskMaterials));
+      badge.hidden=!summary;
+      if(!summary)continue;
+      const ready=summary.readyItemCount>0;
+      const count=ready?summary.readyItemCount:summary.requisitionCount;
+      const label=ready
+        ?(count===1?I.t('بند جاهز للصرف'):I.t('بنود جاهزة للصرف ({0})',[count]))
+        :(count===1?I.t('طلب احتياج'):I.t('طلبات الاحتياج ({0})',[count]));
+      badge.classList.toggle('is-ready',ready);
+      badge.title=label;
+      badge.setAttribute('aria-label',label+' · '+badge.dataset.taskName);
+      badge.querySelector('bdi').textContent=String(count);
+      badge.querySelector('.task-materials-long').textContent=I.t(ready?'جاهز للصرف':'الاحتياجات');
+      badge.querySelector('.task-materials-short').textContent=I.t(ready?'جاهز':'طلبات');
+    }
+  }
+  function updateTaskMaterialSummaries(items) {
+    if(!Array.isArray(items))return;
+    const summaries=new Map();
+    for(const item of items) {
+      if(!item||!Number.isSafeInteger(item.taskId)||item.taskId<1||
+        !Number.isSafeInteger(item.requisitionCount)||item.requisitionCount<1||
+        !Number.isSafeInteger(item.readyItemCount)||item.readyItemCount<0)continue;
+      summaries.set(item.taskId,item);
+    }
+    taskMaterialSummaries=summaries;
+    renderTaskMaterialBadges();
+  }
   function renderChart(s=state,a=analysis) {
     if(linkDrag)cancelLinkDrag();
     const scroll=$('ganttScroll'), oldTop=scroll.scrollTop, oldLeft=scroll.scrollLeft;
@@ -1515,7 +1581,9 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       const treeControl=hasChildren?`<button type="button" class="tree-toggle tree-node-anchor" data-tree-toggle="${t.id}" aria-expanded="${expanded}" aria-label="${esc(toggleLabel+I.field(t,'name'))}" title="${esc(toggleLabel+I.field(t,'name'))}">${expanded?'−':'+'}</button>`:'<span class="tree-toggle-spacer tree-node-anchor" aria-hidden="true"></span>';
       const requisitionLabel=I.t('طلب احتياج');
       const requisitionButton=allowMaterialRequisitions&&Number.isSafeInteger(t.pmTaskId)&&t.pmTaskId>0?`<button type="button" class="requisition-add" data-requisition="${t.pmTaskId}" title="${esc(requisitionLabel)}" aria-label="${esc(requisitionLabel+' — '+I.field(t,'name'))}">+</button>`:'';
-      names+=`<div class="task-row ${sel?'selected':''} ${critical?'critical-row':''} ${hasChildren?'is-parent':''} ${hasChildren&&expanded?'tree-open':''}" data-row="${t.id}" data-parent-id="${t.parentId||''}" data-depth="${depth}"><input type="checkbox" data-select="${t.id}" ${sel?'checked':''} aria-label="${esc(I.t('تحديد ')+I.field(t,'name'))}"><span class="task-code">${esc(t.id)}</span><span class="tree-indent" style="width:${depth*18}px" aria-hidden="true"></span>${treeControl}<button class="task-details" data-edit="${t.id}" title="${esc(I.field(t,'name')+' · '+I.field(t,'phase'))}"><b>${esc(I.field(t,'name'))}</b><small>${esc(I.field(t,'owner')||I.t("بلا مسؤول"))} · ${t.progress}%</small></button><span class="task-duration">${t.duration||'◆'}<small>${t.duration?I.t("يوم"):I.t("معلم")}</small></span>${requisitionButton}<button class="row-more" data-edit="${t.id}" aria-label="${esc(I.t('تعديل ')+I.field(t,'name'))}">⋮</button></div>`;
+      const materialsBadge=embedded&&Number.isSafeInteger(t.pmTaskId)&&t.pmTaskId>0
+        ?`<button type="button" class="task-materials-badge" data-task-materials="${t.pmTaskId}" data-task-name="${esc(I.field(t,'name'))}" aria-haspopup="dialog" hidden><bdi></bdi><span class="task-materials-long"></span><span class="task-materials-short"></span></button>`:'';
+      names+=`<div class="task-row ${sel?'selected':''} ${critical?'critical-row':''} ${hasChildren?'is-parent':''} ${hasChildren&&expanded?'tree-open':''}" data-row="${t.id}" data-parent-id="${t.parentId||''}" data-depth="${depth}"><input type="checkbox" data-select="${t.id}" ${sel?'checked':''} aria-label="${esc(I.t('تحديد ')+I.field(t,'name'))}"><span class="task-code">${esc(t.id)}</span><span class="tree-indent" style="width:${depth*18}px" aria-hidden="true"></span>${treeControl}<div class="task-info"><button class="task-details" data-edit="${t.id}" title="${esc(I.field(t,'name')+' · '+I.field(t,'phase'))}"><b>${esc(I.field(t,'name'))}</b><small>${esc(I.field(t,'owner')||I.t("بلا مسؤول"))} · ${t.progress}%</small></button>${materialsBadge}</div><span class="task-duration">${t.duration||'◆'}<small>${t.duration?I.t("يوم"):I.t("معلم")}</small></span>${requisitionButton}<button class="row-more" data-edit="${t.id}" aria-label="${esc(I.t('تعديل ')+I.field(t,'name'))}">⋮</button></div>`;
       timeline+=`<div class="time-lane ${sel?'selected':''}" data-lane="${t.id}">`;
       const base=showBaseline?s.baseline?.tasks.find(b=>b.id===t.id):null;
       if(base) {
@@ -1540,6 +1608,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     if(statusX>=0&&statusX<r.width) timeline+=I.markup("<div class=\"tracking-line\" style=\"left:{0}px\"><span class=\"tracking-label\">متابعة {1}</span></div>", [statusX, compactDate(s.project.statusDate)]);
     timeline+=edgesHTML(s,a,lastGeometry,r,height)+'</div></div>'; names+='</div></div>';
     $('ganttGrid').innerHTML=timeline+names;
+    renderTaskMaterialBadges();
     renderTaskTreeConnectors();
     scroll.scrollTop=oldTop; scroll.scrollLeft=oldLeft;
   }
@@ -2243,6 +2312,10 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       if(state)switchLanguage(message.locale);
       return;
     }
+    if(message.type==='pscm:task-materials') {
+      updateTaskMaterialSummaries(message.items);
+      return;
+    }
     if(message.type==='pscm:gantt:saving') {setSaveStatus('جارٍ الحفظ…');return;}
     if(message.type==='pscm:gantt:save-failed') {setSaveStatus('تعذر الحفظ؛ التعديلات لا تزال مفتوحة');return;}
     if(message.type==='pscm:gantt:load') {
@@ -2267,6 +2340,12 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
 
   // Delegated handlers keep chart interactions live after re-rendering.
   document.addEventListener('click',event=>{
+    const materials=event.target.closest('[data-task-materials]');
+    if(materials) {
+      const taskId=Number(materials.dataset.taskMaterials);
+      if(taskMaterialSummaries.has(taskId))sendToHost('pscm:open-task-materials',{taskId});
+      return;
+    }
     const requisition=event.target.closest('[data-requisition]');
     if(requisition&&allowMaterialRequisitions){sendToHost('pscm:material-requisition',{taskId:Number(requisition.dataset.requisition)});return;}
     const close=event.target.closest('[data-close]');if(close){if(close.dataset.close==='taskDialog'&&!canLeaveTask())return;closeDialog(close.dataset.close);return;}

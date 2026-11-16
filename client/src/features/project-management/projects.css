@@ -18,32 +18,6 @@
 .pm-heading h3 {
   margin: 5px 0;
 }
-.pm-material-progress article + article,
-.pm-material-progress-item + .pm-material-progress-item {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #293447;
-}
-.pm-material-progress-item > .pm-help {
-  display: block;
-}
-.pm-material-progress-item dl {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-  gap: 8px;
-  margin: 8px 0;
-}
-.pm-material-progress-item dt {
-  color: #a1aec9;
-  font-size: 0.82rem;
-}
-.pm-material-progress-item dd {
-  margin: 0;
-}
-.pm-material-progress-item ul {
-  padding-inline-start: 20px;
-  margin: 8px 0;
-}
 .pm-heading p,
 .pm-help {
   color: #a1aec9;

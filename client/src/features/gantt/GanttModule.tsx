@@ -8,6 +8,7 @@ import { Modal } from "@/components/Modal";
 import { businessDate } from "@shared/date";
 import { MaterialRequisitionForm } from "../material-requisitions/MaterialRequisitions";
 import { mrText } from "../material-requisitions/copy";
+import { TaskMaterialPanel } from "../project-management/TaskMaterialProgress";
 import "./gantt.css";
 
 type User = { id: number; permissions: string[] };
@@ -235,6 +236,7 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
   const t = (a: string, e: string, u: string) =>
       locale === "ar" ? a : locale === "ur" ? u : e,
     canEdit = user.permissions.includes("pm.tasks.manage"),
+    canViewMaterials = user.permissions.includes("pm.view"),
     canCreateRequisition = user.permissions.includes(
       "materialRequisitions.create"
     );
@@ -251,10 +253,19 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
       projectId: number;
       taskId: number | null;
     } | null>(null),
+    [materialTaskId, setMaterialTaskId] = useState<number | null>(null),
     [openingRequisition, setOpeningRequisition] = useState(false);
   const detail = trpc.gantt.detail.useQuery(
       { projectId },
       { enabled: projectId > 0, staleTime: 0 }
+    ),
+    taskMaterials = trpc.projectManagement.taskMaterialSummary.useQuery(
+      { projectId },
+      {
+        enabled: canViewMaterials && projectId > 0 && Boolean(detail.data),
+        refetchInterval: 30_000,
+        retry: false,
+      }
     ),
     directory = trpc.gantt.sharedDirectory.useQuery(undefined, {
       enabled: sharedOpen || crossOpen,
@@ -288,6 +299,10 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
       { ...data, type, channel, projectId },
       window.location.origin
     );
+  const materialSummaries =
+    canViewMaterials && !taskMaterials.isError
+      ? taskMaterials.data?.items
+      : undefined;
   const draftKey = `pscm:gantt-draft-v1:${user.id}:${projectId}`;
   const storeDraft = () => {
     try {
@@ -479,12 +494,23 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
         readOnly: !canEdit,
         failed: saveFailed || recovered,
       });
+      post("pscm:task-materials", { items: materialSummaries ?? [] });
       if (receipt.current) post("pscm:gantt:saved", receipt.current);
       return;
     }
     if (message.type === "pscm:material-requisition") {
       if (Number.isSafeInteger(message.taskId) && message.taskId > 0)
         requestRequisition(message.taskId);
+      return;
+    }
+    if (message.type === "pscm:open-task-materials") {
+      if (
+        canViewMaterials &&
+        Number.isSafeInteger(message.taskId) &&
+        materialSummaries?.some(item => item.taskId === message.taskId) &&
+        detail.data?.tasks.some(task => task.id === message.taskId)
+      )
+        setMaterialTaskId(message.taskId);
       return;
     }
     if (message.type === "pscm:gantt:rebase-failed") {
@@ -558,6 +584,10 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
       post("pscm:gantt:locale", { locale });
   }, [locale, projectId]);
   useEffect(() => {
+    if (readyProject.current === projectId)
+      post("pscm:task-materials", { items: materialSummaries ?? [] });
+  }, [materialSummaries, projectId]);
+  useEffect(() => {
     if (
       !state ||
       readyProject.current !== projectId ||
@@ -614,7 +644,11 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
         <select
           value={projectId}
           disabled={save.isPending || hasQueuedEdits || openingRequisition}
-          onChange={e => setProjectId(Number(e.target.value))}
+          onChange={e => {
+            readyProject.current = 0;
+            setMaterialTaskId(null);
+            setProjectId(Number(e.target.value));
+          }}
         >
           {projects.data?.map(p => (
             <option key={p.id} value={p.id}>
@@ -729,8 +763,16 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
             "Approved Gantt chart",
             "منظور شدہ گانٹ چارٹ"
           )}
-          src={`/gantt-studio/index.html?v=pscm-bridge-1&project=${projectId}&channel=${channel}&requisitions=${canCreateRequisition ? "1" : "0"}`}
+          src={`/gantt-studio/index.html?v=pscm-bridge-2&project=${projectId}&channel=${channel}&requisitions=${canCreateRequisition ? "1" : "0"}`}
           className="gantt-studio-frame"
+        />
+      )}
+      {materialTaskId !== null && (
+        <TaskMaterialPanel
+          projectId={projectId}
+          taskId={materialTaskId}
+          locale={locale}
+          close={() => setMaterialTaskId(null)}
         />
       )}
       {dialog && project && (

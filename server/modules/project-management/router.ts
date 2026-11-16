@@ -11,7 +11,10 @@ import {
   projectStates,
 } from "../../../shared/construction";
 import * as service from "./service";
-import { taskMaterialProgress } from "../material-requisitions/service";
+import {
+  taskMaterialProgress,
+  taskMaterialSummary,
+} from "../material-requisitions/service";
 export const projectManagementRouter = router({
   list: requiring("pm.view")
     .input(
@@ -37,6 +40,16 @@ export const projectManagementRouter = router({
   detail: requiring("pm.view")
     .input(z.object({ id: z.number().int().positive() }))
     .query(({ input, ctx }) => service.detail(input.id, ctx.access!)),
+  taskMaterialSummary: requiring("pm.view")
+    .input(
+      z.object({
+        projectId: z.number().int().positive(),
+        taskId: z.number().int().positive().optional(),
+      })
+    )
+    .query(({ input, ctx }) =>
+      taskMaterialSummary(input.projectId, input.taskId, ctx.access!)
+    ),
   taskMaterialProgress: requiring("pm.view")
     .input(
       z.object({

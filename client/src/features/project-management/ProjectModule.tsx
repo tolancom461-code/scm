@@ -24,7 +24,7 @@ import {
 } from "./GoogleProjectMap";
 import { MaterialRequisitionForm } from "../material-requisitions/MaterialRequisitions";
 import { mrText } from "../material-requisitions/copy";
-import { TaskMaterialProgress } from "./TaskMaterialProgress";
+import { TaskMaterialTrigger } from "./TaskMaterialProgress";
 import "./projects.css";
 type Outputs = inferRouterOutputs<AppRouter>["projectManagement"];
 type Project = Outputs["detail"]["project"];
@@ -2229,7 +2229,11 @@ function TaskForm({
       </form>
       {row && (
         <>
-          <TaskMaterialProgress projectId={projectId} taskId={row.id} locale={locale} />
+          <TaskMaterialTrigger
+            projectId={projectId}
+            taskId={row.id}
+            locale={locale}
+          />
           <ProjectAttachments
             id={row.id}
             entityType="pm_task"

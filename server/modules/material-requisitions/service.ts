@@ -289,6 +289,118 @@ function displayItems(
   }));
 }
 
+const purchaseDispatchColumns = {
+  id: s.materialRequisitions.id,
+  purchaseNumber: s.materialRequisitions.externalPurchaseRequestNumber,
+  externalStatus: s.materialRequisitions.externalStatus,
+  instanceId: s.materialRequisitions.cmmsDispatchSourceId,
+};
+
+async function readRequisitionFulfillment(
+  requisitions: {
+    id: number;
+    purchaseNumber: string | null;
+    externalStatus: string | null;
+    instanceId: string | null;
+  }[]
+) {
+  const progress = new Map<string, CmmsFulfillmentItem>();
+  const settings = cmmsPurchaseSettings();
+  if (!settings) return progress;
+
+  const dispatches = new Map<string, number[]>();
+  for (const row of requisitions) {
+    if (!row.purchaseNumber || row.externalStatus !== "purchase_request_created")
+      continue;
+    const instanceId = row.instanceId ?? settings.instanceId;
+    const ids = dispatches.get(instanceId) ?? [];
+    ids.push(row.id);
+    dispatches.set(instanceId, ids);
+  }
+
+  const maxIdsPerRequest = 100;
+  const concurrency = 4;
+  const batches: { instanceId: string; ids: number[] }[] = [];
+  for (const [instanceId, ids] of dispatches) {
+    for (let index = 0; index < ids.length; index += maxIdsPerRequest) {
+      batches.push({
+        instanceId,
+        ids: ids.slice(index, index + maxIdsPerRequest),
+      });
+    }
+  }
+  for (let index = 0; index < batches.length; index += concurrency) {
+    const results = await Promise.allSettled(
+      batches
+        .slice(index, index + concurrency)
+        .map(({ instanceId, ids }) =>
+          readCmmsFulfillment(settings, instanceId, ids)
+        )
+    );
+    for (const result of results) {
+      // Keep requisitions visible when a CMMS request fails.
+      if (result.status !== "fulfilled") continue;
+      for (const item of result.value) {
+        progress.set(`${item.requisitionId}:${item.sequence}`, item);
+      }
+    }
+  }
+  return progress;
+}
+
+export async function taskMaterialSummary(
+  projectId: number,
+  taskId: number | undefined,
+  access: AccessContext
+) {
+  const db = await database();
+  await source(db, projectId, taskId ?? null, access);
+  const requisitions = await db
+    .select({ ...purchaseDispatchColumns, taskId: s.projectTasks.id })
+    .from(s.materialRequisitions)
+    .innerJoin(
+      s.projectTasks,
+      and(
+        eq(s.materialRequisitions.taskId, s.projectTasks.id),
+        eq(s.projectTasks.projectId, projectId)
+      )
+    )
+    .where(
+      and(
+        eq(s.materialRequisitions.projectId, projectId),
+        eq(s.materialRequisitions.status, "approved"),
+        taskId === undefined
+          ? undefined
+          : eq(s.materialRequisitions.taskId, taskId)
+      )
+    );
+
+  type Summary = {
+    taskId: number;
+    requisitionCount: number;
+    readyItemCount: number;
+  };
+  const summaries = new Map<number, Summary>();
+  const summariesByRequisition = new Map<number, Summary>();
+  for (const row of requisitions) {
+    const summary = summaries.get(row.taskId) ?? {
+      taskId: row.taskId,
+      requisitionCount: 0,
+      readyItemCount: 0,
+    };
+    summary.requisitionCount += 1;
+    summaries.set(row.taskId, summary);
+    summariesByRequisition.set(row.id, summary);
+  }
+
+  const progress = await readRequisitionFulfillment(requisitions);
+  for (const item of progress.values()) {
+    const summary = summariesByRequisition.get(item.requisitionId);
+    if (summary && item.readyQuantity > 0) summary.readyItemCount += 1;
+  }
+  return { items: [...summaries.values()] };
+}
+
 export async function taskMaterialProgress(
   projectId: number,
   taskId: number,
@@ -301,12 +413,9 @@ export async function taskMaterialProgress(
   const pageSize = 10;
   const requisitions = await db
     .select({
-      id: s.materialRequisitions.id,
+      ...purchaseDispatchColumns,
       number: s.materialRequisitions.number,
       approvedSnapshot: s.materialRequisitions.approvedSnapshot,
-      purchaseNumber: s.materialRequisitions.externalPurchaseRequestNumber,
-      externalStatus: s.materialRequisitions.externalStatus,
-      instanceId: s.materialRequisitions.cmmsDispatchSourceId,
     })
     .from(s.materialRequisitions)
     .where(and(
@@ -319,30 +428,13 @@ export async function taskMaterialProgress(
     .limit(pageSize + 1);
 
   const page = requisitions.slice(0, pageSize);
-  const savedItems = await itemsFor(
-    db,
-    page.filter(row => !row.approvedSnapshot).map(row => row.id)
-  );
-  const settings = cmmsPurchaseSettings();
-  const dispatches = new Map<string, number[]>();
-  for (const row of page) {
-    if (!settings || !row.purchaseNumber || row.externalStatus !== "purchase_request_created") continue;
-    const instance = row.instanceId ?? settings.instanceId;
-    const ids = dispatches.get(instance) ?? [];
-    ids.push(row.id);
-    dispatches.set(instance, ids);
-  }
-  const progress = new Map<string, CmmsFulfillmentItem>();
-  if (settings) {
-    await Promise.all([...dispatches].map(async ([instance, ids]) => {
-      try {
-        const result = await readCmmsFulfillment(settings, instance, ids);
-        for (const item of result) progress.set(`${item.requisitionId}:${item.sequence}`, item);
-      } catch {
-        // Keep the requisitions visible and leave unverified quantities absent.
-      }
-    }));
-  }
+  const [savedItems, progress] = await Promise.all([
+    itemsFor(
+      db,
+      page.filter(row => !row.approvedSnapshot).map(row => row.id)
+    ),
+    readRequisitionFulfillment(page),
+  ]);
 
   return {
     requisitions: page.map(row => ({
