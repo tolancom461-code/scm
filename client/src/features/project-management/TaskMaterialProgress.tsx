@@ -44,18 +44,10 @@ function materialCopy(locale: Locale) {
       "There are no approved material requests for this task.",
       "اس کام کے لیے مواد کی کوئی منظور شدہ درخواست نہیں ہے۔"
     ),
-    request: t("طلب احتياج", "Material requisition", "مواد کی درخواست"),
-    requests: t("طلبات الاحتياج", "Material requisitions", "مواد کی درخواستیں"),
-    materials: t("مواد المهمة", "Task materials", "کام کا سامان"),
-    readyItem: t(
-      "بند جاهز للصرف",
-      "1 item ready to issue",
-      "ایک آئٹم اجرا کے لیے تیار"
-    ),
-    readyItems: t(
-      "بنود جاهزة للصرف",
-      "Items ready to issue",
-      "اجرا کے لیے تیار اشیاء"
+    requestDetails: t(
+      "تفاصيل الطلبات",
+      "Request details",
+      "درخواستوں کی تفصیلات"
     ),
     statuses: {
       unknown: t(
@@ -435,20 +427,11 @@ export function TaskMaterialTrigger(task: MaterialTask) {
     { refetchInterval: 30_000, retry: false }
   );
   const summary = data?.items.find(item => item.taskId === task.taskId);
-  const copy = materialCopy(task.locale);
-  const ready = Boolean(summary?.readyItemCount);
-  const count =
-    (ready ? summary?.readyItemCount : summary?.requisitionCount) ?? 0;
-  const format = new Intl.NumberFormat(localeMeta[task.locale].formatting);
-  const label =
-    count === 1
-      ? ready
-        ? copy.readyItem
-        : copy.request
-      : `${ready ? copy.readyItems : copy.requests} (${format.format(count)})`;
+  const hasRequests = (summary?.requisitionCount ?? 0) > 0;
+  const ready = (summary?.readyItemCount ?? 0) > 0;
   return (
     <>
-      {(count > 0 || isError) && (
+      {(hasRequests || isError) && (
         <div className="task-material-entry">
           <button
             className={`task-material-trigger${ready ? " task-material-ready" : ""}`}
@@ -457,7 +440,7 @@ export function TaskMaterialTrigger(task: MaterialTask) {
             aria-expanded={open}
             onClick={() => setOpen(true)}
           >
-            {count > 0 ? label : copy.materials}
+            {materialCopy(task.locale).requestDetails}
           </button>
         </div>
       )}
