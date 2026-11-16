@@ -74,6 +74,35 @@ describe("PSCM outgoing approved requirements", () => {
     }) }, "pscm")).toBeNull();
   });
 
+  it("sends the approved snapshot author as requester and keeps the idempotency key", () => {
+    const withAuthor = cmmsPurchasePayload({
+      ...request,
+      approvedSnapshot: JSON.stringify({
+        ...snapshot,
+        creatorName: "  أحمد\tالكاتب  ",
+        approverName: "خالد المراجع",
+      }),
+    }, settings.instanceId);
+    expect(withAuthor).toEqual({
+      ...payload,
+      source: { ...payload.source, requesterName: "أحمد الكاتب" },
+    });
+  });
+
+  it.each([null, "", "   ", "a".repeat(256), "name\u0000value", { name: "legacy" }])(
+    "retains the original wire shape when a legacy author label is unavailable or invalid (%j)",
+    creatorName => {
+      expect(cmmsPurchasePayload({
+        ...request,
+        approvedSnapshot: JSON.stringify({
+          ...snapshot,
+          creatorName,
+          approverName: "Approval user",
+        }),
+      }, settings.instanceId)).toEqual(payload);
+    }
+  );
+
   it("connects only to an explicitly configured endpoint and validates transport settings", () => {
     expect(cmmsPurchaseSettings({})).toBeNull();
     expect(cmmsPurchaseSettings({ ...environment, CMMS_PURCHASE_API_TOKEN: "" })).toBeNull();
@@ -112,6 +141,23 @@ describe("PSCM outgoing approved requirements", () => {
     const result = await sendCmmsPurchase(settings, payload, fetchMock);
     expect(result).toMatchObject({ ok: false, retryable: false });
     expect(JSON.stringify(result)).not.toContain("upstream internal details");
+  });
+
+  it("shows a specific failure when CMMS reports a fractional quantity", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({ error: "unsupported_quantity", detail: "upstream internal details" }, { status: 422 })
+    );
+    const result = await sendCmmsPurchase(settings, payload, fetchMock);
+    expect(result).toMatchObject({ ok: false, retryable: false, message: expect.stringContaining("كمية كسرية") });
+    expect(JSON.stringify(result)).not.toContain("upstream internal details");
+  });
+
+  it("uses the generic validation failure when the error body exceeds the response limit", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({ error: "unsupported_quantity", detail: " ".repeat(8193) }, { status: 422 })
+    );
+    const result = await sendCmmsPurchase(settings, payload, fetchMock);
+    expect(result).toMatchObject({ ok: false, retryable: false, message: expect.stringContaining("رفض CMMS بيانات الاحتياج") });
   });
 
   it.each([401, 404, 429, 503])("keeps retryable HTTP status %i queued", async status => {

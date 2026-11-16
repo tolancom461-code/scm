@@ -155,6 +155,40 @@ describe("CMMS requirements on requisition save", () => {
     expect(writtenItems).not.toHaveBeenCalled();
   });
 
+  it.each([false, true])(
+    "rejects a fractional draft quantity before any CMMS lookup or write (edit: %s)",
+    async edit => {
+      const { input, writtenItems } = stubSave({ edit });
+      await expect(
+        save(
+          materialRequisitionSaveInput.parse({
+            ...input,
+            items: [{ ...line, quantity: "999999999.000000001" }],
+          }),
+          actor
+        )
+      ).rejects.toMatchObject({ domainCode: "CMMS_WHOLE_QUANTITY_REQUIRED" });
+      expect(mocks.purchaseOptions).not.toHaveBeenCalled();
+      expect(writtenItems).not.toHaveBeenCalled();
+    }
+  );
+
+  it("allows correcting a draft to a whole quantity with trailing zeroes", async () => {
+    const { input, writtenItems } = stubSave({ edit: true });
+    await expect(
+      save(
+        materialRequisitionSaveInput.parse({
+          ...input,
+          items: [{ ...line, quantity: "3.000000000" }],
+        }),
+        actor
+      )
+    ).resolves.toEqual({ id: 18 });
+    expect(writtenItems).toHaveBeenCalledWith([
+      expect.objectContaining({ quantity: "3.000000000" }),
+    ]);
+  });
+
   it.each([{ cmmsCategoryId: null }, { cmmsReviewRole: null }])(
     "requires a category and review department for every item (%j)",
     async missing => {

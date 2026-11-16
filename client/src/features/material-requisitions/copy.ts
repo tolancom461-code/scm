@@ -81,6 +81,11 @@ const copy = {
   close: ["إغلاق", "Close", "بند کریں"],
   item: ["الصنف", "Item", "صنف"],
   quantity: ["الكمية", "Quantity", "مقدار"],
+  wholeQuantityRequired: [
+    "أدخل كمية صحيحة أكبر من صفر.",
+    "Enter a positive whole quantity.",
+    "صفر سے بڑا مکمل عدد درج کریں۔",
+  ],
   unit: ["الوحدة", "Unit", "اکائی"],
   specifications: ["المواصفات", "Specifications", "خصوصیات"],
   notes: ["ملاحظات", "Notes", "نوٹس"],

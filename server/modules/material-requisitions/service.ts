@@ -20,6 +20,7 @@ import { users } from "../../../drizzle/schema";
 import { scmAuditEvents } from "../../../drizzle/foundation";
 import {
   dateFromLead,
+  isWholeRequisitionQuantity,
   leadDays,
   materialRequisitionApproveInput,
   materialRequisitionListInput,
@@ -594,8 +595,11 @@ export async function save(
   const missingPurchaseFields = input.items.find(
     item => item.cmmsCategoryId == null || item.cmmsReviewRole == null
   );
+  const invalidQuantity = input.items.some(
+    item => !isWholeRequisitionQuantity(item.quantity)
+  );
   const { options, failure } = await cmmsOptions(
-    !missingPurchaseFields,
+    !missingPurchaseFields && !invalidQuantity,
     input.locale
   );
   return (await database()).transaction(tx =>
@@ -645,6 +649,8 @@ export async function save(
           invalid(
             "حدد موقع المشروع وقسمه من CMMS قبل حفظ طلب الاحتياج / Select the project’s CMMS site and section before saving the requisition / ضرورت کی درخواست محفوظ کرنے سے پہلے منصوبے کا CMMS مقام اور شعبہ منتخب کریں۔"
           );
+        if (invalidQuantity)
+          throw new DomainError("CMMS_WHOLE_QUANTITY_REQUIRED");
         const catalogIds = [
           ...new Set(
             input.items.flatMap(item =>
@@ -833,6 +839,12 @@ export async function approve(
         if (!items.length || items.length > 20)
           throw new DomainError("INVALID_INPUT");
         const sendToCmms = projectHasCmmsLocation(linked.project);
+        if (
+          sendToCmms &&
+          items.some(item => !isWholeRequisitionQuantity(item.quantity))
+        ) {
+          throw new DomainError("CMMS_WHOLE_QUANTITY_REQUIRED");
+        }
         if (sendToCmms && !referencesConfigured) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",

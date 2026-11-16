@@ -54,6 +54,7 @@ const defaultItem = {
   id: 9,
   itemName: "Valve",
   leadDays: 3,
+  quantity: "3.000000000",
   cmmsCategoryId: 21,
   cmmsReviewRole: "construction_procurement_manager",
 };
@@ -129,6 +130,8 @@ describe("CMMS requisition approval", () => {
       cmmsDispatchNextAt: expect.any(Date),
     });
     expect(JSON.parse(String(approval?.approvedSnapshot))).toMatchObject({
+      creatorName: "Creator",
+      approverName: "Reviewer",
       project: {
         cmmsSiteId: 37,
         cmmsSiteName: "Plant",
@@ -143,13 +146,14 @@ describe("CMMS requisition approval", () => {
           cmmsReviewRole: "construction_procurement_manager",
           cmmsReviewRoleName: "Construction",
           needDate: "2027-03-17",
+          quantity: "3.000000000",
         },
       ],
     });
   });
 
   it("keeps approval local for a historical project without a CMMS location", async () => {
-    const writes = stubApproval(false);
+    const writes = stubApproval(false, { ...defaultItem, quantity: "1.125000000" });
     await expect(approve(command, approver)).resolves.toEqual({ id: 8 });
     expect(mocks.purchaseOptions).not.toHaveBeenCalled();
     expect(
@@ -159,6 +163,17 @@ describe("CMMS requisition approval", () => {
       cmmsDispatchNextAt: null,
     });
   });
+
+  it.each(["1.125000000", "999999999.000000001"])(
+    "keeps a mapped requisition with fractional quantity %s as a draft",
+    async quantity => {
+      const writes = stubApproval(true, { ...defaultItem, quantity });
+      await expect(approve(command, approver)).rejects.toMatchObject({
+        domainCode: "CMMS_WHOLE_QUANTITY_REQUIRED",
+      });
+      expect(writes).toEqual([]);
+    }
+  );
 
   it("rejects a mapped approval with a category that CMMS no longer offers", async () => {
     const writes = stubApproval(true, { ...defaultItem, cmmsCategoryId: 35 });

@@ -233,8 +233,11 @@
   width: 100%;
   min-width: 0;
 }
-.mr-line-grid select[aria-invalid="true"] {
+.mr-line-grid :is(input, select)[aria-invalid="true"] {
   border-color: #e48797;
+}
+.mr-field-error {
+  color: #ffb8b8;
 }
 .mr-line-text {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));

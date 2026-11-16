@@ -275,7 +275,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
             catalogCode: "spoofed",
             itemName: "Spoofed name",
             unitId: manualUnitId,
-            quantity: "0.123456789",
+            quantity: "3",
             needDate: "2030-12-07",
           },
         ],
@@ -289,7 +289,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         itemName: source.name,
         unitId: item.unitId,
         imageUrl: item.imageUrl,
-        quantity: "0.123456789",
+        quantity: "3.000000000",
       });
     });
 

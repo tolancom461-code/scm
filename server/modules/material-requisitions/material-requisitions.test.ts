@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   dateFromLead,
   externalPurchaseRequestUpdateInput,
+  isWholeRequisitionQuantity,
   leadDays,
   materialRequisitionSaveInput,
   projectHasCmmsLocation,
@@ -10,14 +11,14 @@ import {
 
 const item = {
   itemName: "Epoxy",
-  quantity: "0.123456789",
+  quantity: "3.000000000",
   unitId: 1,
   specifications: "",
   notes: "",
   needDate: "2026-12-07",
 };
 describe("Material requisition constraints", () => {
-  it("preserves exact decimal strings and limits the official document to 20 items", () => {
+  it("validates quantity syntax and limits a draft to 20 items", () => {
     const input = {
       key: "ec85b526-7488-4931-ace7-7c6f3abe60f5",
       projectId: 1,
@@ -25,7 +26,7 @@ describe("Material requisition constraints", () => {
       items: Array.from({ length: 20 }, () => item),
     };
     expect(materialRequisitionSaveInput.parse(input).items[0].quantity).toBe(
-      "0.123456789"
+      "3.000000000"
     );
     expect(
       materialRequisitionSaveInput.safeParse({
@@ -37,6 +38,18 @@ describe("Material requisition constraints", () => {
       expect(
         requisitionItemInput.safeParse({ ...item, quantity }).success
       ).toBe(false);
+  });
+  it("accepts positive whole quantities including stored decimal strings", () => {
+    for (const quantity of ["1", "0001", "3.000000000", "999999999"])
+      expect(isWholeRequisitionQuantity(quantity)).toBe(true);
+    for (const quantity of [
+      "",
+      "0.000000000",
+      "1.5",
+      "999999999.000000001",
+      "1000000000",
+    ])
+      expect(isWholeRequisitionQuantity(quantity)).toBe(false);
   });
   it("preserves lead days when drafts move across months or years", () => {
     expect(leadDays("2026-12-10", "2026-12-07")).toBe(3);

@@ -3,8 +3,10 @@ import { dateInput } from "../../../shared/validation";
 
 const id = z.number().int().min(1).max(2147483647);
 const name = z.string().trim().min(1).max(255);
+const requesterNameSchema = name.refine(value => !/\p{Cc}/u.test(value));
 const snapshotSchema = z.object({
   schemaVersion: z.literal(1),
+  creatorName: z.unknown().optional(),
   project: z.object({
     id,
     number: z.string().min(1).max(50),
@@ -74,7 +76,10 @@ export function cmmsPurchasePayload(request: ApprovedRequest, instanceId: string
   }
   const snapshot = snapshotSchema.safeParse(raw);
   if (!snapshot.success) return null;
-  const { project, task, items } = snapshot.data;
+  const { creatorName, project, task, items } = snapshot.data;
+  const requesterName = requesterNameSchema.safeParse(
+    typeof creatorName === "string" ? creatorName.replace(/\s+/g, " ") : creatorName
+  );
   return {
     schemaVersion: 1 as const,
     idempotencyKey: `${instanceId}:${request.number}`,
@@ -84,6 +89,7 @@ export function cmmsPurchasePayload(request: ApprovedRequest, instanceId: string
       requisitionId: request.id,
       requisitionNumber: request.number,
       approvedAt: approvedAt.toISOString(),
+      ...(requesterName.success ? { requesterName: requesterName.data } : {}),
       project: { id: project.id, number: project.number, name: project.name },
       task,
     },
@@ -103,6 +109,7 @@ const confirmationSchema = z.object({
   purchaseRequestId: id,
   purchaseRequestNumber: z.string().regex(/^PR-\d{4}-\d{4,}$/).max(100),
 });
+const unsupportedQuantitySchema = z.object({ error: z.literal("unsupported_quantity") });
 
 export type CmmsPurchaseResponse =
   | { ok: true; number: string; referenceUrl: string }
@@ -110,6 +117,30 @@ export type CmmsPurchaseResponse =
 
 const unavailable = { ok: false, retryable: true, message: "تعذر الاتصال بخدمة الشراء في CMMS. ستتم إعادة المحاولة." } as const;
 const invalidConfirmation = { ok: false, retryable: true, message: "لم يعد CMMS رقم طلب شراء صالحًا. ستتم إعادة المحاولة." } as const;
+
+async function readPurchaseResponse(response: Response): Promise<unknown> {
+  const reader = response.body?.getReader();
+  if (!reader) return null;
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > 8192) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(Buffer.from(value));
+    }
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    return null;
+  } finally {
+    reader.releaseLock();
+  }
+}
 
 export async function sendCmmsPurchase(
   settings: CmmsPurchaseSettings,
@@ -130,7 +161,18 @@ export async function sendCmmsPurchase(
       signal: AbortSignal.timeout(12_000),
     });
     if (!response.ok) {
-      await response.body?.cancel();
+      if (response.status === 422) {
+        const rejection = await readPurchaseResponse(response);
+        if (unsupportedQuantitySchema.safeParse(rejection).success) {
+          return {
+            ok: false,
+            retryable: false,
+            message: "تعذّر إرسال طلب الاحتياج إلى CMMS لأن أحد بنوده يحتوي على كمية كسرية. يتطلب CMMS كميات صحيحة.",
+          };
+        }
+      } else {
+        await response.body?.cancel();
+      }
       if (response.status === 401 || response.status === 403) {
         return { ok: false, retryable: true, message: "رفض CMMS رمز ربط الشراء. راجع إعدادات الاتصال." };
       }
@@ -139,34 +181,14 @@ export async function sendCmmsPurchase(
       }
       return unavailable;
     }
-    const reader = response.body?.getReader();
-    if (!reader) return invalidConfirmation;
-    const chunks: Buffer[] = [];
-    let bytes = 0;
-    try {
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        bytes += value.byteLength;
-        if (bytes > 8192) {
-          await reader.cancel();
-          return invalidConfirmation;
-        }
-        chunks.push(Buffer.from(value));
-      }
-      const confirmed = confirmationSchema.safeParse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-      if (!confirmed.success) return invalidConfirmation;
-      const { purchaseRequestId, purchaseRequestNumber } = confirmed.data;
-      return {
-        ok: true,
-        number: purchaseRequestNumber,
-        referenceUrl: new URL(`/purchase-orders/${purchaseRequestId}`, settings.endpoint).href,
-      };
-    } catch {
-      return invalidConfirmation;
-    } finally {
-      reader.releaseLock();
-    }
+    const confirmed = confirmationSchema.safeParse(await readPurchaseResponse(response));
+    if (!confirmed.success) return invalidConfirmation;
+    const { purchaseRequestId, purchaseRequestNumber } = confirmed.data;
+    return {
+      ok: true,
+      number: purchaseRequestNumber,
+      referenceUrl: new URL(`/purchase-orders/${purchaseRequestId}`, settings.endpoint).href,
+    };
   } catch {
     return unavailable;
   }

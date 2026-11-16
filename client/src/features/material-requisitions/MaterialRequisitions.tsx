@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { businessDate } from "@shared/date";
 import {
   dateFromLead,
+  isWholeRequisitionQuantity,
   leadDays,
   materialRequisitionListInput,
   projectHasCmmsLocation,
@@ -687,6 +688,9 @@ function RequisitionEditor({
       ? purchaseOptions.data
       : undefined;
   const linkedLocation = projectHasCmmsLocation(project);
+  const invalidQuantity = items.some(
+    item => !isWholeRequisitionQuantity(item.quantity)
+  );
   const invalidPurchaseChoice =
     cmmsOptions !== undefined &&
     items.some(
@@ -739,6 +743,10 @@ function RequisitionEditor({
     }
     if (items.length === 0) {
       setError(c("emptyDraft"));
+      return;
+    }
+    if (invalidQuantity) {
+      setError(c("wholeQuantityRequired"));
       return;
     }
     if (!startDate) {
@@ -972,6 +980,7 @@ function RequisitionEditor({
                     !cmmsOptions ||
                     purchaseOptionsEmpty ||
                     invalidPurchaseChoice ||
+                    invalidQuantity ||
                     initial?.status === "approved"
                   }
                 >

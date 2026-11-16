@@ -39,6 +39,11 @@ export const domainMessages = {
     en: "Quantity exceeds the remaining source line quantity.",
     ur: "مقدار اصل شاخ میں باقی مقدار سے زیادہ ہے۔",
   },
+  CMMS_WHOLE_QUANTITY_REQUIRED: {
+    ar: "أدخل كمية صحيحة أكبر من صفر لكل بند من بنود طلب الاحتياج.",
+    en: "Enter a positive whole quantity for each requisition item.",
+    ur: "درخواست کے ہر آئٹم کی مقدار صفر سے بڑا مکمل عدد درج کریں۔",
+  },
   SERVICE_UNAVAILABLE: {
     ar: "الخدمة غير متاحة حاليًا. حاول لاحقًا.",
     en: "Service is temporarily unavailable. Try again later.",

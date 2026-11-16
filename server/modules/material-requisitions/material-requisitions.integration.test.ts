@@ -263,7 +263,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         itemName: prefix + " Epoxy",
         ...purchaseChoice,
         catalogEntryId,
-        quantity: "0.123456789",
+        quantity: "3",
         unitId,
         needDate: "2026-12-07",
       };
@@ -291,7 +291,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
           expect.stringMatching(/^MR-\d{2}-\d{2}-\d{4,}$/),
         ])
       );
-      expect(data.rows[0].items[0].quantity).toBe("0.123456789");
+      expect(data.rows[0].items[0].quantity).toBe("3.000000000");
       await expect(
         owner.materialRequisitions.save({
           ...input,

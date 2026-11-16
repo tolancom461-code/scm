@@ -12,6 +12,10 @@ export const externalRequisitionStatuses = [
   "rejected",
 ] as const;
 
+export function isWholeRequisitionQuantity(value: string) {
+  return /^\d{1,9}(?:\.0{1,9})?$/.test(value) && Number(value) > 0;
+}
+
 export const requisitionItemInput = z.object({
   itemName: z.string().trim().min(1).max(255),
   catalogEntryId: id.nullable().default(null),

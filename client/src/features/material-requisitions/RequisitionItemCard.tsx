@@ -1,4 +1,6 @@
+import { useId } from "react";
 import type { Locale } from "@/lib/i18n";
+import { isWholeRequisitionQuantity } from "@shared/material-requisitions";
 import { ItemImage } from "./CatalogItemImage";
 import { mrText, type MrKey } from "./copy";
 
@@ -59,6 +61,9 @@ export function RequisitionItemCard({
 }) {
   const c = (key: MrKey) => mrText(locale, key);
   const field = (key: MrKey) => c(key) + " " + number;
+  const quantityErrorId = useId();
+  const invalidQuantity =
+    item.quantity !== "" && !isWholeRequisitionQuantity(item.quantity);
   const categories = options?.categories ?? [];
   const reviewRoles = options?.reviewRoles ?? [];
   const unavailableCategory =
@@ -105,14 +110,24 @@ export function RequisitionItemCard({
           <span>{c("quantity")} *</span>
           <input
             aria-label={field("quantity")}
+            aria-invalid={invalidQuantity || undefined}
+            aria-describedby={invalidQuantity ? quantityErrorId : undefined}
             required
             dir="ltr"
             lang="en"
-            inputMode="decimal"
-            pattern="[0-9]{1,9}(\.[0-9]{1,9})?"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={999999999}
+            step={1}
             value={item.quantity}
             onChange={event => update({ quantity: event.target.value })}
           />
+          {invalidQuantity && (
+            <small id={quantityErrorId} className="mr-field-error">
+              {c("wholeQuantityRequired")}
+            </small>
+          )}
         </label>
         <label>
           <span>{c("needDate")} *</span>
