@@ -61,6 +61,7 @@
   margin-top: 16px;
 }
 .pm-project-card {
+  position: relative;
   text-align: start;
   display: block;
   padding: 22px !important;
@@ -69,14 +70,33 @@
   border-radius: 12px !important;
   min-height: 190px;
 }
-.pm-project-card:hover {
+.pm-project-card:hover,
+.pm-project-card:focus-within {
   border-color: #54d3ea !important;
 }
 .pm-project-card > div {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  align-items: center;
+  align-items: flex-start;
+}
+.pm-project-card-reference {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+.pm-project-card-link-location {
+  position: relative;
+  z-index: 1;
+  padding: 7px 12px;
+  border: 1px solid #386478;
+  border-radius: 7px;
+  background: #172d40;
+  color: #c5eff7;
+  font-size: 0.82rem;
+}
+.pm-project-card-link-location:hover {
+  border-color: #54d3ea;
 }
 .pm-project-card h2 {
   font-size: 1.1rem;
@@ -86,11 +106,19 @@
 .pm-project-card p {
   color: #a2b4c8;
 }
-.pm-project-card > span {
+.pm-project-card-open {
   display: block;
   margin-top: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: #8ad8eb;
   font-size: 0.82rem;
+}
+.pm-project-card-open::after {
+  position: absolute;
+  inset: 0;
+  content: "";
 }
 .pm-badge {
   display: inline-flex;

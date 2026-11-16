@@ -27,6 +27,11 @@ type Person = { id: number; permissions: string[] };
 const projectPageSize = 50;
 type LocalizedLabel = [string, string, string];
 const localeIndex = { ar: 0, en: 1, ur: 2 } as const;
+const linkProjectLocationLabel: LocalizedLabel = [
+  "ربط موقع المشروع",
+  "Link project location",
+  "منصوبے کا مقام جوڑیں",
+];
 const states: Record<string, LocalizedLabel> = {
   draft: ["مسودة", "Draft", "مسودہ"],
   pending: [
@@ -140,7 +145,11 @@ export function ProjectModule({
       undefined,
     ]),
     [selected, setSelected] = useState(0),
-    [creating, setCreating] = useState(false);
+    [creating, setCreating] = useState(false),
+    [linkingProjectId, setLinkingProjectId] = useState<number | null>(null),
+    [linkedProjectIds, setLinkedProjectIds] = useState<Set<number>>(
+      () => new Set()
+    );
   const list = trpc.projectManagement.list.useQuery({
       q,
       status: tab === "reviews" ? "pending" : filter,
@@ -151,8 +160,18 @@ export function ProjectModule({
   const projects = list.data?.slice(0, projectPageSize) ?? [];
   const lastProject = projects.at(-1);
   const hasNextPage = (list.data?.length ?? 0) > projectPageSize;
+  const mayLinkFromList = (project: Project) =>
+    can("pm.edit") &&
+    !linkedProjectIds.has(project.id) &&
+    canLinkProjectCmmsLocation(project);
+  const linkingProject =
+    tab === "projects" && !selected && !creating
+      ? projects.find(p => p.id === linkingProjectId && mayLinkFromList(p))
+      : undefined;
+  const linkLocationTitle = linkProjectLocationLabel[localeIndex[locale]];
   const chooseTab = (v: typeof tab) => {
     setSelected(0);
+    setLinkingProjectId(null);
     setPageCursors([undefined]);
     setTab(v);
   };
@@ -337,13 +356,22 @@ export function ProjectModule({
             ) : (
               <div className="pm-projects">
                 {projects.map(p => (
-                  <button
-                    className="pm-project-card"
-                    key={p.id}
-                    onClick={() => setSelected(p.id)}
-                  >
+                  <article className="pm-project-card" key={p.id}>
                     <div>
-                      <bdi>{p.number}</bdi>
+                      <div className="pm-project-card-reference">
+                        <bdi>{p.number}</bdi>
+                        {mayLinkFromList(p) && (
+                          <button
+                            type="button"
+                            className="pm-project-card-link-location"
+                            aria-haspopup="dialog"
+                            aria-label={linkLocationTitle + " " + p.number}
+                            onClick={() => setLinkingProjectId(p.id)}
+                          >
+                            {linkLocationTitle}
+                          </button>
+                        )}
+                      </div>
                       <Badge state={p.status} locale={locale} />
                     </div>
                     <h2>{p.name}</h2>
@@ -355,10 +383,22 @@ export function ProjectModule({
                           "مقام درج نہیں"
                         )}
                     </p>
-                    <span>
+                    <button
+                      type="button"
+                      className="pm-project-card-open"
+                      aria-label={
+                        t("فتح المشروع", "Open project", "منصوبہ کھولیں") +
+                        " " +
+                        p.number
+                      }
+                      onClick={() => {
+                        setLinkingProjectId(null);
+                        setSelected(p.id);
+                      }}
+                    >
                       {t("فتح المشروع ←", "Open project →", "منصوبہ کھولیں ←")}
-                    </span>
-                  </button>
+                    </button>
+                  </article>
                 ))}
               </div>
             )}
@@ -395,6 +435,19 @@ export function ProjectModule({
             )}
           </>
         ))}
+      {linkingProject && (
+        <LinkProjectCmmsLocation
+          key={linkingProject.id}
+          locale={locale}
+          project={linkingProject}
+          close={() => setLinkingProjectId(null)}
+          refresh={() => void list.refetch()}
+          saved={() => {
+            setLinkedProjectIds(ids => new Set(ids).add(linkingProject.id));
+            setLinkingProjectId(null);
+          }}
+        />
+      )}
       {creating && (
         <ProjectForm
           locale={locale}
@@ -1143,14 +1196,12 @@ function ProjectDirectLocationDetails({
   );
 }
 function LinkProjectCmmsLocation({
-  title,
   locale,
   project,
   close,
   saved,
   refresh,
 }: {
-  title: string;
   locale: Locale;
   project: Project;
   close: () => void;
@@ -1168,10 +1219,24 @@ function LinkProjectCmmsLocation({
     locale: Locale;
   } | null>(null);
   const t = text(locale);
+  const utils = trpc.useUtils();
   const choices = useProjectCmmsChoices(locale, selection);
   const canSave = cmmsLocationIsAvailable(selection, choices);
   const link = trpc.projectManagement.linkCmmsLocation.useMutation({
-    onSuccess: saved,
+    onSuccess: () => {
+      saved();
+      void utils.projectManagement.invalidate();
+      void utils.gantt.projects.invalidate();
+      void utils.gantt.detail.invalidate({ projectId: project.id });
+      void utils.materialRequisitions.invalidate();
+      toast.success(
+        t(
+          "تم ربط موقع المشروع",
+          "Project location linked",
+          "منصوبے کا مقام جوڑ دیا گیا"
+        )
+      );
+    },
     onError: error => {
       if (error.data?.code === "CONFLICT") refresh();
     },
@@ -1196,7 +1261,7 @@ function LinkProjectCmmsLocation({
   }
   return (
     <Modal
-      title={title}
+      title={linkProjectLocationLabel[localeIndex[locale]]}
       eyebrow={project.number}
       close={() => {
         if (!link.isPending) close();
@@ -1335,11 +1400,6 @@ function ProjectDetail({
     locationLink !== "saved" &&
     can("pm.edit") &&
     canLinkProjectCmmsLocation(project);
-  const locationLinkTitle = t(
-    "ربط موقع المشروع",
-    "Link project location",
-    "منصوبے کا مقام جوڑیں"
-  );
   const renderTasks = (parentId: number | null): React.ReactNode =>
     tasks
       .filter(r => r.parentId === parentId)
@@ -1449,7 +1509,7 @@ function ProjectDetail({
           )}
           {mayLinkLocation && (
             <button type="button" onClick={() => setLocationLink("open")}>
-              {locationLinkTitle}
+              {linkProjectLocationLabel[localeIndex[locale]]}
             </button>
           )}
           {editable && can("pm.submit") && (
@@ -1679,25 +1739,11 @@ function ProjectDetail({
       )}
       {mayLinkLocation && locationLink === "open" && (
         <LinkProjectCmmsLocation
-          title={locationLinkTitle}
           locale={locale}
           project={project}
           close={() => setLocationLink("closed")}
           refresh={() => void query.refetch()}
-          saved={() => {
-            setLocationLink("saved");
-            void utils.projectManagement.invalidate();
-            void utils.gantt.projects.invalidate();
-            void utils.gantt.detail.invalidate({ projectId: id });
-            void utils.materialRequisitions.invalidate();
-            toast.success(
-              t(
-                "تم ربط موقع المشروع",
-                "Project location linked",
-                "منصوبے کا مقام جوڑ دیا گیا"
-              )
-            );
-          }}
+          saved={() => setLocationLink("saved")}
         />
       )}
       {decision && (
