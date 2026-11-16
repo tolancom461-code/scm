@@ -24,9 +24,11 @@ const remote = vi.hoisted(() => ({
   image: vi.fn(),
   deleted: vi.fn(),
 }));
-vi.mock("./catalog-provider", () => ({
+vi.mock("./catalog-provider", async importOriginal => ({
+  ...(await importOriginal<typeof import("./catalog-provider")>()),
   catalogConfigurationStatus: () => ({ configured: true }),
   fetchCatalogItems: remote.fetch,
+  fetchCatalogTree: vi.fn(),
   searchCatalog: vi.fn(),
 }));
 vi.mock("./catalog-media", () => ({ persistCatalogImage: remote.image }));
@@ -34,6 +36,21 @@ vi.mock("../../storage", async importOriginal => ({
   ...(await importOriginal<typeof import("../../storage")>()),
   deleteStoredDocument: remote.deleted,
 }));
+vi.mock("../cmms-integration/references", async importOriginal => ({
+  ...(await importOriginal<typeof import("../cmms-integration/references")>()),
+  cmmsReferencesConfigured: () => true,
+  readCmmsPurchaseOptions: async () => ({
+    categories: [{ id: 201, name: "QA purchase category" }],
+    reviewRoles: [{ code: "senior_management", name: "Senior management" }],
+  }),
+}));
+vi.mock("../cmms-integration/purchase-delivery", () => ({
+  dispatchApprovedCmmsRequisition: vi.fn(),
+}));
+const purchaseChoice = {
+  cmmsCategoryId: 201,
+  cmmsReviewRole: "senior_management",
+};
 
 vi.setConfig({ testTimeout: 90000 });
 describe.runIf(process.env.SCM_INTEGRATION === "1")(
@@ -43,6 +60,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
     const keys: string[] = [],
       unitIds = new Set<number>();
     let projectId = 0,
+      ownerId = 0,
       regularId = 0,
       manualUnitId = 0,
       importedId = 0,
@@ -96,7 +114,8 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         .from(users)
         .where(eq(users.username, "admin"));
       if (!admin) throw Error("Existing system owner required");
-      owner = await caller(admin.id);
+      ownerId = admin.id;
+      owner = await caller(ownerId);
       regularId = await createLocalUser({
         username: prefix.toLowerCase(),
         name: prefix,
@@ -108,19 +127,21 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         ],
       });
       regular = await caller(regularId);
-      const [project] = await db
-        .insert(s.constructionProjects)
-        .values({
-          number: prefix,
-          name: prefix,
-          site: "QA",
-          description: "QA",
-          requirements: "QA",
-          status: "active",
-          plannedStartDate: "2030-12-10",
-          plannedEndDate: "2030-12-31",
-          createdBy: admin.id,
-        });
+      const [project] = await db.insert(s.constructionProjects).values({
+        number: prefix,
+        name: prefix,
+        site: "QA",
+        cmmsSiteId: 101,
+        cmmsSiteName: "QA",
+        cmmsSectionId: 102,
+        cmmsSectionName: "QA section",
+        description: "QA",
+        requirements: "QA",
+        status: "active",
+        plannedStartDate: "2030-12-10",
+        plannedEndDate: "2030-12-31",
+        createdBy: admin.id,
+      });
       projectId = Number(project.insertId);
       await db
         .insert(accessConstructionProjects)
@@ -249,6 +270,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         projectId,
         items: [
           {
+            ...purchaseChoice,
             catalogEntryId: importedId,
             catalogCode: "spoofed",
             itemName: "Spoofed name",
@@ -282,6 +304,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
           projectId,
           items: [
             {
+              ...purchaseChoice,
               catalogEntryId: importedId,
               itemName: row.itemName,
               unitId: row.unitId,
@@ -298,6 +321,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         projectId,
         items: [
           {
+            ...purchaseChoice,
             catalogEntryId: importedId,
             itemName: row.itemName,
             unitId: row.unitId,
@@ -361,6 +385,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
           projectId,
           items: [
             {
+              ...purchaseChoice,
               catalogEntryId: newImport.catalogEntryId,
               itemName: newImport.itemName,
               unitId: newImport.unitId,
@@ -372,28 +397,81 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
       ).rejects.toThrow();
     });
 
-    it("keeps manual rows compatible and rejects a 21-item catalog import before calling the provider", async () => {
-      const manual = await owner.materialRequisitions.save({
-        key: key(),
-        projectId,
-        items: [
-          {
-            itemName: "Manual item",
-            catalogCode: "untrusted-code",
-            unitId: manualUnitId,
-            quantity: "1",
-            needDate: "2030-12-07",
-          },
-        ],
+    it("only lets existing drafts retain the manual rows they already contain", async () => {
+      const manual = {
+        itemName: "Historical manual item",
+        unitId: manualUnitId,
+        quantity: "1",
+        needDate: "2030-12-07",
+      };
+      await expect(
+        owner.materialRequisitions.save({
+          key: key(),
+          projectId,
+          items: [{ ...manual, ...purchaseChoice }],
+        })
+      ).rejects.toThrow(/Add new items from the catalog/);
+
+      const id = await (
+        await database()
+      ).transaction(async tx => {
+        const [legacy] = await tx.insert(s.materialRequisitions).values({
+          number: prefix + "-LEGACY",
+          projectId,
+          createdBy: ownerId,
+        });
+        const requisitionId = Number(legacy.insertId);
+        await tx.insert(s.materialRequisitionItems).values({
+          ...manual,
+          requisitionId,
+          sequence: 1,
+          specifications: "",
+          notes: "",
+          leadDays: 3,
+        });
+        return requisitionId;
       });
-      const row = (await owner.materialRequisitions.detail({ id: manual.id }))
-        .items[0];
-      expect(row).toMatchObject({
+      const original = await owner.materialRequisitions.detail({ id });
+      expect(original.items[0]).toMatchObject({
         catalogEntryId: null,
         catalogCode: "",
         catalogItemId: null,
         imageUrl: null,
       });
+      const edited = {
+        ...manual,
+        ...purchaseChoice,
+        quantity: "2",
+        notes: "Updated count",
+      };
+      await owner.materialRequisitions.save({
+        key: key(),
+        projectId,
+        id,
+        version: original.version,
+        items: [edited],
+      });
+      const updated = await owner.materialRequisitions.detail({ id });
+      expect(updated.items).toMatchObject([
+        {
+          ...edited,
+          quantity: "2.000000000",
+          catalogEntryId: null,
+        },
+      ]);
+      await expect(
+        owner.materialRequisitions.save({
+          key: key(),
+          projectId,
+          id,
+          version: updated.version,
+          items: [edited, edited],
+        })
+      ).rejects.toThrow(/Add new items from the catalog/);
+      expect(await owner.materialRequisitions.detail({ id })).toEqual(updated);
+    });
+
+    it("rejects a 21-item catalog import before calling the provider", async () => {
       const calls = remote.fetch.mock.calls.length;
       await expect(
         owner.materialRequisitions.catalogImport({

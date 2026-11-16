@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { beforeAll, afterAll, describe, it, expect } from "vitest";
+import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { unlink } from "node:fs/promises";
@@ -18,6 +18,16 @@ import {
 } from "../../../drizzle/schema";
 import { operationKeys, scmAuditEvents } from "../../../drizzle/foundation";
 import { localDocumentPath } from "../../storage";
+
+vi.mock("../cmms-integration/references", async importOriginal => ({
+  ...(await importOriginal<typeof import("../cmms-integration/references")>()),
+  cmmsReferencesConfigured: () => true,
+  readCmmsSites: async () => [{ id: 101, name: "Riyadh" }],
+  readCmmsSections: async (siteId: number) =>
+    siteId === 101 ? [{ id: 102, name: "QA section" }] : [],
+}));
+const cmmsLocation = { siteId: 101, sectionId: 102 };
+
 describe.runIf(process.env.SCM_INTEGRATION === "1")(
   "Project module integrated workflow",
   () => {
@@ -178,7 +188,10 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
     }, 90000);
     const detail = () => regular.projectManagement.detail({ id: projectId });
     it("saves an incomplete draft once and assigns its creator project access", async () => {
-      const input = { key: key(), data: { name: prefix + " Project" } };
+      const input = {
+        key: key(),
+        data: { name: prefix + " Project", cmmsLocation },
+      };
       const first = await regular.projectManagement.save(input);
       projectId = first.id;
       projectIds.push(first.id);
@@ -330,6 +343,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
           name: prefix + " Other",
           site: "QA",
           description: "Other scope",
+          cmmsLocation,
         },
       });
       projectIds.push(other.id);

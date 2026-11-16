@@ -12,6 +12,9 @@ import {
   materialRequisitionListInput,
   projectHasCmmsLocation,
 } from "@shared/material-requisitions";
+import { CatalogPicker } from "./CatalogPicker";
+import { ItemImage, localImageUrl } from "./CatalogItemImage";
+import { RequisitionItemCard, type ItemDraft } from "./RequisitionItemCard";
 import { mrText, type MrKey } from "./copy";
 import "./material-requisitions.css";
 
@@ -20,26 +23,10 @@ type Directory = Outputs["directory"];
 type Row = Outputs["list"]["rows"][number];
 type Detail = Outputs["detail"];
 type User = { id?: number; permissions: string[] };
-type ItemDraft = {
-  catalogEntryId: number | null;
-  catalogCode: string;
-  imageUrl: string | null;
-  importedUnit?: Directory["units"][number];
-  itemName: string;
-  quantity: string;
-  unitId: number;
-  specifications: string;
-  notes: string;
-  needDate: string;
-  cmmsCategoryId: number | null;
-  cmmsCategoryName: string | null;
-  cmmsReviewRole: string | null;
-  cmmsReviewRoleName: string | null;
-};
 const defaults = () => materialRequisitionListInput.parse({});
 const compactNumber = (value: string) =>
   value.includes(".") ? value.replace(/0+$/, "").replace(/\.$/, "") : value;
-const unitName = (unit: Directory["units"][number], locale: Locale) =>
+const unitName = (unit: ItemDraft["unit"], locale: Locale) =>
   locale === "ar" ? unit.nameAr : locale === "en" ? unit.nameEn : unit.nameUr;
 const isoDate = (date: Date | string | null) =>
   date ? businessDate(new Date(date)) : "—";
@@ -76,34 +63,6 @@ function purchaseStatusRefresh(
   }
   return interval;
 }
-function initialItem(unitId: number, needDate = ""): ItemDraft {
-  return {
-    catalogEntryId: null,
-    catalogCode: "",
-    imageUrl: null,
-    itemName: "",
-    quantity: "",
-    unitId,
-    specifications: "",
-    notes: "",
-    needDate,
-    cmmsCategoryId: null,
-    cmmsCategoryName: null,
-    cmmsReviewRole: null,
-    cmmsReviewRoleName: null,
-  };
-}
-const occupiedItem = (item: ItemDraft) =>
-  Boolean(
-    item.catalogEntryId ||
-      item.itemName.trim() ||
-      item.quantity ||
-      item.specifications.trim() ||
-      item.notes.trim() ||
-      item.cmmsCategoryId ||
-      item.cmmsReviewRole
-  );
-
 function PurchaseRequestReference({
   number,
   url,
@@ -157,80 +116,6 @@ function CmmsLocationCells({ project }: { project?: CmmsProjectNames }) {
       <td className="mr-cmms-fixed">
         <bdi>{project?.cmmsAssetName ?? "—"}</bdi>
       </td>
-    </>
-  );
-}
-
-function localImageUrl(value: string | null | undefined) {
-  if (!value || !value.startsWith("/material-requisitions/")) return null;
-  try {
-    const url = new URL(value, window.location.origin);
-    return url.origin === window.location.origin
-      ? `${url.pathname}${url.search}`
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function ItemImage({
-  url,
-  name,
-  locale,
-}: {
-  url?: string | null;
-  name: string;
-  locale: Locale;
-}) {
-  const c = (key: MrKey) => mrText(locale, key),
-    source = localImageUrl(url);
-  const [enlarged, setEnlarged] = useState(false),
-    [failed, setFailed] = useState(false);
-  useEffect(() => {
-    setFailed(false);
-  }, [source]);
-  if (!source || failed)
-    return <span className="mr-no-image">{c("noImage")}</span>;
-  return (
-    <>
-      <button
-        type="button"
-        className="mr-image-button"
-        aria-label={`${c("enlargeImage")} — ${name}`}
-        title={c("enlargeImage")}
-        onClick={() => setEnlarged(true)}
-      >
-        <img
-          className="mr-item-image"
-          src={source}
-          alt={name}
-          loading="lazy"
-          onError={() => setFailed(true)}
-        />
-      </button>
-      {enlarged && (
-        <div
-          className="mr-image-lightbox"
-          role="dialog"
-          aria-modal="true"
-          aria-label={c("itemImage")}
-          onClick={() => setEnlarged(false)}
-          onKeyDown={event => {
-            if (event.key === "Escape") {
-              event.stopPropagation();
-              setEnlarged(false);
-            }
-          }}
-        >
-          <button type="button" autoFocus onClick={() => setEnlarged(false)}>
-            {c("close")}
-          </button>
-          <figure onClick={event => event.stopPropagation()}>
-            <img src={source} alt={name} />
-            <figcaption>{name}</figcaption>
-          </figure>
-        </div>
-      )}
     </>
   );
 }
@@ -776,14 +661,14 @@ function RequisitionEditor({
     [taskId, setTaskId] = useState<number | null>(
       initial?.taskId ?? fixedTaskId ?? null
     );
-  const initialUnit = directory.units[0]?.id ?? 0;
   const [items, setItems] = useState<ItemDraft[]>(
     () =>
       initial?.items.map(item => ({
+        rowKey: "saved-" + item.id,
         catalogEntryId: item.catalogEntryId ?? null,
         catalogCode: item.catalogCode ?? "",
         imageUrl: item.imageUrl ?? null,
-        importedUnit: item.catalogEntryId ? item.unit : undefined,
+        unit: item.unit,
         itemName: item.itemName,
         quantity: compactNumber(item.quantity),
         unitId: item.unitId,
@@ -794,7 +679,7 @@ function RequisitionEditor({
         cmmsCategoryName: item.cmmsCategoryName,
         cmmsReviewRole: item.cmmsReviewRole,
         cmmsReviewRoleName: item.cmmsReviewRoleName,
-      })) ?? [initialItem(initialUnit)]
+      })) ?? []
   );
   const [error, setError] = useState(""),
     [catalogOpen, setCatalogOpen] = useState(false);
@@ -806,19 +691,32 @@ function RequisitionEditor({
     linkedTask = tasks.find(t => t.id === taskId),
     project = directory.projects.find(p => p.id === projectId);
   const references = trpc.cmmsReferences.status.useQuery();
+  const cmmsConfigured = references.isSuccess && references.data.configured;
   const purchaseOptions = trpc.cmmsReferences.purchaseOptions.useQuery(
     { locale },
-    { enabled: Boolean(references.data?.configured) }
+    { enabled: cmmsConfigured }
   );
-  const categories = purchaseOptions.data?.categories ?? [];
-  const reviewRoles = purchaseOptions.data?.reviewRoles ?? [];
-  const cmmsControlsEnabled = Boolean(
-    references.data?.configured && purchaseOptions.data
-  );
-  const showCmmsFields =
-    references.data?.configured ||
-    projectHasCmmsLocation(project) ||
-    items.some(item => item.cmmsCategoryId || item.cmmsReviewRole);
+  const cmmsOptions =
+    cmmsConfigured && purchaseOptions.isSuccess
+      ? purchaseOptions.data
+      : undefined;
+  const linkedLocation = projectHasCmmsLocation(project);
+  const invalidPurchaseChoice =
+    cmmsOptions !== undefined &&
+    items.some(
+      item =>
+        !cmmsOptions.categories.some(
+          option => option.id === item.cmmsCategoryId
+        ) ||
+        !cmmsOptions.reviewRoles.some(
+          option => option.code === item.cmmsReviewRole
+        )
+    );
+  const purchaseOptionsEmpty =
+    cmmsOptions !== undefined &&
+    (!cmmsOptions.categories.length || !cmmsOptions.reviewRoles.length);
+  const purchaseOptionsLoading =
+    references.isPending || (cmmsConfigured && purchaseOptions.isPending);
   const startDate =
       linkedTask?.startDate ??
       project?.actualStartDate ??
@@ -839,20 +737,44 @@ function RequisitionEditor({
     }
     setDateBasis(startDate);
   }, [dateBasis, startDate]);
-  const update = (index: number, values: Partial<ItemDraft>) =>
-    setItems(
-      items.map((item, i) => (i === index ? { ...item, ...values } : item))
+  const update = (rowKey: string, values: Partial<ItemDraft>) =>
+    setItems(current =>
+      current.map(item =>
+        item.rowKey === rowKey ? { ...item, ...values } : item
+      )
     );
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError("");
-    if (initial?.status === "approved") return;
+    if (save.isPending || catalogOpen || initial?.status === "approved") return;
+    if (!linkedLocation) {
+      setError(c("cmmsProjectNotLinked"));
+      return;
+    }
+    if (items.length === 0) {
+      setError(c("emptyDraft"));
+      return;
+    }
     if (!startDate) {
       setError(c("noStart"));
       return;
     }
     if (items.some(i => leadDays(startDate, i.needDate) < 3)) {
       setError(c("leadHint"));
+      return;
+    }
+    if (!cmmsOptions) {
+      setError(
+        c(
+          references.data?.configured === false
+            ? "cmmsPurchaseNotConfigured"
+            : "cmmsOptionsUnavailable"
+        )
+      );
+      return;
+    }
+    if (purchaseOptionsEmpty || invalidPurchaseChoice) {
+      setError(c(purchaseOptionsEmpty ? "cmmsOptionsEmpty" : "cmmsSaveFields"));
       return;
     }
     save.mutate({
@@ -865,8 +787,9 @@ function RequisitionEditor({
       locale,
       items: items.map(
         ({
+          rowKey: _rowKey,
           imageUrl: _imageUrl,
-          importedUnit: _importedUnit,
+          unit: _unit,
           cmmsCategoryName: _cmmsCategoryName,
           cmmsReviewRoleName: _cmmsReviewRoleName,
           ...item
@@ -882,7 +805,7 @@ function RequisitionEditor({
             ? `${c("request")} · ${initial?.number ?? "…"}`
             : c("newRequest")
         }
-        close={close}
+        close={catalogOpen ? () => setCatalogOpen(false) : close}
       >
         <form
           className="mr-form"
@@ -892,24 +815,23 @@ function RequisitionEditor({
           {catalogOpen ? (
             <CatalogPicker
               locale={locale}
-              capacity={20 - items.filter(occupiedItem).length}
+              capacity={20 - items.length}
               close={() => setCatalogOpen(false)}
               imported={imported => {
-                setItems(current => {
-                  const kept = current.filter(occupiedItem);
-                  return [
-                    ...kept,
-                    ...imported.map(item => ({
-                      ...initialItem(item.unitId, maxNeedDate ?? ""),
-                      catalogEntryId: item.catalogEntryId,
-                      catalogCode: item.catalogCode,
-                      imageUrl: item.imageUrl,
-                      importedUnit: item.unit,
-                      itemName: item.itemName,
-                      specifications: item.specifications,
-                    })),
-                  ].slice(0, 20);
-                });
+                setItems(current => [
+                  ...current,
+                  ...imported.slice(0, 20 - current.length).map(item => ({
+                    ...item,
+                    rowKey: "catalog-" + item.catalogEntryId,
+                    quantity: "",
+                    notes: "",
+                    needDate: maxNeedDate ?? "",
+                    cmmsCategoryId: null,
+                    cmmsCategoryName: null,
+                    cmmsReviewRole: null,
+                    cmmsReviewRoleName: null,
+                  })),
+                ]);
                 setCatalogOpen(false);
               }}
             />
@@ -967,251 +889,86 @@ function RequisitionEditor({
                 <br />
                 {c("startDate")}: <bdi>{startDate || "—"}</bdi>
               </p>
-              {references.data?.configured &&
-                projectId > 0 &&
-                !projectHasCmmsLocation(project) && (
-                  <p className="mr-help">{c("cmmsProjectNotLinked")}</p>
-                )}
-              {cmmsControlsEnabled &&
-                projectHasCmmsLocation(project) &&
-                items.some(
-                  item => !item.cmmsCategoryId || !item.cmmsReviewRole
-                ) && <p className="mr-help">{c("cmmsApproveFields")}</p>}
-              {references.data?.configured && purchaseOptions.isError && (
+              {projectId > 0 && !linkedLocation && (
+                <p className="mr-help">{c("cmmsProjectNotLinked")}</p>
+              )}
+              {purchaseOptionsLoading && (
+                <p className="mr-help" role="status">
+                  {c("cmmsOptionsLoading")}
+                </p>
+              )}
+              {purchaseOptionsEmpty ? (
+                <p className="mr-help">{c("cmmsOptionsEmpty")}</p>
+              ) : (
+                invalidPurchaseChoice && (
+                  <p className="mr-help">{c("cmmsSaveFields")}</p>
+                )
+              )}
+              {(references.isError ||
+                (cmmsConfigured && purchaseOptions.isError)) && (
                 <p className="mr-error" role="alert">
                   {c("cmmsOptionsUnavailable")}{" "}
                   <button
                     type="button"
-                    onClick={() => void purchaseOptions.refetch()}
+                    onClick={() =>
+                      void (references.isError
+                        ? references.refetch()
+                        : purchaseOptions.refetch())
+                    }
                   >
                     {c("retry")}
                   </button>
                 </p>
               )}
-              <div className="mr-items">
-                <table className={showCmmsFields ? "mr-cmms-items" : undefined}>
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>{c("catalogCode")}</th>
-                      <th>{c("itemImage")}</th>
-                      <th>{c("item")}</th>
-                      <th>{c("quantity")}</th>
-                      <th>{c("unit")}</th>
-                      <th>{c("specifications")}</th>
-                      <th>{c("notes")}</th>
-                      <th>{c("needDate")}</th>
-                      {showCmmsFields &&
-                        cmmsItemColumns.map(column => (
-                          <th key={column}>{c(column)}</th>
-                        ))}
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item, index) => (
-                      <tr key={index}>
-                        <td>{index + 1}</td>
-                        <td>
-                          <input
-                            aria-label={`${c("catalogCode")} ${index + 1}`}
-                            dir="ltr"
-                            readOnly
-                            value={item.catalogCode}
-                            placeholder="—"
-                            title={
-                              item.catalogEntryId
-                                ? c("catalogLocked")
-                                : c("addFromCatalog")
-                            }
-                          />
-                        </td>
-                        <td>
-                          <ItemImage
-                            url={item.imageUrl}
-                            name={item.itemName}
-                            locale={locale}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            aria-label={`${c("item")} ${index + 1}`}
-                            required
-                            readOnly={Boolean(item.catalogEntryId)}
-                            maxLength={255}
-                            value={item.itemName}
-                            onChange={e =>
-                              update(index, { itemName: e.target.value })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            aria-label={`${c("quantity")} ${index + 1}`}
-                            required
-                            dir="ltr"
-                            lang="en"
-                            inputMode="decimal"
-                            pattern="[0-9]{1,9}(\.[0-9]{1,9})?"
-                            value={item.quantity}
-                            onChange={e =>
-                              update(index, { quantity: e.target.value })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <select
-                            aria-label={`${c("unit")} ${index + 1}`}
-                            required
-                            disabled={Boolean(item.catalogEntryId)}
-                            value={item.unitId || ""}
-                            onChange={e =>
-                              update(index, { unitId: Number(e.target.value) })
-                            }
-                          >
-                            <option value="">{c("select")}</option>
-                            {directory.units
-                              .filter(unit => unit.id !== item.importedUnit?.id)
-                              .map(unit => (
-                                <option key={unit.id} value={unit.id}>
-                                  {unitName(unit, locale)} ({unit.code})
-                                </option>
-                              ))}
-                            {item.importedUnit && (
-                              <option value={item.importedUnit.id}>
-                                {unitName(item.importedUnit, locale)} (
-                                {item.importedUnit.code})
-                              </option>
-                            )}
-                          </select>
-                        </td>
-                        <td>
-                          <textarea
-                            aria-label={`${c("specifications")} ${index + 1}`}
-                            maxLength={5000}
-                            value={item.specifications}
-                            onChange={e =>
-                              update(index, { specifications: e.target.value })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <textarea
-                            aria-label={`${c("notes")} ${index + 1}`}
-                            maxLength={5000}
-                            value={item.notes}
-                            onChange={e =>
-                              update(index, { notes: e.target.value })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            aria-label={`${c("needDate")} ${index + 1}`}
-                            required
-                            type="date"
-                            lang="en-CA"
-                            max={maxNeedDate}
-                            value={item.needDate}
-                            onChange={e =>
-                              update(index, { needDate: e.target.value })
-                            }
-                          />
-                        </td>
-                        {showCmmsFields && (
-                          <>
-                            <CmmsLocationCells project={project} />
-                            <td className="mr-cmms-option">
-                              <select
-                                aria-label={
-                                  c("cmmsCategory") + " " + (index + 1)
-                                }
-                                value={item.cmmsCategoryId ?? ""}
-                                disabled={!cmmsControlsEnabled}
-                                onChange={event => {
-                                  const selected = categories.find(
-                                    option =>
-                                      String(option.id) === event.target.value
-                                  );
-                                  update(index, {
-                                    cmmsCategoryId: selected?.id ?? null,
-                                    cmmsCategoryName: selected?.name ?? null,
-                                  });
-                                }}
-                              >
-                                <option value="">{c("select")}</option>
-                                {item.cmmsCategoryId &&
-                                  !categories.some(
-                                    option => option.id === item.cmmsCategoryId
-                                  ) && (
-                                    <option value={item.cmmsCategoryId}>
-                                      {item.cmmsCategoryName ??
-                                        item.cmmsCategoryId}
-                                    </option>
-                                  )}
-                                {categories.map(option => (
-                                  <option key={option.id} value={option.id}>
-                                    {option.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="mr-cmms-option">
-                              <select
-                                aria-label={
-                                  c("cmmsReviewRole") + " " + (index + 1)
-                                }
-                                value={item.cmmsReviewRole ?? ""}
-                                disabled={!cmmsControlsEnabled}
-                                onChange={event => {
-                                  const selected = reviewRoles.find(
-                                    option => option.code === event.target.value
-                                  );
-                                  update(index, {
-                                    cmmsReviewRole: selected?.code ?? null,
-                                    cmmsReviewRoleName: selected?.name ?? null,
-                                  });
-                                }}
-                              >
-                                <option value="">{c("select")}</option>
-                                {item.cmmsReviewRole &&
-                                  !reviewRoles.some(
-                                    option =>
-                                      option.code === item.cmmsReviewRole
-                                  ) && (
-                                    <option value={item.cmmsReviewRole}>
-                                      {item.cmmsReviewRoleName ??
-                                        item.cmmsReviewRole}
-                                    </option>
-                                  )}
-                                {reviewRoles.map(option => (
-                                  <option key={option.code} value={option.code}>
-                                    {option.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                          </>
-                        )}
-                        <td>
-                          <button
-                            type="button"
-                            disabled={items.length === 1}
-                            onClick={() =>
-                              setItems(items.filter((_, i) => i !== index))
-                            }
-                          >
-                            {c("remove")}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              {references.isSuccess && !cmmsConfigured && (
+                <p className="mr-help">{c("cmmsPurchaseNotConfigured")}</p>
+              )}
+              <div className="mr-line-toolbar">
+                <div className="mr-actions">
+                  <button
+                    type="button"
+                    disabled={items.length >= 20 || save.isPending}
+                    onClick={() => {
+                      setError("");
+                      setCatalogOpen(true);
+                    }}
+                  >
+                    + {c("addFromCatalog")}
+                  </button>
+                </div>
+                <small className="mr-line-limit" aria-live="polite">
+                  <bdi>{items.length}/20</bdi> · {c("limitHint")}
+                </small>
               </div>
-              <p className="mr-help">
-                {c("limitHint")} <bdi>{items.length}/20</bdi>
-              </p>
+              {items.length ? (
+                <div className="mr-line-list">
+                  {items.map((item, index) => (
+                    <RequisitionItemCard
+                      key={item.rowKey}
+                      item={item}
+                      number={index + 1}
+                      locale={locale}
+                      unitLabel={
+                        unitName(item.unit, locale) +
+                        " (" +
+                        item.unit.code +
+                        ")"
+                      }
+                      maxNeedDate={maxNeedDate}
+                      project={project}
+                      options={cmmsOptions}
+                      update={values => update(item.rowKey, values)}
+                      remove={() =>
+                        setItems(current =>
+                          current.filter(row => row.rowKey !== item.rowKey)
+                        )
+                      }
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="mr-empty">{c("emptyDraft")}</p>
+              )}
               {error && (
                 <p className="mr-error" role="alert">
                   {error}
@@ -1219,32 +976,16 @@ function RequisitionEditor({
               )}
               <div className="mr-actions">
                 <button
-                  type="button"
-                  disabled={
-                    items.filter(occupiedItem).length >= 20 || save.isPending
-                  }
-                  onClick={() => setCatalogOpen(true)}
-                >
-                  + {c("addFromCatalog")}
-                </button>
-                <button
-                  type="button"
-                  disabled={items.length >= 20}
-                  onClick={() =>
-                    setItems([
-                      ...items,
-                      initialItem(initialUnit, maxNeedDate ?? ""),
-                    ])
-                  }
-                >
-                  + {c("addItem")}
-                </button>
-                <button
+                  type="submit"
                   className="primary"
                   disabled={
                     save.isPending ||
-                    !projectId ||
+                    !items.length ||
+                    !linkedLocation ||
                     !startDate ||
+                    !cmmsOptions ||
+                    purchaseOptionsEmpty ||
+                    invalidPurchaseChoice ||
                     initial?.status === "approved"
                   }
                 >
@@ -1259,202 +1000,6 @@ function RequisitionEditor({
         </form>
       </Modal>
     </div>
-  );
-}
-
-function CatalogPicker({
-  locale,
-  capacity,
-  close,
-  imported,
-}: {
-  locale: Locale;
-  capacity: number;
-  close: () => void;
-  imported: (items: Outputs["catalogImport"]) => void;
-}) {
-  const c = (key: MrKey) => mrText(locale, key);
-  const [searchText, setSearchText] = useState(""),
-    [q, setQ] = useState(""),
-    [page, setPage] = useState(1),
-    [selected, setSelected] = useState<string[]>([]);
-  const status = trpc.materialRequisitions.catalogStatus.useQuery();
-  const catalog = trpc.materialRequisitions.catalogSearch.useQuery(
-    { q, page, pageSize: 20, locale },
-    {
-      enabled: status.data?.configured === true,
-      refetchOnWindowFocus: false,
-      retry: false,
-    }
-  );
-  const importItems = trpc.materialRequisitions.catalogImport.useMutation({
-    onSuccess: imported,
-  });
-  const search = () => {
-    setQ(searchText.trim());
-    setPage(1);
-  };
-  return (
-    <section className="mr-catalog" aria-label={c("catalog")}>
-      <div className="mr-heading">
-        <h3>{c("catalog")}</h3>
-        <button type="button" disabled={importItems.isPending} onClick={close}>
-          {c("backToRequest")}
-        </button>
-      </div>
-      <p className="mr-help">
-        {c("catalogCapacity")}: <bdi>{capacity}</bdi> · {c("selectedItems")}:{" "}
-        <bdi>{selected.length}</bdi>
-      </p>
-      {status.isLoading ? (
-        <p role="status">{c("loadingCatalog")}</p>
-      ) : status.error ? (
-        <p className="mr-error" role="alert">
-          {status.error.message}{" "}
-          <button type="button" onClick={() => void status.refetch()}>
-            {c("retry")}
-          </button>
-        </p>
-      ) : !status.data?.configured ? (
-        <p className="mr-help" role="status">
-          {c("catalogNotConfigured")}
-        </p>
-      ) : (
-        <>
-          <div className="mr-catalog-search">
-            <input
-              aria-label={c("catalogSearch")}
-              placeholder={c("catalogSearch")}
-              maxLength={150}
-              value={searchText}
-              onChange={event => setSearchText(event.target.value)}
-              onKeyDown={event => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  search();
-                }
-              }}
-            />
-            <button
-              type="button"
-              onClick={search}
-              disabled={catalog.isFetching || importItems.isPending}
-            >
-              {c("searchAction")}
-            </button>
-          </div>
-          {catalog.isFetching ? (
-            <p role="status">{c("loadingCatalog")}</p>
-          ) : catalog.error ? (
-            <p className="mr-error" role="alert">
-              {catalog.error.message}{" "}
-              <button type="button" onClick={() => void catalog.refetch()}>
-                {c("retry")}
-              </button>
-            </p>
-          ) : !catalog.data?.items.length ? (
-            <p className="mr-empty">{c("catalogEmpty")}</p>
-          ) : (
-            <div className="mr-catalog-items">
-              {catalog.data.items.map(item => {
-                const checked = selected.includes(item.id);
-                return (
-                  <article
-                    className={`mr-catalog-item ${checked ? "selected" : ""}`}
-                    key={item.id}
-                  >
-                    <label className="mr-catalog-select">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={
-                          importItems.isPending ||
-                          (!checked && selected.length >= capacity)
-                        }
-                        aria-label={`${c("select")} ${item.code} — ${item.name}`}
-                        onChange={event =>
-                          setSelected(current =>
-                            event.target.checked
-                              ? [...current, item.id]
-                              : current.filter(id => id !== item.id)
-                          )
-                        }
-                      />
-                      <span>
-                        <bdi>{item.code}</bdi>
-                        <strong>{item.name}</strong>
-                      </span>
-                    </label>
-                    <ItemImage
-                      url={item.previewUrl}
-                      name={item.name}
-                      locale={locale}
-                    />
-                    <div>
-                      <span>
-                        {c("unit")}:{" "}
-                        {locale === "ar"
-                          ? item.unit.nameAr
-                          : locale === "en"
-                            ? item.unit.nameEn
-                            : item.unit.nameUr}
-                      </span>
-                      <p>{item.specifications || "—"}</p>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-          <div className="mr-actions mr-pagination">
-            <button
-              type="button"
-              disabled={
-                page <= 1 || catalog.isFetching || importItems.isPending
-              }
-              onClick={() => setPage(page - 1)}
-            >
-              {c("previous")}
-            </button>
-            <span dir="ltr">
-              {page} / {Math.max(1, Math.ceil((catalog.data?.total ?? 0) / 20))}
-            </span>
-            <button
-              type="button"
-              disabled={
-                !catalog.data ||
-                page * 20 >= catalog.data.total ||
-                catalog.isFetching ||
-                importItems.isPending
-              }
-              onClick={() => setPage(page + 1)}
-            >
-              {c("next")}
-            </button>
-          </div>
-          {importItems.error && (
-            <p role="alert" className="mr-error">
-              {importItems.error.message}
-            </p>
-          )}
-          <div className="mr-actions">
-            <button
-              type="button"
-              className="primary"
-              disabled={
-                !selected.length ||
-                selected.length > capacity ||
-                importItems.isPending
-              }
-              onClick={() => importItems.mutate({ ids: selected, locale })}
-            >
-              {importItems.isPending ? c("importing") : c("importSelected")}{" "}
-              <bdi>({selected.length})</bdi>
-            </button>
-          </div>
-        </>
-      )}
-    </section>
   );
 }
 

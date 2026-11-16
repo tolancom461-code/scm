@@ -13,6 +13,7 @@ import {
   employeeInput,
   statusInput,
 } from "../../../shared/construction";
+import { projectHasCmmsLocation } from "../../../shared/material-requisitions";
 import { database, type Transaction } from "../../core/database";
 import {
   assertConstructionAccess,
@@ -34,7 +35,6 @@ import {
   shiftIso,
 } from "../gantt/scheduling";
 import { touchGanttStudioStates } from "../gantt/studio-state";
-import { cmmsReferencesConfigured } from "../cmms-integration/references";
 import {
   matchesProjectLocation,
   resolveProjectLocation,
@@ -42,6 +42,8 @@ import {
 function invalid(message: string): never {
   throw new TRPCError({ code: "BAD_REQUEST", message });
 }
+const cmmsLocationRequired =
+  "حدد الموقع والقسم من CMMS / Select the CMMS site and section / سی ایم ایم ایس سے مقام اور شعبہ منتخب کریں۔";
 function requirePermission(a: AccessContext, p: string) {
   if (!canAccess(a, p))
     throw new TRPCError({
@@ -178,6 +180,8 @@ export async function saveProject(
         const p = await lockedProject(tx, input.id, a);
         assertEditable(p, a);
         if (p.version !== input.version) throw new DomainError("CONFLICT");
+        if (!projectHasCmmsLocation(location ?? p))
+          invalid(cmmsLocationRequired);
         if (
           directLocationFields &&
           p.status !== "draft" &&
@@ -214,18 +218,13 @@ export async function saveProject(
         return { id: p.id };
       }
       requirePermission(a, "pm.create");
-      if (cmmsReferencesConfigured() && !cmmsLocation)
-        invalid(
-          "حدد الموقع والقسم من CMMS / Select the CMMS site and section / سی ایم ایم ایس سے مقام اور شعبہ منتخب کریں۔"
-        );
-      const location = cmmsLocation
-        ? await resolveProjectLocation(cmmsLocation)
-        : undefined;
+      if (!cmmsLocation) invalid(cmmsLocationRequired);
+      const location = await resolveProjectLocation(cmmsLocation);
       const project = {
         ...data,
         ...location,
         ...directLocationFields,
-        site: location?.cmmsSiteName ?? data.site,
+        site: location.cmmsSiteName,
       };
       const number = await allocateRecordNumber(tx, "project");
       const [result] = await tx

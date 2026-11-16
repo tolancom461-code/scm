@@ -26,12 +26,27 @@ export type CatalogSearchInput = {
   page?: number;
   pageSize?: number;
   locale?: "ar" | "en" | "ur";
+  nodeId?: number;
 };
+export const catalogNodeId = z.number().int().positive().max(2_147_483_647);
 const responseSchema = z.object({
   items: z.array(catalogItemSchema).max(100),
   total: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   page: z.number().int().positive(),
   pageSize: z.number().int().min(1).max(100),
+});
+const treeResponseSchema = z.object({
+  nodes: z.array(
+    z.object({
+      id: catalogNodeId,
+      parentId: catalogNodeId.nullable(),
+      code: z.string().max(255).nullable(),
+      name: z
+        .string()
+        .max(255)
+        .refine(value => value.trim().length > 0),
+    })
+  ),
 });
 type Failure = "configuration" | "unavailable" | "response" | "image";
 const messages: Record<Failure, string> = {
@@ -237,7 +252,7 @@ export async function readCatalogResource(
   }
 }
 
-async function catalogResponse(url: URL) {
+async function readCatalogJson(url: URL): Promise<unknown> {
   const response = await readCatalogResource(url, {
     maxBytes: 1_000_000,
     accept: "application/json",
@@ -245,19 +260,55 @@ async function catalogResponse(url: URL) {
   });
   if (!/^application\/(?:[a-z0-9.-]+\+)?json$/.test(response.contentType))
     return catalogFailure("response");
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(response.content.toString("utf8"));
+    return JSON.parse(response.content.toString("utf8")) as unknown;
   } catch {
     return catalogFailure("response");
   }
-  const result = responseSchema.safeParse(parsed);
+}
+
+async function catalogResponse(url: URL) {
+  const result = responseSchema.safeParse(await readCatalogJson(url));
   if (!result.success) return catalogFailure("response");
   if (
     new Set(result.data.items.map(item => item.id)).size !==
     result.data.items.length
   )
     return catalogFailure("response");
+  return result.data;
+}
+
+function catalogRequestUrl() {
+  const { endpoint } = catalogSettings();
+  for (const key of ["view", "q", "page", "pageSize", "ids", "nodeId"])
+    endpoint.searchParams.delete(key);
+  return endpoint;
+}
+
+export async function fetchCatalogTree(locale: "ar" | "en" | "ur" = "ar") {
+  const url = catalogRequestUrl();
+  url.searchParams.set("view", "tree");
+  url.searchParams.set("locale", locale);
+  const result = treeResponseSchema.safeParse(await readCatalogJson(url));
+  if (!result.success) return catalogFailure("response");
+
+  const { nodes } = result.data;
+  const ids = new Set(nodes.map(node => node.id));
+  if (ids.size !== nodes.length) return catalogFailure("response");
+  const children = new Map<number | null, number[]>();
+  for (const node of nodes) {
+    const siblings = children.get(node.parentId);
+    if (siblings) siblings.push(node.id);
+    else children.set(node.parentId, [node.id]);
+  }
+
+  // With unique IDs and one parent per node, only valid branches reach a root.
+  const reachable = [...(children.get(null) ?? [])];
+  for (let index = 0; index < reachable.length; index++) {
+    for (const child of children.get(reachable[index]) ?? [])
+      reachable.push(child);
+  }
+  if (reachable.length !== nodes.length) return catalogFailure("response");
   return result.data;
 }
 
@@ -268,14 +319,16 @@ export async function searchCatalog(input: CatalogSearchInput) {
       page: z.number().int().min(1).default(1),
       pageSize: z.number().int().min(1).max(100).default(20),
       locale: z.enum(["ar", "en", "ur"]).default("ar"),
+      nodeId: catalogNodeId.optional(),
     })
     .parse(input);
-  const url = new URL(catalogSettings().endpoint);
+  const url = catalogRequestUrl();
   url.searchParams.set("q", query.q);
   url.searchParams.set("page", String(query.page));
   url.searchParams.set("pageSize", String(query.pageSize));
   url.searchParams.set("locale", query.locale);
-  url.searchParams.delete("ids");
+  if (query.nodeId !== undefined)
+    url.searchParams.set("nodeId", String(query.nodeId));
   const result = await catalogResponse(url);
   if (
     result.page !== query.page ||
@@ -294,8 +347,7 @@ export async function fetchCatalogItems(
 ) {
   const wanted = z.array(remoteId).min(1).max(20).parse(ids);
   if (new Set(wanted).size !== wanted.length) return catalogFailure("response");
-  const url = new URL(catalogSettings().endpoint);
-  url.searchParams.delete("q");
+  const url = catalogRequestUrl();
   url.searchParams.set("ids", JSON.stringify(wanted));
   url.searchParams.set("locale", locale);
   url.searchParams.set("page", "1");

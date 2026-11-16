@@ -461,23 +461,11 @@ function CmmsLocationSelect({
   );
 }
 
-function ProjectCmmsLocationFields({
-  locale,
-  project,
-  selection,
-  configured,
-  required,
-  onChange,
-}: {
-  locale: Locale;
-  project?: Project;
-  selection: ProjectLocationSelection;
-  configured: boolean;
-  required: boolean;
-  onChange: (value: ProjectLocationSelection) => void;
-}) {
-  const t = text(locale);
-  const { siteId, sectionId, assetId } = selection;
+function useProjectCmmsChoices(
+  locale: Locale,
+  configured: boolean,
+  { siteId, sectionId }: ProjectLocationSelection
+) {
   const sites = trpc.cmmsReferences.sites.useQuery(
     { locale },
     { enabled: configured }
@@ -490,6 +478,27 @@ function ProjectCmmsLocationFields({
     { siteId: siteId ?? 0, sectionId: sectionId ?? 0, locale },
     { enabled: configured && siteId !== null && sectionId !== null }
   );
+  return { sites, sections, assets };
+}
+
+function ProjectCmmsLocationFields({
+  locale,
+  project,
+  selection,
+  configured,
+  choices,
+  onChange,
+}: {
+  locale: Locale;
+  project?: Project;
+  selection: ProjectLocationSelection;
+  configured: boolean;
+  choices: ReturnType<typeof useProjectCmmsChoices>;
+  onChange: (value: ProjectLocationSelection) => void;
+}) {
+  const t = text(locale);
+  const { siteId, sectionId, assetId } = selection;
+  const { sites, sections, assets } = choices;
   const failed = configured
     ? [sites, sections, assets].filter(query => query.isError)
     : [];
@@ -507,32 +516,32 @@ function ProjectCmmsLocationFields({
       </legend>
       <div className="pm-cmms-location-fields">
         <CmmsLocationSelect
-          label={t("الموقع", "Site", "مقام") + (required ? " *" : "")}
+          label={t("الموقع *", "Site *", "مقام *")}
           placeholder={t("اختر الموقع", "Select a site", "مقام منتخب کریں")}
           value={siteId}
-          options={configured ? sites.data : undefined}
+          options={configured && sites.isSuccess ? sites.data : undefined}
           saved={
             project && { id: project.cmmsSiteId, name: project.cmmsSiteName }
           }
-          required={required}
-          disabled={!configured || !sites.data}
+          required
+          disabled={!configured || !sites.isSuccess}
           onChange={value =>
             onChange({ siteId: value, sectionId: null, assetId: null })
           }
         />
         <CmmsLocationSelect
-          label={t("القسم", "Section", "شعبہ") + (required ? " *" : "")}
+          label={t("القسم *", "Section *", "شعبہ *")}
           placeholder={t("اختر القسم", "Select a section", "شعبہ منتخب کریں")}
           value={sectionId}
-          options={configured ? sections.data : undefined}
+          options={configured && sections.isSuccess ? sections.data : undefined}
           saved={
             project && {
               id: project.cmmsSectionId,
               name: project.cmmsSectionName,
             }
           }
-          required={required}
-          disabled={!configured || siteId === null || !sections.data}
+          required
+          disabled={!configured || siteId === null || !sections.isSuccess}
           onChange={value =>
             onChange({ siteId, sectionId: value, assetId: null })
           }
@@ -541,11 +550,11 @@ function ProjectCmmsLocationFields({
           label={t("الأصل (اختياري)", "Asset (optional)", "اثاثہ (اختیاری)")}
           placeholder={t("بدون أصل", "No asset", "اثاثہ نہیں")}
           value={assetId}
-          options={configured ? assets.data : undefined}
+          options={configured && assets.isSuccess ? assets.data : undefined}
           saved={
             project && { id: project.cmmsAssetId, name: project.cmmsAssetName }
           }
-          disabled={!configured || sectionId === null || !assets.data}
+          disabled={!configured || sectionId === null || !assets.isSuccess}
           onChange={value => onChange({ siteId, sectionId, assetId: value })}
         />
       </div>
@@ -558,13 +567,40 @@ function ProjectCmmsLocationFields({
           )}
         </small>
       )}
+      {configured && sites.isSuccess && sites.data.length === 0 && (
+        <small role="status">
+          {t(
+            "قائمة المواقع في CMMS فارغة. أضف موقعًا في CMMS أولًا.",
+            "CMMS has no sites. Add a site in CMMS first.",
+            "CMMS میں کوئی مقام موجود نہیں۔ پہلے وہاں مقام شامل کریں۔"
+          )}
+        </small>
+      )}
+      {configured &&
+        siteId !== null &&
+        sections.isSuccess &&
+        sections.data.length === 0 && (
+          <small role="status">
+            {t(
+              "اختر موقعًا له أقسام في CMMS.",
+              "Choose a site that has sections in CMMS.",
+              "CMMS میں شعبوں والا مقام منتخب کریں۔"
+            )}
+          </small>
+        )}
       {failed.length > 0 && (
         <p className="pm-help" role="alert">
-          {t(
-            "تعذر جلب قوائم موقع المشروع من CMMS.",
-            "CMMS project locations could not be loaded.",
-            "سی ایم ایم ایس سے منصوبے کے مقامات لوڈ نہیں ہو سکے۔"
-          )}{" "}
+          {sites.isError || sections.isError
+            ? t(
+                "تعذر جلب قوائم موقع المشروع من CMMS.",
+                "CMMS project locations could not be loaded.",
+                "سی ایم ایم ایس سے منصوبے کے مقامات لوڈ نہیں ہو سکے۔"
+              )
+            : t(
+                "تعذر جلب قائمة الأصول من CMMS.",
+                "CMMS assets could not be loaded.",
+                "CMMS سے اثاثے لوڈ نہیں ہو سکے۔"
+              )}{" "}
           <button
             type="button"
             onClick={() =>
@@ -622,20 +658,39 @@ function ProjectForm({
     canEditDirectLocation &&
     ((directLocation?.lat ?? null) !== (project?.directLatitude ?? null) ||
       (directLocation?.lng ?? null) !== (project?.directLongitude ?? null));
-  const locationConfigured = cmms.data?.configured === true;
+  const locationConfigured = cmms.isSuccess && cmms.data.configured;
+  const choices = useProjectCmmsChoices(locale, locationConfigured, location);
   const locationChanged =
     location.siteId !== (project?.cmmsSiteId ?? null) ||
     location.sectionId !== (project?.cmmsSectionId ?? null) ||
     location.assetId !== (project?.cmmsAssetId ?? null);
-  const mustSelectLocation =
-    locationConfigured && (!project || locationChanged);
-  const locationIncomplete =
-    mustSelectLocation && (!location.siteId || !location.sectionId);
-  const loadingLocationConfig = !project && !cmms.data;
+  const { siteId, sectionId, assetId } = location;
+  const locationComplete =
+    siteId !== null && siteId > 0 && sectionId !== null && sectionId > 0;
+  const locationAvailable =
+    locationConfigured &&
+    choices.sites.isSuccess &&
+    choices.sites.data.some(option => option.id === siteId) &&
+    choices.sections.isSuccess &&
+    choices.sections.data.some(option => option.id === sectionId) &&
+    (assetId === null ||
+      (choices.assets.isSuccess &&
+        choices.assets.data.some(option => option.id === assetId)));
+  const canSaveLocation =
+    locationComplete && (!locationChanged || locationAvailable);
+  const selectLocationMessage = t(
+    "اختر الموقع والقسم من CMMS قبل الحفظ. الأصل اختياري.",
+    "Choose the CMMS site and section before saving. The asset is optional.",
+    "محفوظ کرنے سے پہلے CMMS کا مقام اور شعبہ منتخب کریں۔ اثاثہ اختیاری ہے۔"
+  );
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (busy || !validateFiles(files, t)) return;
-    if (loadingLocationConfig || locationIncomplete) return;
+    if (locationPicker !== null) return;
+    if (!canSaveLocation) {
+      toast.error(selectLocationMessage);
+      return;
+    }
     setBusy(true);
     let id: number | undefined;
     try {
@@ -646,15 +701,12 @@ function ProjectForm({
         data: {
           ...form,
           ...(directLocationChanged ? { directLocation } : {}),
-          ...(locationConfigured &&
-          locationChanged &&
-          location.siteId !== null &&
-          location.sectionId !== null
+          ...(locationChanged && siteId !== null && sectionId !== null
             ? {
                 cmmsLocation: {
-                  siteId: location.siteId,
-                  sectionId: location.sectionId,
-                  assetId: location.assetId,
+                  siteId,
+                  sectionId,
+                  assetId,
                   locale,
                 },
               }
@@ -777,9 +829,12 @@ function ProjectForm({
           project={project}
           selection={location}
           configured={locationConfigured}
-          required={mustSelectLocation}
+          choices={choices}
           onChange={setLocation}
         />
+        {!canSaveLocation && locationConfigured && (
+          <small role="status">{selectLocationMessage}</small>
+        )}
         <div className="pm-field">
           <span>
             {t("الموقع المباشر", "Direct location", "براہ راست مقام")}
@@ -826,29 +881,23 @@ function ProjectForm({
             <bdi dir="ltr">{directLocationCoordinates(directLocation)}</bdi>
           )}
         </div>
-        {cmms.data?.configured === false && (
-          <p className="pm-help">
+        {cmms.isPending && (
+          <p className="pm-help" role="status">
             {t(
-              "تتوفر خيارات الموقع والقسم والأصل بعد تفعيل الاتصال بـ CMMS.",
-              "Site, section and asset choices become available when the CMMS connection is enabled.",
-              "سی ایم ایم ایس سے رابطہ فعال ہونے پر مقام، شعبے اور اثاثے کے اختیارات دستیاب ہوں گے۔"
+              "جارٍ التحقق من ربط قوائم CMMS…",
+              "Checking the CMMS reference connection…",
+              "CMMS کے حوالہ جاتی رابطے کی جانچ جاری ہے…"
             )}
           </p>
         )}
-        {cmms.data?.configured === false && !project?.cmmsSiteId && (
-          <Field
-            label={t(
-              "وصف الموقع (اختياري)",
-              "Location notes (optional)",
-              "مقام کی تفصیل (اختیاری)"
+        {cmms.isSuccess && !locationConfigured && (
+          <p className="pm-help" role="status">
+            {t(
+              "يلزم تفعيل ربط قوائم CMMS لاختيار الموقع والقسم.",
+              "Connect the CMMS reference lists to choose the site and section.",
+              "مقام اور شعبہ منتخب کرنے کے لیے CMMS کی حوالہ جاتی فہرستیں جوڑیں۔"
             )}
-          >
-            <input
-              maxLength={500}
-              value={form.site}
-              onChange={e => setForm({ ...form, site: e.target.value })}
-            />
-          </Field>
+          </p>
         )}
         {cmms.isError && (
           <p className="pm-help" role="alert">
@@ -941,7 +990,7 @@ function ProjectForm({
           <button
             type="submit"
             className="primary"
-            disabled={busy || loadingLocationConfig || locationIncomplete}
+            disabled={busy || !canSaveLocation}
           >
             {busy
               ? t("جاري الحفظ…", "Saving…", "محفوظ ہو رہا ہے…")

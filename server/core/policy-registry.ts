@@ -36,6 +36,9 @@ export const routePolicies: Record<string, RoutePolicy> = {
   "materialRequisitions.catalogStatus": {
     any: ["materialRequisitions.create"],
   },
+  "materialRequisitions.catalogTree": {
+    any: ["materialRequisitions.create"],
+  },
   "materialRequisitions.catalogSearch": {
     any: ["materialRequisitions.create"],
   },

@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
 import { appRouter } from "../../routers";
@@ -18,17 +18,36 @@ import {
   accessProfiles,
 } from "../../../drizzle/policy";
 
+vi.mock("../cmms-integration/references", async importOriginal => ({
+  ...(await importOriginal<typeof import("../cmms-integration/references")>()),
+  cmmsReferencesConfigured: () => true,
+  readCmmsPurchaseOptions: async () => ({
+    categories: [{ id: 201, name: "QA purchase category" }],
+    reviewRoles: [{ code: "senior_management", name: "Senior management" }],
+  }),
+}));
+vi.mock("../cmms-integration/purchase-delivery", () => ({
+  dispatchApprovedCmmsRequisition: vi.fn(),
+}));
+const purchaseChoice = {
+  cmmsCategoryId: 201,
+  cmmsReviewRole: "senior_management",
+};
+
 vi.setConfig({ testTimeout: 90000 });
 describe.runIf(process.env.SCM_INTEGRATION === "1")(
   "Material requisition integrated workflow",
   () => {
     const prefix = `MRQA-${randomUUID().slice(0, 8)}`;
     const keys: string[] = [],
-      requestIds: number[] = [];
+      requestIds: number[] = [],
+      catalogEntryIds: number[] = [];
     let projectId = 0,
       taskId = 0,
       employeeId = 0,
       unitId = 0,
+      catalogEntryId = 0,
+      ownerId = 0,
       regularId = 0,
       statusId = 0;
     let owner: ReturnType<typeof appRouter.createCaller>, regular: typeof owner;
@@ -43,6 +62,26 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         req: { headers: {}, protocol: "http" },
         res: {},
       } as TrpcContext);
+    const seedCatalog = async (
+      suffix: string,
+      unit: typeof s.materialUnits.$inferSelect
+    ) => {
+      const [entry] = await (await database())
+        .insert(s.materialCatalogEntries)
+        .values({
+          sourceKey: createHash("sha256").update(prefix).digest("hex"),
+          externalId: prefix + "-" + suffix,
+          catalogCode: prefix + "-" + suffix,
+          itemName: prefix + " " + suffix,
+          unitId: unit.id,
+          unitSnapshot: JSON.stringify(unit),
+          specifications: "",
+          createdBy: ownerId,
+        });
+      const id = Number(entry.insertId);
+      catalogEntryIds.push(id);
+      return id;
+    };
     const taskDetail = () => owner.projectManagement.detail({ id: projectId });
     const move = async (startDate: string) => {
       const task = (await taskDetail()).tasks.find(row => row.id === taskId)!;
@@ -68,7 +107,8 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         .from(users)
         .where(eq(users.username, "admin"));
       if (!admin) throw Error("Existing owner required");
-      owner = await caller(admin.id);
+      ownerId = admin.id;
+      owner = await caller(ownerId);
       regularId = await createLocalUser({
         username: prefix.toLowerCase(),
         name: prefix,
@@ -89,6 +129,10 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         description: "QA",
         requirements: "QA",
         site: "QA",
+        cmmsSiteId: 101,
+        cmmsSiteName: "QA",
+        cmmsSectionId: 102,
+        cmmsSectionName: "QA section",
         plannedStartDate: "2026-12-01",
         plannedEndDate: "2026-12-31",
         status: "active",
@@ -114,6 +158,11 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         nameUr: "آزمائشی اکائی",
       });
       unitId = unit.id;
+      const [savedUnit] = await db
+        .select()
+        .from(s.materialUnits)
+        .where(eq(s.materialUnits.id, unitId));
+      catalogEntryId = await seedCatalog("Epoxy", savedUnit);
     }, 60000);
     afterAll(async () => {
       try {
@@ -132,6 +181,10 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
                 )
               );
           }
+          if (catalogEntryIds.length)
+            await tx
+              .delete(s.materialCatalogEntries)
+              .where(inArray(s.materialCatalogEntries.id, catalogEntryIds));
           if (taskId) {
             await tx
               .delete(s.ganttTaskSettings)
@@ -208,6 +261,8 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
     it("allows multiple numbered requests for one task, enforces 20 rows and idempotency", async () => {
       const item = {
         itemName: prefix + " Epoxy",
+        ...purchaseChoice,
+        catalogEntryId,
         quantity: "0.123456789",
         unitId,
         needDate: "2026-12-07",
@@ -277,6 +332,8 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
           items: [
             {
               itemName: "Changed",
+              ...purchaseChoice,
+              catalogEntryId,
               quantity: "1",
               unitId,
               needDate: "2026-12-01",
@@ -334,8 +391,27 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
       ).rejects.toThrow();
     });
     it("accepts an idempotent return PR reference without changing the official document", async () => {
+      const db = await database();
+      const [source] = await db
+        .select({
+          approvedAt: s.materialRequisitions.approvedAt,
+          approvedSnapshot: s.materialRequisitions.approvedSnapshot,
+        })
+        .from(s.materialRequisitions)
+        .where(eq(s.materialRequisitions.id, requestIds[0]));
+      const [legacy] = await db.insert(s.materialRequisitions).values({
+        number: prefix + "-LEGACY",
+        projectId,
+        taskId,
+        status: "approved",
+        createdBy: ownerId,
+        approvedBy: ownerId,
+        ...source,
+      });
+      const legacyId = Number(legacy.insertId);
+      requestIds.push(legacyId);
       const request = await owner.materialRequisitions.detail({
-        id: requestIds[0],
+        id: legacyId,
       });
       const input = {
         key: key(),
@@ -366,12 +442,15 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
       )!;
       const activeUnit = (await owner.materialRequisitions.directory())
         .units[0];
+      const ganttCatalogEntryId = await seedCatalog("Gantt", activeUnit);
       const input = {
         projectId,
         taskId,
         items: [
           {
             itemName: prefix + " Gantt",
+            ...purchaseChoice,
+            catalogEntryId: ganttCatalogEntryId,
             quantity: "1",
             unitId: activeUnit.id,
             needDate: dateFromLead(original.startDate, 3),

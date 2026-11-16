@@ -10,12 +10,16 @@ import {
 } from "../../../shared/material-requisitions";
 import * as service from "./service";
 import * as catalog from "./catalog";
+import { catalogNodeId } from "./catalog-provider";
 import { dispatchApprovedCmmsRequisition } from "../cmms-integration/purchase-delivery";
 
 export const materialRequisitionsRouter = router({
   catalogStatus: requiring("materialRequisitions.create").query(() =>
     catalog.catalogStatus()
   ),
+  catalogTree: requiring("materialRequisitions.create")
+    .input(z.object({ locale: z.enum(["ar", "en", "ur"]).default("ar") }))
+    .query(({ input }) => catalog.catalogTree(input.locale)),
   catalogSearch: requiring("materialRequisitions.create")
     .input(
       z.object({
@@ -23,6 +27,7 @@ export const materialRequisitionsRouter = router({
         page: z.number().int().min(1).default(1),
         pageSize: z.number().int().min(1).max(50).default(20),
         locale: z.enum(["ar", "en", "ur"]).default("ar"),
+        nodeId: catalogNodeId.optional(),
       })
     )
     .query(({ input, ctx }) => catalog.catalogSearch(input, ctx.access!)),

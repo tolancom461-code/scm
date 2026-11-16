@@ -12,22 +12,38 @@ const copy = {
   cmmsSite: ["الموقع", "Site", "مقام"],
   cmmsSection: ["القسم", "Section", "شعبہ"],
   cmmsAsset: ["الأصل", "Asset", "اثاثہ"],
+  cmmsAssetOptional: ["الأصل (اختياري)", "Asset (optional)", "اثاثہ (اختیاری)"],
   cmmsCategory: ["التصنيف", "Category", "زمرہ"],
   cmmsReviewRole: ["جهة المراجعة", "Review department", "جائزہ شعبہ"],
   cmmsProjectNotLinked: [
-    "اربط موقع وقسم المشروع من إعدادات المشروع لإرسال الاحتياج بعد اعتماده إلى CMMS.",
-    "Set the project's CMMS site and section to send this requisition after approval.",
-    "منظوری کے بعد درخواست CMMS بھیجنے کے لیے منصوبے کا مقام اور شعبہ منتخب کریں۔",
+    "يلزم اختيار مشروع له موقع وقسم من CMMS لحفظ المسودة.",
+    "Choose a project with a CMMS site and section to save the draft.",
+    "مسودہ محفوظ کرنے کے لیے CMMS کے مقام اور شعبے والا منصوبہ منتخب کریں۔",
   ],
   cmmsOptionsUnavailable: [
     "تعذر تحميل التصنيفات وجهات المراجعة من CMMS.",
     "Could not load categories and review departments from CMMS.",
     "CMMS سے زمرے اور جائزہ شعبے لوڈ نہیں ہو سکے۔",
   ],
-  cmmsApproveFields: [
-    "اختر التصنيف وجهة المراجعة لكل صنف قبل اعتماد الاحتياج.",
-    "Select a category and review department for each item before approving the requisition.",
-    "درخواست منظور کرنے سے پہلے ہر صنف کا زمرہ اور جائزہ شعبہ منتخب کریں۔",
+  cmmsPurchaseNotConfigured: [
+    "فعّل ربط قوائم CMMS لتحميل التصنيفات وجهات المراجعة وحفظ المسودة.",
+    "Connect the CMMS reference lists to load categories and review departments and save the draft.",
+    "زمرے اور جائزہ شعبے لوڈ کرنے اور مسودہ محفوظ کرنے کے لیے CMMS کی فہرستیں جوڑیں۔",
+  ],
+  cmmsOptionsLoading: [
+    "جارٍ تحميل التصنيفات وجهات المراجعة من CMMS…",
+    "Loading categories and review departments from CMMS…",
+    "CMMS سے زمرے اور جائزہ شعبے لوڈ ہو رہے ہیں…",
+  ],
+  cmmsOptionsEmpty: [
+    "أكمل إعداد التصنيفات وجهات المراجعة في CMMS لحفظ المسودة.",
+    "Set up categories and review departments in CMMS to save the draft.",
+    "مسودہ محفوظ کرنے کے لیے CMMS میں زمرے اور جائزہ شعبے مقرر کریں۔",
+  ],
+  cmmsSaveFields: [
+    "اختر تصنيفًا وجهة مراجعة متاحين في CMMS لكل صنف قبل حفظ المسودة.",
+    "Choose a CMMS category and review department for each item before saving the draft.",
+    "مسودہ محفوظ کرنے سے پہلے ہر صنف کے لیے CMMS سے زمرہ اور جائزہ شعبہ منتخب کریں۔",
   ],
   cmmsLocalApproval: [
     "معتمد في PSCM — موقع المشروع وقسمه غير مرتبطين بـ CMMS.",
@@ -69,7 +85,11 @@ const copy = {
   specifications: ["المواصفات", "Specifications", "خصوصیات"],
   notes: ["ملاحظات", "Notes", "نوٹس"],
   needDate: ["تاريخ الاحتياج", "Need date", "ضرورت کی تاریخ"],
-  addItem: ["إضافة صنف", "Add item", "صنف شامل کریں"],
+  emptyDraft: [
+    "ابدأ بإضافة صنف من الكتالوج.",
+    "Start by adding an item from the catalog.",
+    "کیٹلاگ سے ایک صنف شامل کریں۔",
+  ],
   catalogCode: ["كود الكتالوج", "Catalog Code", "کیٹلاگ کوڈ"],
   itemImage: ["صورة الصنف", "Item image", "صنف کی تصویر"],
   addFromCatalog: [
@@ -83,7 +103,6 @@ const copy = {
     "Search by catalog code or item name",
     "کیٹلاگ کوڈ یا صنف کے نام سے تلاش کریں",
   ],
-  searchAction: ["بحث", "Search", "تلاش"],
   backToRequest: [
     "العودة إلى طلب الاحتياج",
     "Back to requisition",
@@ -104,11 +123,6 @@ const copy = {
     "لا توجد أصناف مطابقة في الكتالوج.",
     "No matching catalog items.",
     "کیٹلاگ میں متعلقہ اشیاء موجود نہیں۔",
-  ],
-  catalogLocked: [
-    "مستورد من الكتالوج — الاسم والكود والوحدة والصورة مرتبطة بالصنف.",
-    "Imported from catalog — the name, code, unit and image belong to this item.",
-    "کیٹلاگ سے درآمد — نام، کوڈ، اکائی اور تصویر اس صنف سے منسلک ہیں۔",
   ],
   noImage: ["لا توجد صورة", "No image", "تصویر موجود نہیں"],
   enlargeImage: [

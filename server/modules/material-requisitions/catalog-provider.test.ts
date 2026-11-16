@@ -11,6 +11,7 @@ import {
 import {
   catalogConfigurationStatus,
   fetchCatalogItems,
+  fetchCatalogTree,
   searchCatalog,
 } from "./catalog-provider";
 import {
@@ -45,11 +46,19 @@ const item = {
   },
   imageUrl: null,
 };
+const rootNode = { id: 1, parentId: null, code: "001", name: "كهرباء" };
+const childNode = { id: 2, parentId: 1, code: null, name: "إنارة" };
 describe("External catalog connector", () => {
   let server: Server,
     endpoint = "",
     mode = "normal",
     calls = 0;
+  let nodes: {
+    id: number;
+    parentId: number | null;
+    code: string | null;
+    name: string;
+  }[];
   let lastRequest: { authorization?: string; search?: URLSearchParams } = {};
   beforeAll(async () => {
     server = createServer((req, res) => {
@@ -92,6 +101,10 @@ describe("External catalog connector", () => {
         return;
       }
       res.setHeader("Content-Type", "application/json; charset=utf-8");
+      if (url.searchParams.get("view") === "tree" && mode !== "flat-only") {
+        res.end(JSON.stringify({ nodes }));
+        return;
+      }
       const requestedIds = url.searchParams.get("ids");
       let rows = requestedIds
         ? (JSON.parse(requestedIds) as string[]).map(id => ({ ...item, id }))
@@ -115,6 +128,7 @@ describe("External catalog connector", () => {
   beforeEach(() => {
     mode = "normal";
     calls = 0;
+    nodes = [rootNode, childNode];
     vi.stubEnv("CATALOG_API_URL", endpoint + "/catalog");
     vi.stubEnv("CATALOG_API_TOKEN", "test-secret-do-not-expose");
     vi.stubEnv("CATALOG_IMAGE_ALLOWED_ORIGINS", "");
@@ -138,18 +152,60 @@ describe("External catalog connector", () => {
       page: 2,
       pageSize: 10,
       locale: "ur",
+      nodeId: 1,
     });
     expect(lastRequest.search?.get("q")).toBe("إيبوكسي");
     expect(lastRequest.search?.get("locale")).toBe("ur");
+    expect(lastRequest.search?.get("nodeId")).toBe("1");
+    expect(lastRequest.search?.get("page")).toBe("2");
+    expect(lastRequest.search?.get("pageSize")).toBe("10");
     expect(lastRequest.authorization).toBe("Bearer test-secret-do-not-expose");
     expect(result.items[0].code).toBe("000123-A");
     expect(result.items[0].unit.code).toBe("L");
     expect(JSON.stringify(result)).not.toContain("test-secret");
   });
+  it("reads the localized tree through the configured API without item query parameters", async () => {
+    vi.stubEnv(
+      "CATALOG_API_URL",
+      endpoint + "/catalog?region=test&ids=ignored&nodeId=17&q=ignored"
+    );
+    await expect(fetchCatalogTree("en")).resolves.toEqual({ nodes });
+    expect(Object.fromEntries(lastRequest.search!.entries())).toEqual({
+      region: "test",
+      view: "tree",
+      locale: "en",
+    });
+    expect(lastRequest.authorization).toBe("Bearer test-secret-do-not-expose");
+  });
+  it.each([
+    ["duplicate IDs", [rootNode, rootNode]],
+    ["unknown parent", [rootNode, { ...childNode, parentId: 999 }]],
+    [
+      "cycle",
+      [
+        rootNode,
+        { ...childNode, parentId: 3 },
+        { ...childNode, id: 3, parentId: 2 },
+      ],
+    ],
+  ] as const)("rejects tree responses with %s", async (_name, invalidNodes) => {
+    nodes = [...invalidNodes];
+    await expect(fetchCatalogTree()).rejects.toThrow(/does not match/);
+  });
+  it("preserves flat search for providers that only implement the original contract", async () => {
+    mode = "flat-only";
+    await expect(fetchCatalogTree()).rejects.toThrow(/does not match/);
+    await expect(searchCatalog({})).resolves.toMatchObject({ items: [item] });
+    expect(lastRequest.search?.has("view")).toBe(false);
+    expect(lastRequest.search?.has("nodeId")).toBe(false);
+  });
   it("re-reads selected identities authoritatively and rejects missing/duplicate identities", async () => {
+    vi.stubEnv("CATALOG_API_URL", endpoint + "/catalog?view=tree&nodeId=1");
     const selected = await fetchCatalogItems(["item,001", "another"], "ur");
     expect(lastRequest.search?.get("locale")).toBe("ur");
     expect(lastRequest.search?.get("ids")).toBe('["item,001","another"]');
+    expect(lastRequest.search?.has("view")).toBe(false);
+    expect(lastRequest.search?.has("nodeId")).toBe(false);
     expect(selected.map(row => row.id)).toEqual(["item,001", "another"]);
     mode = "wrong-id";
     await expect(fetchCatalogItems(["item,001"])).rejects.toThrow(

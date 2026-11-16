@@ -14,6 +14,7 @@ import { deleteStoredDocument } from "../../storage";
 import {
   catalogConfigurationStatus,
   fetchCatalogItems,
+  fetchCatalogTree,
   searchCatalog,
 } from "./catalog-provider";
 import { persistCatalogImage } from "./catalog-media";
@@ -21,6 +22,7 @@ import { persistCatalogImage } from "./catalog-media";
 export const catalogImageUrl = (id: number) =>
   `/material-requisitions/catalog-images/${id}`;
 export const catalogStatus = catalogConfigurationStatus;
+export const catalogTree = fetchCatalogTree;
 
 function signingKey() {
   const key = process.env.JWT_SECRET;

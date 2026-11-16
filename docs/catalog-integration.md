@@ -12,7 +12,7 @@ Use HTTPS for a deployed external system. Explicit internal/development API orig
 
 ## API contract
 
-Search uses a `GET` request to the configured endpoint with `q`, `page`, `pageSize` and `locale` (`ar`, `en`, `ur`). No external write occurs during catalog search/import.
+Search uses a `GET` request to the configured endpoint with `q`, `page`, `pageSize` and `locale` (`ar`, `en`, `ur`). When a catalog category is selected, `nodeId` filters the search to that category and its descendants before pagination. No external write occurs during catalog search/import.
 
 ```json
 {
@@ -40,9 +40,24 @@ Search uses a `GET` request to the configured endpoint with `q`, `page`, `pageSi
 
 Item IDs and Catalog Codes are strings. Leading zeros in codes are preserved. `specifications` may be omitted and defaults to an empty string. `imageUrl` may be null/omitted when the external catalog has no image. All other illustrated item fields are required, except `unit.id`.
 
+Catalog browsing loads the tree from the same endpoint using `?view=tree&locale=ar` and the existing Bearer token. The response contains the active categories with localized names.
+
+```json
+{
+  "nodes": [
+    { "id": 1, "parentId": null, "code": "01", "name": "كهرباء" },
+    { "id": 2, "parentId": 1, "code": "0101", "name": "إنارة" }
+  ]
+}
+```
+
+Tree IDs are positive integers. Roots have `parentId: null`, and every other node must reference a parent in the response. The tree shows catalog categories used for browsing. Purchase classifications come from the CMMS reference lists. Providers that support the original response still support unfiltered item search and import.
+
 On selection, PSCM requests authoritative item data again using the same endpoint and `ids` as a URL-encoded JSON string array, with `page=1`, `pageSize` equal to the selected count and `locale` matching the search language (default `ar`). For example `ids=["item-83","item-91"]&locale=ur`. The response has the same envelope and must contain exactly the requested unique IDs, up to 20. This avoids accepting browser-supplied names, codes or units. A provider with a different native API needs an adapter to this contract before activation.
 
 ## Images and official requests
+
+New requisition lines require a catalog import. Drafts created before this rule can retain their saved manual lines and update the request fields. Those lines keep their saved item name and unit.
 
 Images are fetched through the PSCM server, not with external API credentials in the browser. Only PNG, JPEG, GIF and WebP signatures are accepted. SVG and non-image payloads are rejected. Images are limited to 5 MB; catalog JSON responses to 1 MB. Requests time out after 12 seconds and never follow redirects. A catalog-provided URL cannot add itself to the trusted-origin list.
 

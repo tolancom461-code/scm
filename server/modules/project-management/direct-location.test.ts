@@ -7,10 +7,18 @@ import {
 import type { AccessContext } from "../../core/policy";
 import { projectAction, saveProject } from "./service";
 
-const mocks = vi.hoisted(() => ({ database: vi.fn(), canAccess: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  database: vi.fn(),
+  canAccess: vi.fn(),
+  assertConstructionAccess: vi.fn(),
+  cmmsConfigured: vi.fn(),
+  sites: vi.fn(),
+  sections: vi.fn(),
+  assets: vi.fn(),
+}));
 vi.mock("../../core/database", () => ({ database: mocks.database }));
 vi.mock("../../core/policy", () => ({
-  assertConstructionAccess: vi.fn(),
+  assertConstructionAccess: mocks.assertConstructionAccess,
   canAccess: mocks.canAccess,
 }));
 vi.mock("../../core/numbering", () => ({
@@ -32,7 +40,10 @@ vi.mock("../material-requisitions/schedule-guards", () => ({
 }));
 vi.mock("../gantt/studio-state", () => ({ touchGanttStudioStates: vi.fn() }));
 vi.mock("../cmms-integration/references", () => ({
-  cmmsReferencesConfigured: () => false,
+  cmmsReferencesConfigured: mocks.cmmsConfigured,
+  readCmmsSites: mocks.sites,
+  readCmmsSections: mocks.sections,
+  readCmmsAssets: mocks.assets,
 }));
 
 const editor = { user: { id: 11, name: "Editor" } } as AccessContext;
@@ -41,6 +52,15 @@ const savedCoordinates = {
   directLatitude: point.lat,
   directLongitude: point.lng,
 };
+const cmmsSelection = { siteId: 15, sectionId: 16 };
+const savedCmms = {
+  cmmsSiteId: cmmsSelection.siteId,
+  cmmsSiteName: "Site 15",
+  cmmsSectionId: cmmsSelection.sectionId,
+  cmmsSectionName: "Section 16",
+  cmmsAssetId: null,
+  cmmsAssetName: null,
+};
 const command = {
   key: "ec85b526-7488-4931-ace7-7c6f3abe60f5",
   id: 8,
@@ -48,13 +68,15 @@ const command = {
   data: { name: "Project" },
 };
 
-function stubProject(status = "draft") {
+function stubProject(status = "draft", linked = true) {
   const project = {
     id: command.id,
     version: command.version,
     status,
     ...savedCoordinates,
+    ...(linked ? savedCmms : { cmmsSiteId: null, cmmsSectionId: null }),
   };
+  mocks.assertConstructionAccess.mockResolvedValue(project);
   const query = {
     from: () => query,
     where: () => query,
@@ -78,6 +100,18 @@ function withLocation(directLocation: unknown) {
 describe("Project direct location", () => {
   beforeEach(() => {
     mocks.canAccess.mockReset().mockReturnValue(true);
+    mocks.cmmsConfigured.mockReset().mockReturnValue(false);
+    mocks.sites
+      .mockReset()
+      .mockResolvedValue([
+        { id: cmmsSelection.siteId, name: savedCmms.cmmsSiteName },
+      ]);
+    mocks.sections
+      .mockReset()
+      .mockResolvedValue([
+        { id: cmmsSelection.sectionId, name: savedCmms.cmmsSectionName },
+      ]);
+    mocks.assets.mockReset().mockResolvedValue([]);
   });
 
   it.each([
@@ -96,9 +130,15 @@ describe("Project direct location", () => {
 
   it("saves coordinates and assigns the record number when creating a draft", async () => {
     const { insert, values } = stubProject();
+    mocks.cmmsConfigured.mockReturnValue(true);
     const input = projectSaveInput.parse({
       ...withLocation(point),
       id: undefined,
+      data: {
+        ...command.data,
+        directLocation: point,
+        cmmsLocation: cmmsSelection,
+      },
     });
     await expect(saveProject(input, editor)).resolves.toEqual({
       id: command.id,
@@ -109,9 +149,62 @@ describe("Project direct location", () => {
       1,
       expect.objectContaining({
         ...savedCoordinates,
+        ...savedCmms,
         number: "P-1",
       })
     );
+    expect(mocks.sections).toHaveBeenCalledWith(
+      cmmsSelection.siteId,
+      undefined
+    );
+    expect(mocks.assets).not.toHaveBeenCalled();
+  });
+
+  it("requires a CMMS site and section for a new or previously unlinked draft", async () => {
+    const { insert, update } = stubProject("draft", false);
+    for (const id of [undefined, command.id])
+      await expect(
+        saveProject(projectSaveInput.parse({ ...command, id }), editor)
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringContaining("Select the CMMS site and section"),
+      });
+    expect(insert).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("preserves an unchanged saved CMMS location while the reference service is offline", async () => {
+    const { set } = stubProject();
+    const input = projectSaveInput.parse({
+      ...command,
+      data: { ...command.data, cmmsLocation: cmmsSelection },
+    });
+    await expect(saveProject(input, editor)).resolves.toEqual({
+      id: command.id,
+    });
+    expect(set.mock.lastCall?.[0]).not.toHaveProperty("cmmsSiteId");
+    expect(mocks.sites).not.toHaveBeenCalled();
+  });
+
+  it("rejects saving a selected asset absent from the selected CMMS section", async () => {
+    const { update } = stubProject();
+    mocks.cmmsConfigured.mockReturnValue(true);
+    const input = projectSaveInput.parse({
+      ...command,
+      data: {
+        ...command.data,
+        cmmsLocation: { ...cmmsSelection, assetId: 55 },
+      },
+    });
+    await expect(saveProject(input, editor)).rejects.toMatchObject({
+      domainCode: "INVALID_REFERENCE",
+    });
+    expect(mocks.assets).toHaveBeenCalledWith(
+      cmmsSelection.siteId,
+      cmmsSelection.sectionId,
+      undefined
+    );
+    expect(update).not.toHaveBeenCalled();
   });
 
   it("can replace the draft point with zero coordinates and clear it explicitly", async () => {

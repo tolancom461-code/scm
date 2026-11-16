@@ -157,8 +157,7 @@ type PurchaseReferences = {
 
 function cmmsPurchaseReferences(
   item: PurchaseReferences,
-  options: CmmsPurchaseOptions | null,
-  required: boolean
+  options: CmmsPurchaseOptions | null
 ) {
   const category = options?.categories.find(
     option => option.id === item.cmmsCategoryId
@@ -166,11 +165,7 @@ function cmmsPurchaseReferences(
   const reviewer = options?.reviewRoles.find(
     option => option.code === item.cmmsReviewRole
   );
-  if (
-    (required && (!category || !reviewer)) ||
-    (item.cmmsCategoryId != null && !category) ||
-    (item.cmmsReviewRole != null && !reviewer)
-  )
+  if (!category || !reviewer)
     invalid(
       "تحقق من تصنيف وجهة مراجعة الصنف «" +
         item.itemName +
@@ -179,10 +174,10 @@ function cmmsPurchaseReferences(
         "” / اس صنف کا CMMS زمرہ اور جائزہ شعبہ چیک کریں۔"
     );
   return {
-    cmmsCategoryId: category?.id ?? null,
-    cmmsCategoryName: category?.name ?? null,
-    cmmsReviewRole: reviewer?.code ?? null,
-    cmmsReviewRoleName: reviewer?.name ?? null,
+    cmmsCategoryId: category.id,
+    cmmsCategoryName: category.name,
+    cmmsReviewRole: reviewer.code,
+    cmmsReviewRoleName: reviewer.name,
   };
 }
 
@@ -596,12 +591,11 @@ export async function save(
   input: z.infer<typeof materialRequisitionSaveInput>,
   access: AccessContext
 ) {
-  const referencesConfigured = cmmsReferencesConfigured();
+  const missingPurchaseFields = input.items.find(
+    item => item.cmmsCategoryId == null || item.cmmsReviewRole == null
+  );
   const { options, failure } = await cmmsOptions(
-    referencesConfigured &&
-      input.items.some(
-        item => item.cmmsCategoryId != null || item.cmmsReviewRole != null
-      ),
+    !missingPurchaseFields,
     input.locale
   );
   return (await database()).transaction(tx =>
@@ -626,7 +620,6 @@ export async function save(
           invalid(
             "تغير تاريخ البداية أثناء تحرير الطلب. أعد فتح المسودة / Start date changed while editing; reopen the draft / ترمیم کے دوران تاریخ آغاز بدل گئی؛ مسودہ دوبارہ کھولیں۔"
           );
-        await ensureDefaultUnits(tx);
         let id = input.id;
         let before: typeof s.materialRequisitions.$inferSelect | undefined;
         if (id) {
@@ -648,6 +641,10 @@ export async function save(
               "لا يمكن تغيير مصدر الطلب بعد إنشائه / The request source cannot be changed / درخواست کا اصل ربط تبدیل نہیں ہو سکتا۔"
             );
         }
+        if (!projectHasCmmsLocation(linked.project))
+          invalid(
+            "حدد موقع المشروع وقسمه من CMMS قبل حفظ طلب الاحتياج / Select the project’s CMMS site and section before saving the requisition / ضرورت کی درخواست محفوظ کرنے سے پہلے منصوبے کا CMMS مقام اور شعبہ منتخب کریں۔"
+          );
         const catalogIds = [
           ...new Set(
             input.items.flatMap(item =>
@@ -665,12 +662,9 @@ export async function save(
         const oldLinks = before
           ? await tx
               .select({
-                id: s.materialRequisitionItems.catalogEntryId,
-                cmmsCategoryId: s.materialRequisitionItems.cmmsCategoryId,
-                cmmsCategoryName: s.materialRequisitionItems.cmmsCategoryName,
-                cmmsReviewRole: s.materialRequisitionItems.cmmsReviewRole,
-                cmmsReviewRoleName:
-                  s.materialRequisitionItems.cmmsReviewRoleName,
+                catalogEntryId: s.materialRequisitionItems.catalogEntryId,
+                itemName: s.materialRequisitionItems.itemName,
+                unitId: s.materialRequisitionItems.unitId,
               })
               .from(s.materialRequisitionItems)
               .where(eq(s.materialRequisitionItems.requisitionId, before.id))
@@ -680,23 +674,34 @@ export async function save(
           imported.some(
             entry =>
               entry.createdBy !== access.user.id &&
-              !oldLinks.some(link => link.id === entry.id)
+              !oldLinks.some(link => link.catalogEntryId === entry.id)
           )
         )
           throw new DomainError("INVALID_REFERENCE");
+        const legacyItems = oldLinks.filter(
+          link => link.catalogEntryId === null
+        );
+        for (const item of input.items) {
+          if (item.catalogEntryId !== null) continue;
+          const existing = legacyItems.findIndex(
+            link =>
+              link.itemName === item.itemName && link.unitId === item.unitId
+          );
+          if (existing === -1)
+            invalid(
+              "أضف الأصناف الجديدة من الكتالوج / Add new items from the catalog / نئی اشیاء کیٹلاگ سے شامل کریں۔"
+            );
+          legacyItems.splice(existing, 1);
+        }
+        if (missingPurchaseFields)
+          invalid(
+            "اختر التصنيف وجهة المراجعة للصنف «" +
+              missingPurchaseFields.itemName +
+              "» من CMMS / Select a CMMS category and review department for “" +
+              missingPurchaseFields.itemName +
+              "” / اس صنف کے لیے CMMS سے زمرہ اور جائزہ شعبہ منتخب کریں۔"
+          );
         if (failure) throw failure;
-        const savedOptions: CmmsPurchaseOptions = {
-          categories: oldLinks.flatMap(item =>
-            item.cmmsCategoryId && item.cmmsCategoryName
-              ? [{ id: item.cmmsCategoryId, name: item.cmmsCategoryName }]
-              : []
-          ),
-          reviewRoles: oldLinks.flatMap(item =>
-            item.cmmsReviewRole && item.cmmsReviewRoleName
-              ? [{ code: item.cmmsReviewRole, name: item.cmmsReviewRoleName }]
-              : []
-          ),
-        };
         const resolvedItems = input.items.map(item => {
           const entry = imported.find(
             entry => entry.id === item.catalogEntryId
@@ -706,13 +711,10 @@ export async function save(
             catalogCode: entry?.catalogCode ?? "",
             itemName: entry?.itemName ?? item.itemName,
             unitId: entry?.unitId ?? item.unitId,
-            ...cmmsPurchaseReferences(
-              item,
-              referencesConfigured ? options : savedOptions,
-              false
-            ),
+            ...cmmsPurchaseReferences(item, options),
           };
         });
+        await ensureDefaultUnits(tx);
         const unitIds = [...new Set(resolvedItems.map(item => item.unitId))];
         const units = await tx
           .select()
@@ -843,7 +845,7 @@ export async function approve(
         const officialItems = items.map(item => ({
           ...item,
           needDate: dateFromLead(linked.startDate, item.leadDays),
-          ...(sendToCmms ? cmmsPurchaseReferences(item, options, true) : {}),
+          ...(sendToCmms ? cmmsPurchaseReferences(item, options) : {}),
         }));
         for (const item of officialItems) {
           if (item.leadDays < 3) throw new DomainError("INVALID_INPUT");
