@@ -22,7 +22,7 @@ export type ItemDraft = {
   unitId: number;
   specifications: string;
   notes: string;
-  needDate: string;
+  offsetDays: string;
   cmmsCategoryId: number | null;
   cmmsCategoryName: string | null;
   cmmsReviewRole: string | null;
@@ -39,7 +39,8 @@ export function RequisitionItemCard({
   number,
   locale,
   unitLabel,
-  maxNeedDate,
+  needDate,
+  hasStartDate,
   project,
   options,
   update,
@@ -49,7 +50,8 @@ export function RequisitionItemCard({
   number: number;
   locale: Locale;
   unitLabel: string;
-  maxNeedDate?: string;
+  needDate: string;
+  hasStartDate: boolean;
   project?: {
     cmmsSiteName: string | null;
     cmmsSectionName: string | null;
@@ -62,8 +64,10 @@ export function RequisitionItemCard({
   const c = (key: MrKey) => mrText(locale, key);
   const field = (key: MrKey) => c(key) + " " + number;
   const quantityErrorId = useId();
+  const offsetErrorId = useId();
   const invalidQuantity =
     item.quantity !== "" && !isWholeRequisitionQuantity(item.quantity);
+  const invalidOffset = hasStartDate && item.offsetDays !== "" && !needDate;
   const categories = options?.categories ?? [];
   const reviewRoles = options?.reviewRoles ?? [];
   const unavailableCategory =
@@ -107,6 +111,34 @@ export function RequisitionItemCard({
       </header>
       <div className="mr-line-grid">
         <label>
+          <span>{c("offsetDays")} *</span>
+          <input
+            aria-label={field("offsetDays")}
+            aria-invalid={invalidOffset || undefined}
+            aria-describedby={invalidOffset ? offsetErrorId : undefined}
+            required
+            dir="ltr"
+            type="text"
+            value={item.offsetDays}
+            onChange={event => update({ offsetDays: event.target.value })}
+          />
+          {invalidOffset && (
+            <small id={offsetErrorId} className="mr-field-error">
+              {c("invalidOffsetDays")}
+            </small>
+          )}
+        </label>
+        <label>
+          <span>{c("needDate")}</span>
+          <input
+            aria-label={field("needDate")}
+            dir="ltr"
+            type="text"
+            value={needDate || "—"}
+            readOnly
+          />
+        </label>
+        <label>
           <span>{c("quantity")} *</span>
           <input
             aria-label={field("quantity")}
@@ -128,18 +160,6 @@ export function RequisitionItemCard({
               {c("wholeQuantityRequired")}
             </small>
           )}
-        </label>
-        <label>
-          <span>{c("needDate")} *</span>
-          <input
-            aria-label={field("needDate")}
-            required
-            type="date"
-            lang="en-CA"
-            max={maxNeedDate}
-            value={item.needDate}
-            onChange={event => update({ needDate: event.target.value })}
-          />
         </label>
         <label>
           <span>{c("cmmsCategory")} *</span>

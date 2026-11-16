@@ -156,15 +156,25 @@ const copy = {
     "تصویر دستیاب نہیں",
   ],
   remove: ["حذف", "Remove", "حذف کریں"],
-  leadHint: [
-    "يجب أن يسبق تاريخ الاحتياج بداية المهمة أو المشروع بثلاثة أيام على الأقل.",
-    "The need date must be at least three days before the task or project starts.",
-    "ضرورت کی تاریخ کام یا منصوبہ شروع ہونے سے کم از کم تین دن پہلے ہونی چاہیے۔",
+  offsetDays: [
+    "فرق الأيام عن البداية المخططة",
+    "Days from planned start",
+    "منصوبہ شدہ آغاز سے دنوں کا فرق",
+  ],
+  offsetDaysHint: [
+    "استخدم قيمة سالبة قبل البداية المخططة، وصفرًا في يوم البداية، وقيمة موجبة بعدها.",
+    "Use a negative number for days before the planned start, zero for the start date, and a positive number for days after.",
+    "منصوبہ شدہ آغاز سے پہلے کے لیے منفی عدد، آغاز کے دن کے لیے صفر، اور بعد کے لیے مثبت عدد استعمال کریں۔",
+  ],
+  invalidOffsetDays: [
+    "أدخل عدد أيام صحيحًا ينتج عنه تاريخ صالح.",
+    "Enter a whole number of days that gives a valid date.",
+    "دنوں کی ایسی صحیح تعداد درج کریں جس سے درست تاریخ بنے۔",
   ],
   draftHint: [
-    "المسودة تتحرك تلقائيًا مع تاريخ البداية في Gantt. بعد الاعتماد تصبح رسمية ومقفلة.",
-    "Draft dates move automatically with the Gantt start date. Approval makes the request official and locked.",
-    "مسودے کی تاریخیں گینٹ کی تاریخ آغاز کے ساتھ خود بدلتی ہیں۔ منظوری کے بعد درخواست مقفل ہو جاتی ہے۔",
+    "تتحرك تواريخ المسودة مع البداية المخططة في Gantt، وتثبت عند الاعتماد.",
+    "Draft dates move with the planned start in Gantt and become fixed at approval.",
+    "مسودے کی تاریخیں گینٹ میں منصوبہ شدہ آغاز کے ساتھ بدلتی ہیں، اور منظوری پر مقرر ہو جاتی ہیں۔",
   ],
   filter: ["الفلاتر", "Filters", "فلٹرز"],
   search: [
@@ -233,15 +243,15 @@ const copy = {
   group: ["تجميع حسب المشروع", "Group by project", "منصوبے کے مطابق گروپ"],
   units: ["وحدات القياس", "Measurement units", "پیمائش کی اکائیاں"],
   startDate: [
-    "تاريخ البداية المرتبط",
-    "Linked start date",
-    "متعلقہ تاریخ آغاز",
+    "تاريخ البداية المخططة",
+    "Planned start date",
+    "منصوبہ شدہ تاریخ آغاز",
   ],
   approver: ["المعتمد", "Approved by", "منظوری دینے والا"],
   noStart: [
-    "حدد تاريخ بداية المشروع أولًا.",
-    "Set the project start date first.",
-    "پہلے منصوبے کی تاریخ آغاز مقرر کریں۔",
+    "حدد تاريخ البداية المخططة للمشروع أو المهمة أولًا.",
+    "Set the planned start date for the project or task first.",
+    "پہلے منصوبے یا کام کی منصوبہ شدہ تاریخ آغاز مقرر کریں۔",
   ],
   limitHint: [
     "حد أقصى 20 صنفًا لكل طلب. يمكن إنشاء طلب آخر للمهمة نفسها.",

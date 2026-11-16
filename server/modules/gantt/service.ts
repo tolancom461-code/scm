@@ -30,7 +30,7 @@ import {
 import { recordChange } from "../../core/audit";
 import { DomainError } from "../../core/errors";
 import {
-  assertApprovedRequisitionDates,
+  assertDraftRequisitionSourceStarts,
   assertTasksWithoutRequisitions,
   lockRequisitionSourceProjects,
 } from "../material-requisitions/schedule-guards";
@@ -560,7 +560,7 @@ export async function saveProjectSchedule(
         );
         if (input.action === "start")
           await enforceProjectBounds(tx, project.id, a);
-        else await assertApprovedRequisitionDates(tx, [project.id]);
+        else await assertDraftRequisitionSourceStarts(tx, [project.id]);
         if (input.action === "start" && project.status !== "active") {
           await tx.insert(s.projectEvents).values({
             projectId: project.id,
@@ -1472,7 +1472,7 @@ export async function saveStudioState(
           .insert(s.ganttStudioStates)
           .values({ projectId: input.projectId, ...values })
           .onDuplicateKeyUpdate({ set: values });
-        await assertApprovedRequisitionDates(tx, [
+        await assertDraftRequisitionSourceStarts(tx, [
           input.projectId,
           ...affectedProjects,
         ]);

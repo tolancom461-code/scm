@@ -34,7 +34,7 @@ vi.mock("../../core/idempotency", () => ({
   ) => run(),
 }));
 vi.mock("../material-requisitions/schedule-guards", () => ({
-  assertApprovedRequisitionDates: vi.fn(),
+  assertDraftRequisitionSourceStarts: vi.fn(),
 }));
 vi.mock("../gantt/studio-state", () => ({ touchGanttStudioStates: vi.fn() }));
 vi.mock("../cmms-integration/references", () => ({

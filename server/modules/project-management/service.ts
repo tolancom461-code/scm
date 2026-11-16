@@ -27,7 +27,7 @@ import { allocateRecordNumber } from "../../core/numbering";
 import { once } from "../../core/idempotency";
 import { recordChange } from "../../core/audit";
 import { DomainError } from "../../core/errors";
-import { assertApprovedRequisitionDates } from "../material-requisitions/schedule-guards";
+import { assertDraftRequisitionSourceStarts } from "../material-requisitions/schedule-guards";
 import {
   calendarDays,
   enforceProjectBounds,
@@ -217,7 +217,7 @@ export async function saveProject(
           .update(s.constructionProjects)
           .set({ ...changes, version: p.version + 1, updatedAt: new Date() })
           .where(eq(s.constructionProjects.id, p.id));
-        await assertApprovedRequisitionDates(tx, [p.id]);
+        await assertDraftRequisitionSourceStarts(tx, [p.id]);
         await touchGanttStudioStates(tx, [p.id], a.user.id);
         await recordChange(tx, {
           actorId: a.user.id,
@@ -377,7 +377,7 @@ export async function projectAction(
         comment: input.comment,
         actorId: a.user.id,
       });
-      await assertApprovedRequisitionDates(tx, [p.id]);
+      await assertDraftRequisitionSourceStarts(tx, [p.id]);
       await touchGanttStudioStates(tx, [p.id], a.user.id);
       await recordChange(tx, {
         actorId: a.user.id,

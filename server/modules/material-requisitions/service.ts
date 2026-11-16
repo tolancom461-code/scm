@@ -29,6 +29,7 @@ import {
   externalPurchaseRequestUpdateInput,
   projectHasCmmsLocation,
 } from "../../../shared/material-requisitions";
+import { dateInput } from "../../../shared/validation";
 import { database, type Database, type Transaction } from "../../core/database";
 import {
   assertConstructionAccess,
@@ -113,12 +114,15 @@ async function source(
     if (!task) throw new DomainError("INVALID_REFERENCE");
     return { project, task, startDate: task.startDate };
   }
-  const startDate = project.actualStartDate ?? project.plannedStartDate;
+  return { project, task: null, startDate: project.plannedStartDate };
+}
+
+function requirePlannedStart(startDate: string | null) {
   if (!startDate)
     invalid(
-      "حدد تاريخ بداية المشروع أولًا / Set the project start date first / منصوبے کی تاریخ آغاز پہلے مقرر کریں۔"
+      "حدد تاريخ البداية المخططة للمشروع أولًا / Set the planned project start date first / منصوبے کے آغاز کی طے شدہ تاریخ پہلے مقرر کریں۔"
     );
-  return { project, task: null, startDate };
+  return startDate;
 }
 
 type Item = typeof s.materialRequisitionItems.$inferSelect & {
@@ -259,7 +263,7 @@ async function itemsFor(db: Database | Transaction, ids: number[]) {
 function displayItems(
   items: Item[],
   status: string,
-  start: string,
+  start: string | null,
   approvedSnapshot: string | null
 ) {
   const official = status === "approved" ? snapshot(approvedSnapshot) : null;
@@ -268,7 +272,9 @@ function displayItems(
     items.map(item => ({
       ...item,
       needDate:
-        status === "draft" ? dateFromLead(start, item.leadDays) : item.needDate,
+        status === "draft" && start
+          ? dateFromLead(start, item.leadDays)
+          : item.needDate,
     }))
   ).map(item => ({
     ...item,
@@ -425,8 +431,12 @@ export async function list(
   access: AccessContext
 ) {
   const db = await database();
-  const taskStart = sql`COALESCE(${s.projectTasks.startDate},${s.constructionProjects.actualStartDate},${s.constructionProjects.plannedStartDate})`;
-  const effectiveDate = sql<string>`CASE WHEN ${s.materialRequisitions.status}='draft' THEN DATE_FORMAT(DATE_SUB(${taskStart}, INTERVAL ${s.materialRequisitionItems.leadDays} DAY),'%Y-%m-%d') ELSE ${s.materialRequisitionItems.needDate} END`;
+  const sourceStart = sql<string | null>`COALESCE(${s.projectTasks.startDate},${s.constructionProjects.plannedStartDate})`;
+  const effectiveDate = sql<string>`
+    CASE WHEN ${s.materialRequisitions.status} = 'draft' AND ${sourceStart} IS NOT NULL
+      THEN DATE_FORMAT(DATE_SUB(${sourceStart}, INTERVAL ${s.materialRequisitionItems.leadDays} DAY), '%Y-%m-%d')
+      ELSE ${s.materialRequisitionItems.needDate}
+    END`;
   const earliest = sql<string>`(SELECT MIN(${effectiveDate}) FROM ${s.materialRequisitionItems} WHERE ${s.materialRequisitionItems.requisitionId}=${s.materialRequisitions.id})`;
   const conditions: (SQL | undefined)[] = [
     constructionScope(access, s.constructionProjects.id),
@@ -511,7 +521,7 @@ export async function list(
         taskName: s.projectTasks.name,
         taskLevel: s.projectTasks.level,
         taskParentId: s.projectTasks.parentId,
-        sourceStart: sql<string>`${taskStart}`,
+        sourceStart,
         creatorName: users.name,
         approverName: approver.name,
       })
@@ -700,9 +710,10 @@ export async function save(
           access,
           true
         );
+        const startDate = requirePlannedStart(linked.startDate);
         if (
           input.expectedSourceStartDate &&
-          input.expectedSourceStartDate !== linked.startDate
+          input.expectedSourceStartDate !== startDate
         )
           invalid(
             "تغير تاريخ البداية أثناء تحرير الطلب. أعد فتح المسودة / Start date changed while editing; reopen the draft / ترمیم کے دوران تاریخ آغاز بدل گئی؛ مسودہ دوبارہ کھولیں۔"
@@ -812,14 +823,11 @@ export async function save(
           .for("update");
         if (units.length !== unitIds.length || units.some(unit => !unit.active))
           throw new DomainError("INVALID_REFERENCE");
-        const values = resolvedItems.map((item, index) => {
-          const lead = leadDays(linked.startDate, item.needDate);
-          if (lead < 3)
-            invalid(
-              `يجب أن يسبق احتياج «${item.itemName}» البداية بثلاثة أيام على الأقل / Need date must precede start by at least 3 days / ضرورت کی تاریخ آغاز سے کم از کم 3 دن پہلے ہونی چاہیے۔`
-            );
-          return { sequence: index + 1, ...item, leadDays: lead };
-        });
+        const values = resolvedItems.map((item, index) => ({
+          sequence: index + 1,
+          ...item,
+          leadDays: leadDays(startDate, item.needDate),
+        }));
         if (before) {
           await tx
             .update(s.materialRequisitions)
@@ -918,6 +926,7 @@ export async function approve(
           .for("update");
         if (!row || row.status !== "draft") invalid(lockedMessage);
         if (row.version !== input.version) throw new DomainError("CONFLICT");
+        const startDate = requirePlannedStart(linked.startDate);
         const items = await itemsFor(tx, [row.id]);
         if (!items.length || items.length > 20)
           throw new DomainError("INVALID_INPUT");
@@ -939,11 +948,14 @@ export async function approve(
         if (sendToCmms && !options) throw new DomainError("CONFLICT");
         const officialItems = items.map(item => ({
           ...item,
-          needDate: dateFromLead(linked.startDate, item.leadDays),
+          needDate: dateFromLead(startDate, item.leadDays),
           ...(sendToCmms ? cmmsPurchaseReferences(item, options) : {}),
         }));
         for (const item of officialItems) {
-          if (item.leadDays < 3) throw new DomainError("INVALID_INPUT");
+          if (!dateInput.safeParse(item.needDate).success)
+            invalid(
+              `تاريخ الاحتياج المحسوب للصنف «${item.itemName}» غير صالح. حدّث فرق الأيام في المسودة. / The calculated need date for “${item.itemName}” is invalid. Update the day offset in the draft. / آئٹم «${item.itemName}» کی حساب شدہ ضرورت کی تاریخ درست نہیں ہے۔ مسودے میں دنوں کا فرق درست کریں۔`
+            );
           if (!item.unit.active)
             invalid(
               "إحدى الوحدات غير نشطة. حدّث المسودة أولًا / A unit is inactive; update the draft first / ایک اکائی غیر فعال ہے؛ پہلے مسودہ تبدیل کریں۔"
@@ -973,7 +985,7 @@ export async function approve(
                 parentId: linked.task.parentId,
               }
             : null,
-          sourceStartDate: linked.startDate,
+          sourceStartDate: startDate,
           creatorName: creator?.name ?? null,
           approverName: access.user.name,
           items: officialItems,

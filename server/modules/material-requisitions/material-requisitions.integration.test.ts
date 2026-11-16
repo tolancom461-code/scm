@@ -296,11 +296,11 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         owner.materialRequisitions.save({
           ...input,
           key: key(),
-          items: [{ ...item, needDate: "2026-12-08" }],
+          items: [{ ...item, needDate: "2026-12-32" }],
         })
       ).rejects.toThrow();
     });
-    it("moves draft dates with Gantt/PM start, freezes official data and rolls back conflicts", async () => {
+    it("moves draft dates with the task schedule and freezes official data", async () => {
       await move("2026-12-12");
       const first = await owner.materialRequisitions.detail({
         id: requestIds[0],
@@ -318,10 +318,14 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         (await owner.materialRequisitions.detail({ id: requestIds[1] }))
           .items[0].needDate
       ).toBe("2026-12-11");
-      await expect(move("2026-12-11")).rejects.toThrow();
+      await move("2026-12-11");
       expect(
         (await taskDetail()).tasks.find(row => row.id === taskId)?.startDate
-      ).toBe("2026-12-14");
+      ).toBe("2026-12-11");
+      expect(
+        (await owner.materialRequisitions.detail({ id: first.id })).items[0]
+          .needDate
+      ).toBe("2026-12-09");
       await expect(
         owner.materialRequisitions.save({
           key: key(),
@@ -436,7 +440,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
         (await owner.materialRequisitions.detail({ id: request.id })).items
       ).toEqual(request.items);
     });
-    it("Gantt API moves draft dates and atomically rejects an official conflict", async () => {
+    it("moves draft dates after the planned start while approved dates stay fixed", async () => {
       const original = (await taskDetail()).tasks.find(
         row => row.id === taskId
       )!;
@@ -453,7 +457,7 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
             catalogEntryId: ganttCatalogEntryId,
             quantity: "1",
             unitId: activeUnit.id,
-            needDate: dateFromLead(original.startDate, 3),
+            needDate: dateFromLead(original.startDate, -2),
           },
         ],
       };
@@ -491,18 +495,20 @@ describe.runIf(process.env.SCM_INTEGRATION === "1")(
       expect(
         (await owner.materialRequisitions.detail({ id: draft.id })).items[0]
           .needDate
-      ).toBe(dateFromLead(shifted, 3));
+      ).toBe(dateFromLead(shifted, -2));
       const current = (await taskDetail()).tasks.find(
         row => row.id === taskId
       )!;
-      await expect(
-        owner.gantt.saveSchedule(
-          update(dateFromLead(original.startDate, 1), current.version)
-        )
-      ).rejects.toThrow();
+      const advanced = dateFromLead(original.startDate, 1);
+      await owner.gantt.saveSchedule(update(advanced, current.version));
       expect(
         (await taskDetail()).tasks.find(row => row.id === taskId)?.startDate
-      ).toBe(shifted);
+      ).toBe(advanced);
+      expect(
+        (await owner.materialRequisitions.list({ projectId, taskId })).rows.find(
+          row => row.id === draft.id
+        )?.earliestNeedDate
+      ).toBe(dateFromLead(advanced, -2));
       expect(
         (await owner.materialRequisitions.detail({ id: official.id })).items[0]
           .needDate

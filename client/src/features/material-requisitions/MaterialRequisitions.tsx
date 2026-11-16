@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
 import { localeMeta, type Locale } from "@/lib/i18n";
@@ -9,10 +9,10 @@ import { businessDate } from "@shared/date";
 import {
   dateFromLead,
   isWholeRequisitionQuantity,
-  leadDays,
   materialRequisitionListInput,
   projectHasCmmsLocation,
 } from "@shared/material-requisitions";
+import { dateInput } from "@shared/validation";
 import { CatalogPicker } from "./CatalogPicker";
 import { ItemImage, localImageUrl } from "./CatalogItemImage";
 import { RequisitionItemCard, type ItemDraft } from "./RequisitionItemCard";
@@ -31,6 +31,18 @@ const unitName = (unit: ItemDraft["unit"], locale: Locale) =>
   locale === "ar" ? unit.nameAr : locale === "en" ? unit.nameEn : unit.nameUr;
 const isoDate = (date: Date | string | null) =>
   date ? businessDate(new Date(date)) : "—";
+
+function needDateFromOffset(startDate: string, offsetDays: string) {
+  const decimalDigits = "٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹";
+  const offset = offsetDays
+    .trim()
+    .replace(/[٠-٩۰-۹]/g, digit => String(decimalDigits.indexOf(digit) % 10))
+    .replace("−", "-");
+  if (!startDate || !/^[+-]?\d{1,7}$/.test(offset)) return "";
+  const needDate = dateFromLead(startDate, -Number(offset));
+  return dateInput.safeParse(needDate).success ? needDate : "";
+}
+
 const externalKeys = new Set([
   "pending_send",
   "sending",
@@ -661,7 +673,8 @@ function RequisitionEditor({
         unitId: item.unitId,
         specifications: item.specifications,
         notes: item.notes,
-        needDate: item.needDate,
+        offsetDays:
+          item.leadDays < 0 ? `+${-item.leadDays}` : String(-item.leadDays),
         cmmsCategoryId: item.cmmsCategoryId,
         cmmsCategoryName: item.cmmsCategoryName,
         cmmsReviewRole: item.cmmsReviewRole,
@@ -708,25 +721,12 @@ function RequisitionEditor({
   const purchaseOptionsLoading =
     references.isPending || (cmmsConfigured && purchaseOptions.isPending);
   const startDate =
-      linkedTask?.startDate ??
-      project?.actualStartDate ??
-      project?.plannedStartDate ??
-      "",
-    maxNeedDate = startDate ? dateFromLead(startDate, 3) : undefined;
-  const [dateBasis, setDateBasis] = useState(startDate);
-  useEffect(() => {
-    if (dateBasis && startDate && dateBasis !== startDate) {
-      setItems(rows =>
-        rows.map(item => ({
-          ...item,
-          needDate: item.needDate
-            ? dateFromLead(startDate, leadDays(dateBasis, item.needDate))
-            : "",
-        }))
-      );
-    }
-    setDateBasis(startDate);
-  }, [dateBasis, startDate]);
+    (taskId === null ? project?.plannedStartDate : linkedTask?.startDate) ?? "";
+  const datedItems = items.map(item => ({
+    ...item,
+    needDate: needDateFromOffset(startDate, item.offsetDays),
+  }));
+  const invalidNeedDate = datedItems.some(item => !item.needDate);
   const update = (rowKey: string, values: Partial<ItemDraft>) =>
     setItems(current =>
       current.map(item =>
@@ -753,8 +753,8 @@ function RequisitionEditor({
       setError(c("noStart"));
       return;
     }
-    if (items.some(i => leadDays(startDate, i.needDate) < 3)) {
-      setError(c("leadHint"));
+    if (invalidNeedDate) {
+      setError(c("invalidOffsetDays"));
       return;
     }
     if (!cmmsOptions) {
@@ -779,11 +779,12 @@ function RequisitionEditor({
       taskId,
       expectedSourceStartDate: startDate,
       locale,
-      items: items.map(
+      items: datedItems.map(
         ({
           rowKey: _rowKey,
           imageUrl: _imageUrl,
           unit: _unit,
+          offsetDays: _offsetDays,
           cmmsCategoryName: _cmmsCategoryName,
           cmmsReviewRoleName: _cmmsReviewRoleName,
           ...item
@@ -819,7 +820,7 @@ function RequisitionEditor({
                     rowKey: "catalog-" + item.catalogEntryId,
                     quantity: "",
                     notes: "",
-                    needDate: maxNeedDate ?? "",
+                    offsetDays: "-3",
                     cmmsCategoryId: null,
                     cmmsCategoryName: null,
                     cmmsReviewRole: null,
@@ -877,12 +878,15 @@ function RequisitionEditor({
                 </label>
               </div>
               <p className="mr-help">
-                {c("leadHint")}
+                {c("offsetDaysHint")}
                 <br />
                 {c("draftHint")}
                 <br />
                 {c("startDate")}: <bdi>{startDate || "—"}</bdi>
               </p>
+              {projectId > 0 && !startDate && (
+                <p className="mr-help">{c("noStart")}</p>
+              )}
               {projectId > 0 && !linkedLocation && (
                 <p className="mr-help">{c("cmmsProjectNotLinked")}</p>
               )}
@@ -936,7 +940,7 @@ function RequisitionEditor({
               </div>
               {items.length ? (
                 <div className="mr-line-list">
-                  {items.map((item, index) => (
+                  {datedItems.map((item, index) => (
                     <RequisitionItemCard
                       key={item.rowKey}
                       item={item}
@@ -948,7 +952,8 @@ function RequisitionEditor({
                         item.unit.code +
                         ")"
                       }
-                      maxNeedDate={maxNeedDate}
+                      needDate={item.needDate}
+                      hasStartDate={Boolean(startDate)}
                       project={project}
                       options={cmmsOptions}
                       update={values => update(item.rowKey, values)}
@@ -981,6 +986,7 @@ function RequisitionEditor({
                     purchaseOptionsEmpty ||
                     invalidPurchaseChoice ||
                     invalidQuantity ||
+                    invalidNeedDate ||
                     initial?.status === "approved"
                   }
                 >

@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { materialRequisitions } from "../../../drizzle/construction";
+import {
+  materialRequisitionItems,
+  materialRequisitions,
+} from "../../../drizzle/construction";
 import type { AccessContext } from "../../core/policy";
 import { approve } from "./service";
 
@@ -64,7 +67,7 @@ function stubApproval(mapped: boolean, item = defaultItem) {
     id: 1,
     name: "Water works",
     number: "P-1",
-    actualStartDate: null,
+    actualStartDate: "2027-03-27",
     plannedStartDate: "2027-03-20",
     cmmsSiteId: mapped ? 37 : null,
     cmmsSiteName: mapped ? "Plant" : null,
@@ -116,6 +119,29 @@ describe("CMMS requisition approval", () => {
       ],
     });
   });
+
+  it.each([
+    [0, "2027-03-20"],
+    [-2, "2027-03-22"],
+  ])(
+    "queues and freezes a need date with a stored lead of %s days",
+    async (leadDays, needDate) => {
+      const writes = stubApproval(true, { ...defaultItem, leadDays });
+      await expect(approve(command, approver)).resolves.toEqual({ id: 8 });
+      expect(writes).toContainEqual({
+        table: materialRequisitionItems,
+        values: { needDate },
+      });
+      const approval = writes.find(
+        write => write.table === materialRequisitions
+      )?.values;
+      expect(approval?.cmmsDispatchNextAt).toBeInstanceOf(Date);
+      expect(JSON.parse(String(approval?.approvedSnapshot))).toMatchObject({
+        sourceStartDate: "2027-03-20",
+        items: [{ needDate }],
+      });
+    }
+  );
 
   it("queues a mapped approval and captures the location and live item choices", async () => {
     const writes = stubApproval(true);

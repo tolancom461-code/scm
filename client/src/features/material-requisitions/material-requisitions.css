@@ -226,12 +226,17 @@
 }
 .mr-line-grid label {
   display: grid;
+  align-content: start;
   gap: 6px;
   min-width: 0;
 }
 .mr-line-grid :is(input, select, textarea) {
   width: 100%;
   min-width: 0;
+}
+.mr-line-grid input[readonly] {
+  background: #17263b;
+  color: #c0dce7;
 }
 .mr-line-grid :is(input, select)[aria-invalid="true"] {
   border-color: #e48797;

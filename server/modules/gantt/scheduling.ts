@@ -8,7 +8,7 @@ import {
 } from "../../core/policy";
 import { TRPCError } from "@trpc/server";
 import {
-  assertApprovedRequisitionDates,
+  assertDraftRequisitionSourceStarts,
   lockRequisitionSourceProjects,
 } from "../material-requisitions/schedule-guards";
 
@@ -307,7 +307,7 @@ export async function enforceProjectBounds(
     .where(eq(s.projectTasks.projectId, projectId))
     .for("update");
   if (!tasks.length) {
-    await assertApprovedRequisitionDates(tx, [projectId]);
+    await assertDraftRequisitionSourceStarts(tx, [projectId]);
     return;
   }
   const earliest = tasks.map(task => task.startDate).sort()[0];
@@ -343,7 +343,7 @@ export async function enforceProjectBounds(
       .update(s.constructionProjects)
       .set({ ...update, version: project.version + 1, updatedAt: new Date() })
       .where(eq(s.constructionProjects.id, project.id));
-  await assertApprovedRequisitionDates(tx, [projectId]);
+  await assertDraftRequisitionSourceStarts(tx, [projectId]);
 }
 
 type ScheduleDependency = Pick<
