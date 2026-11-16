@@ -212,6 +212,13 @@
   flex-wrap: wrap;
   align-items: center;
 }
+.pm-task-requisition {
+  margin-block: 12px;
+}
+.pm-task-requisition > span {
+  color: #7be4aa;
+  font-weight: 700;
+}
 .pm-save-action {
   display: inline-flex;
   align-items: center;

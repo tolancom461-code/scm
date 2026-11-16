@@ -31,6 +31,8 @@ type Outputs = inferRouterOutputs<AppRouter>["projectManagement"];
 type Project = Outputs["detail"]["project"];
 type Task = Outputs["detail"]["tasks"][number];
 type Directory = Outputs["directory"];
+type RequisitionDirectory =
+  inferRouterOutputs<AppRouter>["materialRequisitions"]["directory"];
 type Person = { id: number; permissions: string[] };
 const projectPageSize = 50;
 type LocalizedLabel = [string, string, string];
@@ -1381,18 +1383,15 @@ function ProjectDetail({
     [task, setTask] = useState<{ parentId: number | null; row?: Task } | null>(
       null
     ),
-    [requisition, setRequisition] = useState<{
-      projectId: number;
-      taskId: number | null;
-    } | null>(null),
+    [projectRequisitionOpen, setProjectRequisitionOpen] = useState(false),
     [collapsed, setCollapsed] = useState<number[]>([]);
-  const openRequisition = async (taskId: number | null) => {
+  const openProjectRequisition = async () => {
     const result = await requisitionDirectory.refetch();
     if (result.error) {
       toast.error(result.error.message);
       return;
     }
-    if (result.data) setRequisition({ projectId: id, taskId });
+    if (result.data) setProjectRequisitionOpen(true);
   };
   const action = trpc.projectManagement.action.useMutation({
     onSuccess: () => {
@@ -1512,16 +1511,6 @@ function ProjectDetail({
                   +
                 </button>
               )}
-              {can("materialRequisitions.create") && (
-                <button
-                  className="pm-requisition-add"
-                  aria-label={`${mrText(locale, "request")} — ${row.name}`}
-                  title={mrText(locale, "request")}
-                  onClick={() => void openRequisition(row.id)}
-                >
-                  + {mrText(locale, "request")}
-                </button>
-              )}
             </div>
             {!collapsed.includes(row.id) && renderTasks(row.id)}
           </div>
@@ -1596,7 +1585,7 @@ function ProjectDetail({
           )}
           {can("materialRequisitions.create") &&
             (project.actualStartDate || project.plannedStartDate) && (
-              <button onClick={() => void openRequisition(null)}>
+              <button onClick={() => void openProjectRequisition()}>
                 + {mrText(locale, "request")}
               </button>
             )}
@@ -1890,6 +1879,7 @@ function ProjectDetail({
           locale={locale}
           canManage={can("pm.tasks.manage")}
           canStatus={can("pm.statuses.manage")}
+          canCreateRequisition={can("materialRequisitions.create")}
           canDocumentsView={can("documents.view")}
           canDocumentsUpload={can("documents.upload")}
           close={() => setTask(null)}
@@ -1899,15 +1889,15 @@ function ProjectDetail({
           }}
         />
       )}
-      {requisition && requisitionDirectory.data && (
+      {projectRequisitionOpen && requisitionDirectory.data && (
         <MaterialRequisitionForm
           locale={locale}
           directory={requisitionDirectory.data}
-          fixedProjectId={requisition.projectId}
-          fixedTaskId={requisition.taskId}
-          close={() => setRequisition(null)}
+          fixedProjectId={id}
+          fixedTaskId={null}
+          close={() => setProjectRequisitionOpen(false)}
           saved={() => {
-            setRequisition(null);
+            setProjectRequisitionOpen(false);
             void utils.materialRequisitions.invalidate();
             toast.success(mrText(locale, "saved"));
           }}
@@ -1925,6 +1915,7 @@ function TaskForm({
   locale,
   canManage,
   canStatus,
+  canCreateRequisition,
   canDocumentsView,
   canDocumentsUpload,
   close,
@@ -1938,6 +1929,7 @@ function TaskForm({
   locale: Locale;
   canManage: boolean;
   canStatus: boolean;
+  canCreateRequisition: boolean;
   canDocumentsView: boolean;
   canDocumentsUpload: boolean;
   close: () => void;
@@ -1955,7 +1947,10 @@ function TaskForm({
     }),
     [addingStatus, setAddingStatus] = useState(false),
     [statusLabel, setStatusLabel] = useState(""),
-    [formError, setFormError] = useState("");
+    [formError, setFormError] = useState(""),
+    [requisitionDirectory, setRequisitionDirectory] = useState<
+      RequisitionDirectory | "loading" | null
+    >(null);
   const saveInFlight = useRef(false);
   const attachmentUpload = useProjectAttachmentUpload(locale);
   const utils = trpc.useUtils(),
@@ -1982,11 +1977,48 @@ function TaskForm({
       },
       onError: e => toast.error(e.message),
     });
-  const taskBusy = save.isPending || attachmentUpload.running;
+  const openingRequisition = requisitionDirectory === "loading";
+  const taskBusy =
+    save.isPending || attachmentUpload.running || openingRequisition;
   const inputsDisabled = !canManage || taskBusy;
   const requestClose = () => {
     if (!saveInFlight.current && !taskBusy) close();
   };
+  const openTaskRequisition = async () => {
+    if (
+      !row ||
+      !canCreateRequisition ||
+      saveInFlight.current ||
+      taskBusy ||
+      status.isPending
+    )
+      return;
+    setRequisitionDirectory("loading");
+    try {
+      const directory = await utils.materialRequisitions.directory.fetch();
+      setRequisitionDirectory(directory);
+    } catch (error) {
+      setRequisitionDirectory(null);
+      toast.error(error instanceof Error ? error.message : String(error));
+    }
+  };
+  if (row && requisitionDirectory && requisitionDirectory !== "loading") {
+    return (
+      <MaterialRequisitionForm
+        locale={locale}
+        directory={requisitionDirectory}
+        fixedProjectId={projectId}
+        fixedTaskId={row.id}
+        close={() => setRequisitionDirectory(null)}
+        saved={() => {
+          setRequisitionDirectory(null);
+          void utils.materialRequisitions.invalidate();
+          toast.success(mrText(locale, "saved"));
+        }}
+      />
+    );
+  }
+
   return (
     <Modal
       title={
@@ -2231,18 +2263,31 @@ function TaskForm({
       </form>
       {row && (
         <>
-          <TaskMaterialTrigger
-            projectId={projectId}
-            taskId={row.id}
-            locale={locale}
-          />
+          <div className="pm-actions">
+            {canCreateRequisition && (
+              <button
+                type="button"
+                className="pm-task-requisition"
+                disabled={taskBusy || status.isPending}
+                aria-busy={openingRequisition}
+                onClick={() => void openTaskRequisition()}
+              >
+                <span aria-hidden="true">+</span> {mrText(locale, "request")}
+              </button>
+            )}
+            <TaskMaterialTrigger
+              projectId={projectId}
+              taskId={row.id}
+              locale={locale}
+            />
+          </div>
           <ProjectAttachments
             id={row.id}
             entityType="pm_task"
             locale={locale}
             editable={canManage && canDocumentsUpload}
             canView={canDocumentsView}
-            disabled={save.isPending}
+            disabled={save.isPending || openingRequisition}
             uploader={attachmentUpload}
           />
         </>
