@@ -118,7 +118,7 @@ export type CmmsPurchaseResponse =
 const unavailable = { ok: false, retryable: true, message: "تعذر الاتصال بخدمة الشراء في CMMS. ستتم إعادة المحاولة." } as const;
 const invalidConfirmation = { ok: false, retryable: true, message: "لم يعد CMMS رقم طلب شراء صالحًا. ستتم إعادة المحاولة." } as const;
 
-async function readPurchaseResponse(response: Response): Promise<unknown> {
+async function readPurchaseResponse(response: Response, maxBytes = 8192): Promise<unknown> {
   const reader = response.body?.getReader();
   if (!reader) return null;
   const chunks: Buffer[] = [];
@@ -128,7 +128,7 @@ async function readPurchaseResponse(response: Response): Promise<unknown> {
       const { value, done } = await reader.read();
       if (done) break;
       bytes += value.byteLength;
-      if (bytes > 8192) {
+      if (bytes > maxBytes) {
         await reader.cancel();
         return null;
       }
@@ -140,6 +140,59 @@ async function readPurchaseResponse(response: Response): Promise<unknown> {
   } finally {
     reader.releaseLock();
   }
+}
+
+const fulfillmentQuantity = z.number().nonnegative();
+const fulfillmentItem = z.object({
+  requisitionId: id,
+  sequence: id,
+  receivedQuantity: fulfillmentQuantity,
+  readyQuantity: fulfillmentQuantity,
+  issuedQuantity: fulfillmentQuantity,
+  unit: z.string().trim().min(1).max(100),
+  deliveries: z.array(z.object({
+    number: z.string().trim().min(1).max(100),
+    quantity: fulfillmentQuantity,
+    recipientName: z.string().trim().min(1).max(300).nullish(),
+  })),
+});
+const fulfillmentResponse = z.object({ items: z.array(fulfillmentItem) });
+
+export type CmmsFulfillmentItem = z.infer<typeof fulfillmentItem>;
+
+export async function readCmmsFulfillment(
+  settings: CmmsPurchaseSettings,
+  instanceId: string,
+  requisitionIds: number[],
+  request: typeof fetch = fetch
+): Promise<CmmsFulfillmentItem[]> {
+  const response = await request(new URL("/api/v1/pscm/fulfillment", settings.endpoint), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${settings.token}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ instanceId, requisitionIds }),
+    redirect: "error",
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error("CMMS fulfillment unavailable");
+  }
+  const parsed = fulfillmentResponse.safeParse(await readPurchaseResponse(response, 1_000_000));
+  if (!parsed.success) throw new Error("Invalid CMMS fulfillment response");
+  const requestedIds = new Set(requisitionIds);
+  const seen = new Set<string>();
+  for (const { requisitionId, sequence } of parsed.data.items) {
+    const key = `${requisitionId}:${sequence}`;
+    if (!requestedIds.has(requisitionId) || seen.has(key)) {
+      throw new Error("Invalid CMMS fulfillment reference");
+    }
+    seen.add(key);
+  }
+  return parsed.data.items;
 }
 
 export async function sendCmmsPurchase(

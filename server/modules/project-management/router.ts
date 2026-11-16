@@ -11,6 +11,7 @@ import {
   projectStates,
 } from "../../../shared/construction";
 import * as service from "./service";
+import { taskMaterialProgress } from "../material-requisitions/service";
 export const projectManagementRouter = router({
   list: requiring("pm.view")
     .input(
@@ -36,6 +37,22 @@ export const projectManagementRouter = router({
   detail: requiring("pm.view")
     .input(z.object({ id: z.number().int().positive() }))
     .query(({ input, ctx }) => service.detail(input.id, ctx.access!)),
+  taskMaterialProgress: requiring("pm.view")
+    .input(
+      z.object({
+        projectId: z.number().int().positive(),
+        taskId: z.number().int().positive(),
+        beforeId: z.number().int().positive().optional(),
+      })
+    )
+    .query(({ input, ctx }) =>
+      taskMaterialProgress(
+        input.projectId,
+        input.taskId,
+        input.beforeId,
+        ctx.access!
+      )
+    ),
   save: requiring("pm.view")
     .input(projectSaveInput)
     .mutation(({ input, ctx }) => service.saveProject(input, ctx.access!)),

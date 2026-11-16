@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   cmmsPurchasePayload,
   cmmsPurchaseSettings,
+  readCmmsFulfillment,
   sendCmmsPurchase,
 } from "./purchase-client";
 
@@ -171,5 +172,50 @@ describe("PSCM outgoing approved requirements", () => {
       .mockResolvedValueOnce(new Response(" ".repeat(8193)));
     await expect(sendCmmsPurchase(settings, payload, fetchMock)).resolves.toMatchObject({ ok: false, retryable: true });
     await expect(sendCmmsPurchase(settings, payload, fetchMock)).resolves.toMatchObject({ ok: false, retryable: true });
+  });
+});
+
+describe("CMMS fulfillment for approved requirements", () => {
+  const progress = {
+    requisitionId: request.id,
+    sequence: 1,
+    receivedQuantity: 8,
+    readyQuantity: 3,
+    issuedQuantity: 5,
+    unit: "Piece",
+    deliveries: [{ number: "DLV-2026-0001", quantity: 5 }],
+  };
+
+  it("reads partial fulfillment using the instance used to submit the requisition", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ items: [progress] }));
+    await expect(readCmmsFulfillment(settings, "original-instance", [request.id], fetchMock))
+      .resolves.toEqual([progress]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("https://cmms.example.test/api/v1/pscm/fulfillment"),
+      expect.objectContaining({
+        method: "POST",
+        redirect: "error",
+        headers: expect.objectContaining({ Authorization: "Bearer fixture-write-token" }),
+        body: JSON.stringify({ instanceId: "original-instance", requisitionIds: [request.id] }),
+      })
+    );
+  });
+
+  it("rejects progress for another requisition or multiple responses for the same item", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ items: [{ ...progress, requisitionId: request.id + 1 }] }))
+      .mockResolvedValueOnce(Response.json({ items: [progress, progress] }));
+    await expect(readCmmsFulfillment(settings, settings.instanceId, [request.id], fetchMock)).rejects.toThrow();
+    await expect(readCmmsFulfillment(settings, settings.instanceId, [request.id], fetchMock)).rejects.toThrow();
+  });
+
+  it("keeps a failed response distinct from a successfully reported zero quantity", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({
+        items: [{ ...progress, receivedQuantity: 0, readyQuantity: 0, issuedQuantity: 0, deliveries: [] }],
+      }));
+    await expect(readCmmsFulfillment(settings, settings.instanceId, [request.id], fetchMock)).rejects.toThrow();
+    await expect(readCmmsFulfillment(settings, settings.instanceId, [request.id], fetchMock))
+      .resolves.toMatchObject([{ receivedQuantity: 0, issuedQuantity: 0 }]);
   });
 });

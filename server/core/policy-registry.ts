@@ -8,6 +8,7 @@ export const routePolicies: Record<string, RoutePolicy> = {
   "projectManagement.list": { any: ["pm.view"] },
   "projectManagement.directory": { any: ["pm.view"] },
   "projectManagement.detail": { any: ["pm.view"] },
+  "projectManagement.taskMaterialProgress": { any: ["pm.view"] },
   "projectManagement.save": { any: ["pm.create", "pm.edit"] },
   "projectManagement.linkCmmsLocation": { any: ["pm.edit"] },
   "projectManagement.action": { any: ["pm.submit", "pm.review", "pm.start"] },

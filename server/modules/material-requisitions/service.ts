@@ -43,7 +43,11 @@ import {
   cmmsReferencesConfigured,
   readCmmsPurchaseOptions,
 } from "../cmms-integration/references";
-import { cmmsPurchaseSettings } from "../cmms-integration/purchase-client";
+import {
+  cmmsPurchaseSettings,
+  readCmmsFulfillment,
+  type CmmsFulfillmentItem,
+} from "../cmms-integration/purchase-client";
 import { catalogImageUrl } from "./catalog";
 
 function invalid(message: string): never {
@@ -278,6 +282,85 @@ function displayItems(
     cmmsReviewRoleName: item.cmmsReviewRoleName ?? null,
   }));
 }
+
+export async function taskMaterialProgress(
+  projectId: number,
+  taskId: number,
+  beforeId: number | undefined,
+  access: AccessContext
+) {
+  const db = await database();
+  await source(db, projectId, taskId, access);
+
+  const pageSize = 10;
+  const requisitions = await db
+    .select({
+      id: s.materialRequisitions.id,
+      number: s.materialRequisitions.number,
+      approvedSnapshot: s.materialRequisitions.approvedSnapshot,
+      purchaseNumber: s.materialRequisitions.externalPurchaseRequestNumber,
+      externalStatus: s.materialRequisitions.externalStatus,
+      instanceId: s.materialRequisitions.cmmsDispatchSourceId,
+    })
+    .from(s.materialRequisitions)
+    .where(and(
+      eq(s.materialRequisitions.projectId, projectId),
+      eq(s.materialRequisitions.taskId, taskId),
+      eq(s.materialRequisitions.status, "approved"),
+      beforeId === undefined ? undefined : lte(s.materialRequisitions.id, beforeId)
+    ))
+    .orderBy(desc(s.materialRequisitions.id))
+    .limit(pageSize + 1);
+
+  const page = requisitions.slice(0, pageSize);
+  const savedItems = await itemsFor(
+    db,
+    page.filter(row => !row.approvedSnapshot).map(row => row.id)
+  );
+  const settings = cmmsPurchaseSettings();
+  const dispatches = new Map<string, number[]>();
+  for (const row of page) {
+    if (!settings || !row.purchaseNumber || row.externalStatus !== "purchase_request_created") continue;
+    const instance = row.instanceId ?? settings.instanceId;
+    const ids = dispatches.get(instance) ?? [];
+    ids.push(row.id);
+    dispatches.set(instance, ids);
+  }
+  const progress = new Map<string, CmmsFulfillmentItem>();
+  if (settings) {
+    await Promise.all([...dispatches].map(async ([instance, ids]) => {
+      try {
+        const result = await readCmmsFulfillment(settings, instance, ids);
+        for (const item of result) progress.set(`${item.requisitionId}:${item.sequence}`, item);
+      } catch {
+        // Keep the requisitions visible and leave unverified quantities absent.
+      }
+    }));
+  }
+
+  return {
+    requisitions: page.map(row => ({
+      id: row.id,
+      number: row.number,
+      purchaseNumber: row.purchaseNumber,
+      externalStatus: row.externalStatus,
+      items: (snapshot(row.approvedSnapshot)?.items ?? savedItems.filter(item => item.requisitionId === row.id))
+        .map(item => ({
+          sequence: item.sequence,
+          name: item.itemName,
+          requestedQuantity: Number(item.quantity),
+          unit: {
+            ar: item.unit.nameAr,
+            en: item.unit.nameEn,
+            ur: item.unit.nameUr,
+          },
+          progress: progress.get(`${row.id}:${item.sequence}`) ?? null,
+        })),
+    })),
+    nextBeforeId: requisitions[pageSize]?.id ?? null,
+  };
+}
+
 export async function directory(access: AccessContext) {
   const db = await database();
   await db.transaction(ensureDefaultUnits);

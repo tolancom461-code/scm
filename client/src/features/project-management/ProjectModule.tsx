@@ -24,6 +24,7 @@ import {
 } from "./GoogleProjectMap";
 import { MaterialRequisitionForm } from "../material-requisitions/MaterialRequisitions";
 import { mrText } from "../material-requisitions/copy";
+import { TaskMaterialProgress } from "./TaskMaterialProgress";
 import "./projects.css";
 type Outputs = inferRouterOutputs<AppRouter>["projectManagement"];
 type Project = Outputs["detail"]["project"];
@@ -2227,15 +2228,18 @@ function TaskForm({
         )}
       </form>
       {row && (
-        <ProjectAttachments
-          id={row.id}
-          entityType="pm_task"
-          locale={locale}
-          editable={canManage && canDocumentsUpload}
-          canView={canDocumentsView}
-          disabled={save.isPending}
-          uploader={attachmentUpload}
-        />
+        <>
+          <TaskMaterialProgress projectId={projectId} taskId={row.id} locale={locale} />
+          <ProjectAttachments
+            id={row.id}
+            entityType="pm_task"
+            locale={locale}
+            editable={canManage && canDocumentsUpload}
+            canView={canDocumentsView}
+            disabled={save.isPending}
+            uploader={attachmentUpload}
+          />
+        </>
       )}
     </Modal>
   );
