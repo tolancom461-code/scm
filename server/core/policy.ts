@@ -378,7 +378,11 @@ export async function authorizeRequest(
     if (path.startsWith("projectManagement.") && raw?.projectId)
       await assertConstructionAccess(access, raw.projectId);
     if (
-      ["projectManagement.detail", "projectManagement.action"].includes(path) ||
+      [
+        "projectManagement.detail",
+        "projectManagement.action",
+        "projectManagement.linkCmmsLocation",
+      ].includes(path) ||
       (path === "projectManagement.save" && raw?.id)
     )
       await assertConstructionAccess(access, raw?.id);

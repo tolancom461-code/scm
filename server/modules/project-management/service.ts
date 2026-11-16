@@ -6,6 +6,8 @@ import { users } from "../../../drizzle/schema";
 import { accessConstructionProjects } from "../../../drizzle/policy";
 import {
   projectSaveInput,
+  projectLinkCmmsLocationInput,
+  canLinkProjectCmmsLocation,
   projectActionInput,
   projectTransition,
   taskInput,
@@ -44,6 +46,16 @@ function invalid(message: string): never {
 }
 const cmmsLocationRequired =
   "حدد الموقع والقسم من CMMS / Select the CMMS site and section / سی ایم ایم ایس سے مقام اور شعبہ منتخب کریں۔";
+function assertProjectCmmsLocationLinkable(
+  project: typeof s.constructionProjects.$inferSelect,
+  version: number
+) {
+  if (project.version !== version) throw new DomainError("CONFLICT");
+  if (!canLinkProjectCmmsLocation(project))
+    invalid(
+      "ربط موقع CMMS متاح مرة واحدة للمشاريع المعتمدة أو النشطة التي لم تُربط بعد / The CMMS location can be linked once on an approved or active project without an existing link / منظور شدہ یا فعال غیر منسلک منصوبے کا CMMS مقام ایک مرتبہ منسلک ہو سکتا ہے۔"
+    );
+}
 function requirePermission(a: AccessContext, p: string) {
   if (!canAccess(a, p))
     throw new TRPCError({
@@ -244,6 +256,54 @@ export async function saveProject(
       return { id };
     })
   );
+}
+export async function linkCmmsLocation(
+  input: z.infer<typeof projectLinkCmmsLocationInput>,
+  a: AccessContext
+) {
+  requirePermission(a, "pm.edit");
+  return (await database()).transaction(async tx => {
+    const observed = await assertConstructionAccess(a, input.id, tx);
+    return once(
+      tx,
+      a.user.id,
+      "pm.project.cmmsLocation.link",
+      input.key,
+      input,
+      async () => {
+        assertProjectCmmsLocationLinkable(observed, input.version);
+        const location = await resolveProjectLocation(input.location);
+        const project = await lockedProject(tx, input.id, a);
+        assertProjectCmmsLocationLinkable(project, input.version);
+        const changes = { ...location, site: location.cmmsSiteName };
+        await tx
+          .update(s.constructionProjects)
+          .set({
+            ...changes,
+            version: project.version + 1,
+            updatedAt: new Date(),
+          })
+          .where(eq(s.constructionProjects.id, project.id));
+        await recordChange(tx, {
+          actorId: a.user.id,
+          action: "pm.project.cmmsLocation.linked",
+          entityType: "pm_project",
+          entityId: project.id,
+          before: {
+            site: project.site,
+            cmmsSiteId: project.cmmsSiteId,
+            cmmsSiteName: project.cmmsSiteName,
+            cmmsSectionId: project.cmmsSectionId,
+            cmmsSectionName: project.cmmsSectionName,
+            cmmsAssetId: project.cmmsAssetId,
+            cmmsAssetName: project.cmmsAssetName,
+          },
+          after: changes,
+        });
+        return { id: project.id };
+      }
+    );
+  });
 }
 export async function projectAction(
   input: z.infer<typeof projectActionInput>,

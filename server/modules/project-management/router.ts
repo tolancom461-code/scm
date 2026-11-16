@@ -3,6 +3,7 @@ import { router } from "../../_core/trpc";
 import { requiring } from "../../core/permissions";
 import {
   projectSaveInput,
+  projectLinkCmmsLocationInput,
   projectActionInput,
   taskInput,
   employeeInput,
@@ -38,6 +39,9 @@ export const projectManagementRouter = router({
   save: requiring("pm.view")
     .input(projectSaveInput)
     .mutation(({ input, ctx }) => service.saveProject(input, ctx.access!)),
+  linkCmmsLocation: requiring("pm.edit")
+    .input(projectLinkCmmsLocationInput)
+    .mutation(({ input, ctx }) => service.linkCmmsLocation(input, ctx.access!)),
   action: requiring("pm.view")
     .input(projectActionInput)
     .mutation(({ input, ctx }) => service.projectAction(input, ctx.access!)),

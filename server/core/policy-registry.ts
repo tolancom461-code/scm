@@ -9,6 +9,7 @@ export const routePolicies: Record<string, RoutePolicy> = {
   "projectManagement.directory": { any: ["pm.view"] },
   "projectManagement.detail": { any: ["pm.view"] },
   "projectManagement.save": { any: ["pm.create", "pm.edit"] },
+  "projectManagement.linkCmmsLocation": { any: ["pm.edit"] },
   "projectManagement.action": { any: ["pm.submit", "pm.review", "pm.start"] },
   "projectManagement.saveTask": { any: ["pm.tasks.manage"] },
   "projectManagement.saveEmployee": { any: ["pm.employees.manage"] },

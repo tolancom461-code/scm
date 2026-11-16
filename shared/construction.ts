@@ -47,6 +47,25 @@ export const projectSaveInput = z.object({
   version: z.number().int().nonnegative().default(0),
   data: projectData,
 });
+export const projectLinkCmmsLocationInput = z.object({
+  key: z.string().uuid(),
+  id,
+  version: z.number().int().nonnegative(),
+  location: cmmsProjectLocationInput,
+});
+export function canLinkProjectCmmsLocation(project: {
+  status: string;
+  cmmsSiteId: number | null;
+  cmmsSectionId: number | null;
+  cmmsAssetId: number | null;
+}) {
+  return (
+    (project.status === "approved" || project.status === "active") &&
+    project.cmmsSiteId === null &&
+    project.cmmsSectionId === null &&
+    project.cmmsAssetId === null
+  );
+}
 export const projectActionInput = z.object({
   key: z.string().uuid(),
   id,

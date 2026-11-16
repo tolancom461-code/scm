@@ -5,7 +5,11 @@ import { localeMeta, type Locale } from "@/lib/i18n";
 import { trpc } from "@/lib/trpc";
 import { Modal } from "@/components/Modal";
 import { businessDate } from "@shared/date";
-import { projectStates, projectFileExtensions } from "@shared/construction";
+import {
+  canLinkProjectCmmsLocation,
+  projectStates,
+  projectFileExtensions,
+} from "@shared/construction";
 import { toast } from "sonner";
 import { FilePreview } from "./Preview";
 import {
@@ -463,9 +467,10 @@ function CmmsLocationSelect({
 
 function useProjectCmmsChoices(
   locale: Locale,
-  configured: boolean,
   { siteId, sectionId }: ProjectLocationSelection
 ) {
+  const status = trpc.cmmsReferences.status.useQuery();
+  const configured = status.isSuccess && status.data.configured;
   const sites = trpc.cmmsReferences.sites.useQuery(
     { locale },
     { enabled: configured }
@@ -478,27 +483,47 @@ function useProjectCmmsChoices(
     { siteId: siteId ?? 0, sectionId: sectionId ?? 0, locale },
     { enabled: configured && siteId !== null && sectionId !== null }
   );
-  return { sites, sections, assets };
+  return { status, configured, sites, sections, assets };
+}
+
+function cmmsLocationIsAvailable(
+  { siteId, sectionId, assetId }: ProjectLocationSelection,
+  {
+    configured,
+    sites,
+    sections,
+    assets,
+  }: ReturnType<typeof useProjectCmmsChoices>
+) {
+  return (
+    configured &&
+    sites.isSuccess &&
+    sites.data.some(option => option.id === siteId) &&
+    sections.isSuccess &&
+    sections.data.some(option => option.id === sectionId) &&
+    (assetId === null ||
+      (assets.isSuccess && assets.data.some(option => option.id === assetId)))
+  );
 }
 
 function ProjectCmmsLocationFields({
   locale,
   project,
   selection,
-  configured,
   choices,
   onChange,
+  disabled,
 }: {
   locale: Locale;
   project?: Project;
   selection: ProjectLocationSelection;
-  configured: boolean;
   choices: ReturnType<typeof useProjectCmmsChoices>;
   onChange: (value: ProjectLocationSelection) => void;
+  disabled?: boolean;
 }) {
   const t = text(locale);
   const { siteId, sectionId, assetId } = selection;
-  const { sites, sections, assets } = choices;
+  const { status, configured, sites, sections, assets } = choices;
   const failed = configured
     ? [sites, sections, assets].filter(query => query.isError)
     : [];
@@ -506,7 +531,7 @@ function ProjectCmmsLocationFields({
     configured &&
     (sites.isFetching || sections.isFetching || assets.isFetching);
   return (
-    <fieldset className="pm-cmms-location">
+    <fieldset className="pm-cmms-location" disabled={disabled}>
       <legend>
         {t(
           "موقع المشروع من CMMS",
@@ -558,6 +583,36 @@ function ProjectCmmsLocationFields({
           onChange={value => onChange({ siteId, sectionId, assetId: value })}
         />
       </div>
+      {status.isPending && (
+        <p className="pm-help" role="status">
+          {t(
+            "جارٍ التحقق من ربط قوائم CMMS…",
+            "Checking the CMMS reference connection…",
+            "CMMS کے حوالہ جاتی رابطے کی جانچ جاری ہے…"
+          )}
+        </p>
+      )}
+      {status.isSuccess && !configured && (
+        <p className="pm-help" role="status">
+          {t(
+            "يلزم تفعيل ربط قوائم CMMS لاختيار الموقع والقسم.",
+            "Connect the CMMS reference lists to choose the site and section.",
+            "مقام اور شعبہ منتخب کرنے کے لیے CMMS کی حوالہ جاتی فہرستیں جوڑیں۔"
+          )}
+        </p>
+      )}
+      {status.isError && (
+        <p className="pm-help" role="alert">
+          {t(
+            "تعذر التحقق من إعدادات ربط المواقع.",
+            "Location integration status is unavailable.",
+            "مقام کے انضمام کی حالت دستیاب نہیں۔"
+          )}{" "}
+          <button type="button" onClick={() => void status.refetch()}>
+            {t("إعادة المحاولة", "Retry", "دوبارہ کوشش کریں")}
+          </button>
+        </p>
+      )}
       {isLoading && (
         <small role="status">
           {t(
@@ -652,14 +707,12 @@ function ProjectForm({
     [busy, setBusy] = useState(false);
   const save = trpc.projectManagement.save.useMutation(),
     upload = trpc.documents.upload.useMutation();
-  const cmms = trpc.cmmsReferences.status.useQuery();
+  const choices = useProjectCmmsChoices(locale, location);
   const canEditDirectLocation = !project || project.status === "draft";
   const directLocationChanged =
     canEditDirectLocation &&
     ((directLocation?.lat ?? null) !== (project?.directLatitude ?? null) ||
       (directLocation?.lng ?? null) !== (project?.directLongitude ?? null));
-  const locationConfigured = cmms.isSuccess && cmms.data.configured;
-  const choices = useProjectCmmsChoices(locale, locationConfigured, location);
   const locationChanged =
     location.siteId !== (project?.cmmsSiteId ?? null) ||
     location.sectionId !== (project?.cmmsSectionId ?? null) ||
@@ -667,17 +720,9 @@ function ProjectForm({
   const { siteId, sectionId, assetId } = location;
   const locationComplete =
     siteId !== null && siteId > 0 && sectionId !== null && sectionId > 0;
-  const locationAvailable =
-    locationConfigured &&
-    choices.sites.isSuccess &&
-    choices.sites.data.some(option => option.id === siteId) &&
-    choices.sections.isSuccess &&
-    choices.sections.data.some(option => option.id === sectionId) &&
-    (assetId === null ||
-      (choices.assets.isSuccess &&
-        choices.assets.data.some(option => option.id === assetId)));
   const canSaveLocation =
-    locationComplete && (!locationChanged || locationAvailable);
+    locationComplete &&
+    (!locationChanged || cmmsLocationIsAvailable(location, choices));
   const selectLocationMessage = t(
     "اختر الموقع والقسم من CMMS قبل الحفظ. الأصل اختياري.",
     "Choose the CMMS site and section before saving. The asset is optional.",
@@ -828,11 +873,10 @@ function ProjectForm({
           locale={locale}
           project={project}
           selection={location}
-          configured={locationConfigured}
           choices={choices}
           onChange={setLocation}
         />
-        {!canSaveLocation && locationConfigured && (
+        {!canSaveLocation && choices.configured && (
           <small role="status">{selectLocationMessage}</small>
         )}
         <div className="pm-field">
@@ -881,36 +925,6 @@ function ProjectForm({
             <bdi dir="ltr">{directLocationCoordinates(directLocation)}</bdi>
           )}
         </div>
-        {cmms.isPending && (
-          <p className="pm-help" role="status">
-            {t(
-              "جارٍ التحقق من ربط قوائم CMMS…",
-              "Checking the CMMS reference connection…",
-              "CMMS کے حوالہ جاتی رابطے کی جانچ جاری ہے…"
-            )}
-          </p>
-        )}
-        {cmms.isSuccess && !locationConfigured && (
-          <p className="pm-help" role="status">
-            {t(
-              "يلزم تفعيل ربط قوائم CMMS لاختيار الموقع والقسم.",
-              "Connect the CMMS reference lists to choose the site and section.",
-              "مقام اور شعبہ منتخب کرنے کے لیے CMMS کی حوالہ جاتی فہرستیں جوڑیں۔"
-            )}
-          </p>
-        )}
-        {cmms.isError && (
-          <p className="pm-help" role="alert">
-            {t(
-              "تعذر التحقق من إعدادات ربط المواقع.",
-              "Location integration status is unavailable.",
-              "مقام کے انضمام کی حالت دستیاب نہیں۔"
-            )}{" "}
-            <button type="button" onClick={() => void cmms.refetch()}>
-              {t("إعادة المحاولة", "Retry", "دوبارہ کوشش کریں")}
-            </button>
-          </p>
-        )}
         <Field
           label={t("وصف المشروع", "Project description", "منصوبے کی تفصیل")}
         >
@@ -1128,6 +1142,109 @@ function ProjectDirectLocationDetails({
     </div>
   );
 }
+function LinkProjectCmmsLocation({
+  title,
+  locale,
+  project,
+  close,
+  saved,
+  refresh,
+}: {
+  title: string;
+  locale: Locale;
+  project: Project;
+  close: () => void;
+  saved: () => void;
+  refresh: () => void;
+}) {
+  const [selection, setSelection] = useState<ProjectLocationSelection>({
+    siteId: null,
+    sectionId: null,
+    assetId: null,
+  });
+  const attempt = useRef<{
+    key: string;
+    version: number;
+    locale: Locale;
+  } | null>(null);
+  const t = text(locale);
+  const choices = useProjectCmmsChoices(locale, selection);
+  const canSave = cmmsLocationIsAvailable(selection, choices);
+  const link = trpc.projectManagement.linkCmmsLocation.useMutation({
+    onSuccess: saved,
+    onError: error => {
+      if (error.data?.code === "CONFLICT") refresh();
+    },
+  });
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    const { siteId, sectionId, assetId } = selection;
+    if (link.isPending || !canSave || siteId === null || sectionId === null)
+      return;
+    const version = project.version;
+    if (
+      attempt.current?.version !== version ||
+      attempt.current.locale !== locale
+    )
+      attempt.current = { key: crypto.randomUUID(), version, locale };
+    link.mutate({
+      key: attempt.current.key,
+      id: project.id,
+      version,
+      location: { siteId, sectionId, assetId, locale },
+    });
+  }
+  return (
+    <Modal
+      title={title}
+      eyebrow={project.number}
+      close={() => {
+        if (!link.isPending) close();
+      }}
+    >
+      <form className="pm-form" onSubmit={submit}>
+        <p className="pm-help">
+          {t(
+            "اختر الموقع والقسم من CMMS. الأصل اختياري. يُحفظ الربط مرة واحدة.",
+            "Choose a site and section from CMMS. The asset is optional. This location can be linked once.",
+            "CMMS سے مقام اور شعبہ منتخب کریں۔ اثاثہ اختیاری ہے۔ مقام ایک مرتبہ جوڑا جا سکتا ہے۔"
+          )}
+        </p>
+        <ProjectCmmsLocationFields
+          locale={locale}
+          selection={selection}
+          choices={choices}
+          disabled={link.isPending}
+          onChange={value => {
+            attempt.current = null;
+            link.reset();
+            setSelection(value);
+          }}
+        />
+        {link.error && (
+          <p className="pm-help" role="alert">
+            {link.error.message}
+          </p>
+        )}
+        <div className="pm-actions">
+          <button
+            type="submit"
+            className="primary"
+            disabled={link.isPending || !canSave}
+          >
+            {link.isPending
+              ? t("جاري الحفظ…", "Saving…", "محفوظ ہو رہا ہے…")
+              : t("حفظ الربط", "Save link", "ربط محفوظ کریں")}
+          </button>
+          <button type="button" onClick={close} disabled={link.isPending}>
+            {t("إلغاء", "Cancel", "منسوخ کریں")}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function ProjectDetail({
   id,
   locale,
@@ -1150,6 +1267,9 @@ function ProjectDetail({
       { enabled: can("materialRequisitions.create") }
     );
   const [edit, setEdit] = useState(false),
+    [locationLink, setLocationLink] = useState<"closed" | "open" | "saved">(
+      "closed"
+    ),
     [decision, setDecision] = useState<"approve" | "return" | "reject" | null>(
       null
     ),
@@ -1211,6 +1331,15 @@ function ProjectDetail({
         comment,
         ...(a === "start" ? { actualStartDate } : {}),
       });
+  const mayLinkLocation =
+    locationLink !== "saved" &&
+    can("pm.edit") &&
+    canLinkProjectCmmsLocation(project);
+  const locationLinkTitle = t(
+    "ربط موقع المشروع",
+    "Link project location",
+    "منصوبے کا مقام جوڑیں"
+  );
   const renderTasks = (parentId: number | null): React.ReactNode =>
     tasks
       .filter(r => r.parentId === parentId)
@@ -1316,6 +1445,11 @@ function ProjectDetail({
           {editable && can("pm.edit") && (
             <button onClick={() => setEdit(true)}>
               {t("تعديل المشروع", "Edit project", "منصوبے میں ترمیم کریں")}
+            </button>
+          )}
+          {mayLinkLocation && (
+            <button type="button" onClick={() => setLocationLink("open")}>
+              {locationLinkTitle}
             </button>
           )}
           {editable && can("pm.submit") && (
@@ -1540,6 +1674,29 @@ function ProjectDetail({
             void utils.gantt.projects.invalidate();
             void utils.gantt.detail.invalidate({ projectId: id });
             void utils.materialRequisitions.directory.invalidate();
+          }}
+        />
+      )}
+      {mayLinkLocation && locationLink === "open" && (
+        <LinkProjectCmmsLocation
+          title={locationLinkTitle}
+          locale={locale}
+          project={project}
+          close={() => setLocationLink("closed")}
+          refresh={() => void query.refetch()}
+          saved={() => {
+            setLocationLink("saved");
+            void utils.projectManagement.invalidate();
+            void utils.gantt.projects.invalidate();
+            void utils.gantt.detail.invalidate({ projectId: id });
+            void utils.materialRequisitions.invalidate();
+            toast.success(
+              t(
+                "تم ربط موقع المشروع",
+                "Project location linked",
+                "منصوبے کا مقام جوڑ دیا گیا"
+              )
+            );
           }}
         />
       )}
