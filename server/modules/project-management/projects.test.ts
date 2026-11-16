@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import {
   projectTransition,
   taskInput,
@@ -13,19 +13,14 @@ import {
 
 const references = vi.hoisted(() => ({
   cmmsReferencesConfigured: vi.fn(() => true),
-  readCmmsSites: vi.fn(async (_locale?: string) => [
-    { id: 1, name: "Main Site" },
-  ]),
-  readCmmsSections: vi.fn(async (_siteId: number, _locale?: string) => [
-    { id: 2, name: "Electrical" },
-  ]),
-  readCmmsAssets: vi.fn(
-    async (_siteId: number, _sectionId: number, _locale?: string) => [
-      { id: 3, name: "Panel" },
-    ]
-  ),
+  readCmmsProjectLocation: vi.fn(),
 }));
 vi.mock("../cmms-integration/references", () => references);
+const cmmsLocation = {
+  site: { id: 1, name: "Main Site" },
+  section: { id: 2, name: "Electrical" },
+  asset: { id: 3, name: "Panel" },
+};
 const rows = [
   {
     id: 1,
@@ -45,6 +40,10 @@ const rows = [
   },
 ];
 describe("Project workflow and task rules", () => {
+  beforeEach(() => {
+    references.readCmmsProjectLocation.mockReset();
+  });
+
   it("requires separate draft submission, approval and start", () => {
     expect(projectTransition("draft", "submit")).toBe("pending");
     expect(projectTransition("pending", "return")).toBe("returned");
@@ -95,6 +94,7 @@ describe("Project workflow and task rules", () => {
       assetId: 3,
       locale: "en" as const,
     };
+    references.readCmmsProjectLocation.mockResolvedValueOnce(cmmsLocation);
     const location = await resolveProjectLocation(input);
     expect(location).toEqual({
       cmmsSiteId: 1,
@@ -108,25 +108,57 @@ describe("Project workflow and task rules", () => {
     expect(matchesProjectLocation({ ...input, assetId: null }, location)).toBe(
       false
     );
-    expect(references.readCmmsSections).toHaveBeenLastCalledWith(1, "en");
-    expect(references.readCmmsAssets).toHaveBeenLastCalledWith(1, 2, "en");
+    expect(references.readCmmsProjectLocation).toHaveBeenCalledTimes(1);
+    expect(references.readCmmsProjectLocation).toHaveBeenCalledWith(
+      1,
+      2,
+      3,
+      "en"
+    );
   });
-  it("rejects unknown CMMS section and asset IDs from the selected hierarchy", async () => {
-    await expect(
-      resolveProjectLocation({ siteId: 1, sectionId: 4, assetId: null })
-    ).rejects.toMatchObject({ domainCode: "INVALID_REFERENCE" });
-    await expect(
-      resolveProjectLocation({ siteId: 1, sectionId: 2, assetId: 4 })
-    ).rejects.toMatchObject({ domainCode: "INVALID_REFERENCE" });
-    references.readCmmsAssets.mockClear();
+  it("validates a CMMS site and section with no selected asset", async () => {
+    references.readCmmsProjectLocation.mockResolvedValueOnce({
+      ...cmmsLocation,
+      asset: null,
+    });
     const location = await resolveProjectLocation({
       siteId: 1,
       sectionId: 2,
       assetId: null,
     });
-    expect(location.cmmsAssetId).toBeNull();
-    expect(references.readCmmsAssets).not.toHaveBeenCalled();
+    expect(location).toMatchObject({ cmmsAssetId: null, cmmsAssetName: null });
+    expect(references.readCmmsProjectLocation).toHaveBeenCalledTimes(1);
+    expect(references.readCmmsProjectLocation).toHaveBeenCalledWith(
+      1,
+      2,
+      null,
+      undefined
+    );
   });
+  it.each([
+    ["missing location", 3, null],
+    ["different site", 3, { ...cmmsLocation, site: { id: 9, name: "Other" } }],
+    [
+      "different section",
+      3,
+      { ...cmmsLocation, section: { id: 9, name: "Other" } },
+    ],
+    [
+      "different asset",
+      3,
+      { ...cmmsLocation, asset: { id: 9, name: "Other" } },
+    ],
+    ["missing selected asset", 3, { ...cmmsLocation, asset: null }],
+    ["unexpected asset", null, cmmsLocation],
+  ] as const)(
+    "rejects an invalid CMMS hierarchy with %s",
+    async (_, assetId, result) => {
+      references.readCmmsProjectLocation.mockResolvedValueOnce(result);
+      await expect(
+        resolveProjectLocation({ siteId: 1, sectionId: 2, assetId })
+      ).rejects.toMatchObject({ domainCode: "INVALID_REFERENCE" });
+    }
+  );
   it("identifies child dates invalidated by shortening the parent", () => {
     expect(
       taskDateConflicts({ ...rows[0], endDate: "2026-10-17" }, rows)

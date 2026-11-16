@@ -3,9 +3,7 @@ import type { cmmsProjectLocationInput } from "../../../shared/construction";
 import { DomainError } from "../../core/errors";
 import {
   cmmsReferencesConfigured,
-  readCmmsAssets,
-  readCmmsSections,
-  readCmmsSites,
+  readCmmsProjectLocation,
 } from "../cmms-integration/references";
 
 type Selection = z.infer<typeof cmmsProjectLocationInput>;
@@ -26,16 +24,20 @@ export function matchesProjectLocation(input: Selection, saved: SavedLocation) {
 export async function resolveProjectLocation(input: Selection) {
   if (!cmmsReferencesConfigured()) throw new DomainError("SERVICE_UNAVAILABLE");
   const { siteId, sectionId, assetId, locale } = input;
-  const [sites, sections, assets] = await Promise.all([
-    readCmmsSites(locale),
-    readCmmsSections(siteId, locale),
-    assetId === null ? [] : readCmmsAssets(siteId, sectionId, locale),
-  ]);
-  const site = sites.find(row => row.id === siteId);
-  const section = sections.find(row => row.id === sectionId);
-  const asset = assets.find(row => row.id === assetId);
-  if (!site || !section || (assetId !== null && !asset))
+  const location = await readCmmsProjectLocation(
+    siteId,
+    sectionId,
+    assetId,
+    locale
+  );
+  if (
+    !location ||
+    location.site.id !== siteId ||
+    location.section.id !== sectionId ||
+    (location.asset?.id ?? null) !== assetId
+  )
     throw new DomainError("INVALID_REFERENCE");
+  const { site, section, asset } = location;
   return {
     cmmsSiteId: site.id,
     cmmsSiteName: site.name,

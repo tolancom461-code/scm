@@ -4,14 +4,21 @@ import { z } from "zod";
 export const cmmsReferenceId = z.number().int().positive().max(2_147_483_647);
 export const cmmsReferenceLocale = z.enum(["ar", "en", "ur"]);
 type Locale = z.infer<typeof cmmsReferenceLocale>;
+type ReferenceType =
+  | "sites"
+  | "sections"
+  | "assets"
+  | "purchaseOptions"
+  | "projectLocation";
 
 const name = z
   .string()
   .min(1)
   .max(255)
   .refine(value => !!value.trim());
+const reference = z.object({ id: cmmsReferenceId, name });
 const referenceList = z
-  .array(z.object({ id: cmmsReferenceId, name }))
+  .array(reference)
   .max(10_000)
   .refine(items => new Set(items.map(item => item.id)).size === items.length);
 const purchaseOptions = z.object({
@@ -23,6 +30,9 @@ const purchaseOptions = z.object({
       items => new Set(items.map(item => item.code)).size === items.length
     ),
 });
+const projectLocation = z
+  .object({ site: reference, section: reference, asset: reference.nullable() })
+  .nullable();
 
 const maxResponseBytes = 1_000_000;
 
@@ -64,15 +74,24 @@ function invalidResponse(): never {
   });
 }
 
-function unavailable(): never {
+function unavailable(
+  type: ReferenceType,
+  failure: number | "timeout" | "connection" | "response"
+): never {
+  const detail = typeof failure === "number" ? "HTTP " + failure : failure;
   throw new TRPCError({
     code: "SERVICE_UNAVAILABLE",
     message:
-      "تعذّر جلب القوائم من CMMS. أعد المحاولة. / CMMS reference data is unavailable. Please try again. / CMMS کا حوالہ ڈیٹا دستیاب نہیں ہے۔ دوبارہ کوشش کریں۔",
+      "تعذّر جلب القوائم من CMMS. أعد المحاولة. / CMMS reference data is unavailable. Please try again. / CMMS کا حوالہ ڈیٹا دستیاب نہیں ہے۔ دوبارہ کوشش کریں۔" +
+      " [" +
+      type +
+      " · " +
+      detail +
+      "]",
   });
 }
 
-async function readReferenceBody(response: Response) {
+async function readReferenceBody(response: Response, type: ReferenceType) {
   const contentType = response.headers
     .get("content-type")
     ?.split(";")[0]
@@ -103,7 +122,7 @@ async function readReferenceBody(response: Response) {
     }
   } catch (error) {
     if (error instanceof TRPCError) throw error;
-    return unavailable();
+    return unavailable(type, "response");
   } finally {
     reader.releaseLock();
   }
@@ -116,10 +135,10 @@ async function readReferenceBody(response: Response) {
 }
 
 async function readReferences<T>(
-  type: "sites" | "sections" | "assets" | "purchaseOptions",
+  type: ReferenceType,
   schema: z.ZodType<T>,
   locale: Locale,
-  parent?: { siteId: number; sectionId?: number }
+  parent?: { siteId: number; sectionId?: number; assetId?: number | null }
 ): Promise<T> {
   const settings = referenceSettings();
   if (!settings) {
@@ -136,6 +155,9 @@ async function readReferences<T>(
   if (parent?.sectionId !== undefined) {
     endpoint.searchParams.set("sectionId", String(parent.sectionId));
   }
+  if (parent?.assetId != null) {
+    endpoint.searchParams.set("assetId", String(parent.assetId));
+  }
 
   let response: Response;
   try {
@@ -144,14 +166,19 @@ async function readReferences<T>(
       redirect: "error",
       signal: AbortSignal.timeout(8_000),
     });
-  } catch {
-    return unavailable();
+  } catch (error) {
+    return unavailable(
+      type,
+      error instanceof Error && error.name === "TimeoutError"
+        ? "timeout"
+        : "connection"
+    );
   }
   if (!response.ok) {
     await response.body?.cancel().catch(() => {});
-    return unavailable();
+    return unavailable(type, response.status);
   }
-  const result = schema.safeParse(await readReferenceBody(response));
+  const result = schema.safeParse(await readReferenceBody(response, type));
   if (!result.success) return invalidResponse();
   return result.data;
 }
@@ -170,6 +197,19 @@ export function readCmmsAssets(
   locale: Locale = "ar"
 ) {
   return readReferences("assets", referenceList, locale, { siteId, sectionId });
+}
+
+export function readCmmsProjectLocation(
+  siteId: number,
+  sectionId: number,
+  assetId: number | null,
+  locale: Locale = "ar"
+) {
+  return readReferences("projectLocation", projectLocation, locale, {
+    siteId,
+    sectionId,
+    assetId,
+  });
 }
 
 export function readCmmsPurchaseOptions(locale: Locale = "ar") {

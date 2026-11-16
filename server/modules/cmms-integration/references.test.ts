@@ -3,6 +3,7 @@ import { routePolicies } from "../../core/policy-registry";
 import {
   cmmsReferencesConfigured,
   readCmmsAssets,
+  readCmmsProjectLocation,
   readCmmsPurchaseOptions,
   readCmmsSections,
   readCmmsSites,
@@ -133,13 +134,66 @@ describe("CMMS reference data", () => {
     });
   });
 
+  it("checks only the selected location and omits the optional asset parameter", async () => {
+    const site = { id: 12, name: "Operation site" };
+    const section = { id: 16, name: "Facilities" };
+    const asset = { id: 20, name: "Pump" };
+    fetchMock
+      .mockResolvedValueOnce(Response.json({ site, section, asset }))
+      .mockResolvedValueOnce(Response.json({ site, section, asset: null }))
+      .mockResolvedValueOnce(Response.json(null));
+
+    await expect(readCmmsProjectLocation(12, 16, 20, "en")).resolves.toEqual({
+      site,
+      section,
+      asset,
+    });
+    await expect(readCmmsProjectLocation(12, 16, null)).resolves.toEqual({
+      site,
+      section,
+      asset: null,
+    });
+    await expect(readCmmsProjectLocation(12, 16, 99, "ur")).resolves.toBeNull();
+    const queries = fetchMock.mock.calls.map(([url]) =>
+      Object.fromEntries(new URL(String(url)).searchParams)
+    );
+    expect(queries).toEqual([
+      {
+        type: "projectLocation",
+        locale: "en",
+        siteId: "12",
+        sectionId: "16",
+        assetId: "20",
+      },
+      { type: "projectLocation", locale: "ar", siteId: "12", sectionId: "16" },
+      {
+        type: "projectLocation",
+        locale: "ur",
+        siteId: "12",
+        sectionId: "16",
+        assetId: "99",
+      },
+    ]);
+  });
+
   it("reports upstream failures without leaking the endpoint, token or upstream response", async () => {
     fetchMock
       .mockRejectedValueOnce(new Error(`${endpoint} ${token}`))
-      .mockResolvedValueOnce(new Response(token, { status: 403 }));
-    for (let call = 0; call < 2; call++) {
-      const error = await readCmmsSites().catch((error: unknown) => error);
-      expect(error).toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+      .mockResolvedValueOnce(new Response(token, { status: 403 }))
+      .mockRejectedValueOnce(new DOMException(token, "TimeoutError"));
+    for (const [operation, diagnostic] of [
+      [() => readCmmsSites(), "[sites · connection]"],
+      [
+        () => readCmmsProjectLocation(12, 16, 20),
+        "[projectLocation · HTTP 403]",
+      ],
+      [() => readCmmsAssets(12, 16), "[assets · timeout]"],
+    ] as const) {
+      const error = await operation().catch((error: unknown) => error);
+      expect(error).toMatchObject({
+        code: "SERVICE_UNAVAILABLE",
+        message: expect.stringContaining(diagnostic),
+      });
       expect(String(error)).not.toContain(token);
       expect(String(error)).not.toContain(endpoint);
     }

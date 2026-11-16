@@ -43,8 +43,11 @@ CMMS_PURCHASE_SOURCE_ID=pscm-production
 | `sections` | `siteId` | مصفوفة الأقسام التابعة للموقع بصيغة `[{id, name}]` |
 | `assets` | `siteId` و`sectionId` | مصفوفة الأصول المطابقة بصيغة `[{id, name}]` |
 | `purchaseOptions` | — | `{categories: [{id, name}], reviewRoles: [{code, name}]}` |
+| `projectLocation` | `siteId` و`sectionId` و`assetId` الاختياري | `{site, section, asset}` بقيم `{id, name}`، ويكون `asset` فارغًا عند تركه. تُرجع الواجهة `null` إذا لم يتطابق الاختيار. |
 
 تستخدم المعرفات الرقمية معرّفات CMMS. تمثل التصنيفات تصنيفات طلبات الشراء، وتمثل رموز جهات المراجعة القيم التي يقبلها CMMS في بند طلب الشراء.
+
+عند إنشاء المشروع أو تغيير موقعه، يتحقق PSCM من الموقع والقسم والأصل المختار باستدعاء `projectLocation` مرة واحدة. عند تعذّر القراءة تظهر في رسالة الخطأ إشارة إلى نوع الطلب وحالة HTTP أو سبب فشل الاتصال.
 
 ## عقد إنشاء طلب الشراء
 

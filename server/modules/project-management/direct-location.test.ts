@@ -12,9 +12,7 @@ const mocks = vi.hoisted(() => ({
   canAccess: vi.fn(),
   assertConstructionAccess: vi.fn(),
   cmmsConfigured: vi.fn(),
-  sites: vi.fn(),
-  sections: vi.fn(),
-  assets: vi.fn(),
+  readProjectLocation: vi.fn(),
 }));
 vi.mock("../../core/database", () => ({ database: mocks.database }));
 vi.mock("../../core/policy", () => ({
@@ -41,9 +39,7 @@ vi.mock("../material-requisitions/schedule-guards", () => ({
 vi.mock("../gantt/studio-state", () => ({ touchGanttStudioStates: vi.fn() }));
 vi.mock("../cmms-integration/references", () => ({
   cmmsReferencesConfigured: mocks.cmmsConfigured,
-  readCmmsSites: mocks.sites,
-  readCmmsSections: mocks.sections,
-  readCmmsAssets: mocks.assets,
+  readCmmsProjectLocation: mocks.readProjectLocation,
 }));
 
 const editor = { user: { id: 11, name: "Editor" } } as AccessContext;
@@ -101,17 +97,11 @@ describe("Project direct location", () => {
   beforeEach(() => {
     mocks.canAccess.mockReset().mockReturnValue(true);
     mocks.cmmsConfigured.mockReset().mockReturnValue(false);
-    mocks.sites
-      .mockReset()
-      .mockResolvedValue([
-        { id: cmmsSelection.siteId, name: savedCmms.cmmsSiteName },
-      ]);
-    mocks.sections
-      .mockReset()
-      .mockResolvedValue([
-        { id: cmmsSelection.sectionId, name: savedCmms.cmmsSectionName },
-      ]);
-    mocks.assets.mockReset().mockResolvedValue([]);
+    mocks.readProjectLocation.mockReset().mockResolvedValue({
+      site: { id: cmmsSelection.siteId, name: savedCmms.cmmsSiteName },
+      section: { id: cmmsSelection.sectionId, name: savedCmms.cmmsSectionName },
+      asset: null,
+    });
   });
 
   it.each([
@@ -153,11 +143,13 @@ describe("Project direct location", () => {
         number: "P-1",
       })
     );
-    expect(mocks.sections).toHaveBeenCalledWith(
+    expect(mocks.readProjectLocation).toHaveBeenCalledTimes(1);
+    expect(mocks.readProjectLocation).toHaveBeenCalledWith(
       cmmsSelection.siteId,
+      cmmsSelection.sectionId,
+      null,
       undefined
     );
-    expect(mocks.assets).not.toHaveBeenCalled();
   });
 
   it("requires a CMMS site and section for a new or previously unlinked draft", async () => {
@@ -183,12 +175,13 @@ describe("Project direct location", () => {
       id: command.id,
     });
     expect(set.mock.lastCall?.[0]).not.toHaveProperty("cmmsSiteId");
-    expect(mocks.sites).not.toHaveBeenCalled();
+    expect(mocks.readProjectLocation).not.toHaveBeenCalled();
   });
 
   it("rejects saving a selected asset absent from the selected CMMS section", async () => {
     const { update } = stubProject();
     mocks.cmmsConfigured.mockReturnValue(true);
+    mocks.readProjectLocation.mockResolvedValueOnce(null);
     const input = projectSaveInput.parse({
       ...command,
       data: {
@@ -199,12 +192,47 @@ describe("Project direct location", () => {
     await expect(saveProject(input, editor)).rejects.toMatchObject({
       domainCode: "INVALID_REFERENCE",
     });
-    expect(mocks.assets).toHaveBeenCalledWith(
+    expect(mocks.readProjectLocation).toHaveBeenCalledTimes(1);
+    expect(mocks.readProjectLocation).toHaveBeenCalledWith(
       cmmsSelection.siteId,
       cmmsSelection.sectionId,
+      55,
       undefined
     );
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("saves a changed CMMS location and selected asset together", async () => {
+    const { set } = stubProject();
+    mocks.cmmsConfigured.mockReturnValue(true);
+    mocks.readProjectLocation.mockResolvedValueOnce({
+      site: { id: 51, name: "Workshop" },
+      section: { id: 52, name: "Assembly" },
+      asset: { id: 53, name: "Crane" },
+    });
+    const input = projectSaveInput.parse({
+      ...command,
+      data: {
+        ...command.data,
+        cmmsLocation: { siteId: 51, sectionId: 52, assetId: 53, locale: "en" },
+      },
+    });
+    await expect(saveProject(input, editor)).resolves.toEqual({
+      id: command.id,
+    });
+    expect(mocks.readProjectLocation).toHaveBeenCalledTimes(1);
+    expect(mocks.readProjectLocation).toHaveBeenCalledWith(51, 52, 53, "en");
+    expect(set.mock.lastCall?.[0]).toMatchObject({
+      site: "Workshop",
+      cmmsSiteId: 51,
+      cmmsSiteName: "Workshop",
+      cmmsSectionId: 52,
+      cmmsSectionName: "Assembly",
+      cmmsAssetId: 53,
+      cmmsAssetName: "Crane",
+    });
+    expect(set.mock.lastCall?.[0]).not.toHaveProperty("directLatitude");
+    expect(set.mock.lastCall?.[0]).not.toHaveProperty("directLongitude");
   });
 
   it("can replace the draft point with zero coordinates and clear it explicitly", async () => {

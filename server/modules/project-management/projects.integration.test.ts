@@ -22,9 +22,18 @@ import { localDocumentPath } from "../../storage";
 vi.mock("../cmms-integration/references", async importOriginal => ({
   ...(await importOriginal<typeof import("../cmms-integration/references")>()),
   cmmsReferencesConfigured: () => true,
-  readCmmsSites: async () => [{ id: 101, name: "Riyadh" }],
-  readCmmsSections: async (siteId: number) =>
-    siteId === 101 ? [{ id: 102, name: "QA section" }] : [],
+  readCmmsProjectLocation: async (
+    siteId: number,
+    sectionId: number,
+    assetId: number | null
+  ) =>
+    siteId === 101 && sectionId === 102 && assetId === null
+      ? {
+          site: { id: 101, name: "Riyadh" },
+          section: { id: 102, name: "QA section" },
+          asset: null,
+        }
+      : null,
 }));
 const cmmsLocation = { siteId: 101, sectionId: 102 };
 
