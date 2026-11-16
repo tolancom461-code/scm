@@ -47,7 +47,8 @@ import {
 import {
   cmmsPurchaseSettings,
   readCmmsFulfillment,
-  type CmmsFulfillmentItem,
+  readCmmsMaterialCosts,
+  type CmmsPurchaseSettings,
 } from "../cmms-integration/purchase-client";
 import { catalogImageUrl } from "./catalog";
 
@@ -296,22 +297,27 @@ const purchaseDispatchColumns = {
   instanceId: s.materialRequisitions.cmmsDispatchSourceId,
 };
 
-async function readRequisitionFulfillment(
-  requisitions: {
-    id: number;
-    purchaseNumber: string | null;
-    externalStatus: string | null;
-    instanceId: string | null;
-  }[]
+type PurchaseDispatch = {
+  id: number;
+  purchaseNumber: string | null;
+  externalStatus: string | null;
+  instanceId: string | null;
+};
+
+async function readRequisitionPurchases<Result>(
+  requisitions: Pick<PurchaseDispatch, "id" | "instanceId">[],
+  read: (
+    settings: CmmsPurchaseSettings,
+    instanceId: string,
+    ids: number[]
+  ) => Promise<Result[]>
 ) {
-  const progress = new Map<string, CmmsFulfillmentItem>();
+  const rows: Result[] = [];
   const settings = cmmsPurchaseSettings();
-  if (!settings) return progress;
+  if (!settings) return rows;
 
   const dispatches = new Map<string, number[]>();
   for (const row of requisitions) {
-    if (!row.purchaseNumber || row.externalStatus !== "purchase_request_created")
-      continue;
     const instanceId = row.instanceId ?? settings.instanceId;
     const ids = dispatches.get(instanceId) ?? [];
     ids.push(row.id);
@@ -333,19 +339,26 @@ async function readRequisitionFulfillment(
     const results = await Promise.allSettled(
       batches
         .slice(index, index + concurrency)
-        .map(({ instanceId, ids }) =>
-          readCmmsFulfillment(settings, instanceId, ids)
-        )
+        .map(({ instanceId, ids }) => read(settings, instanceId, ids))
     );
     for (const result of results) {
       // Keep requisitions visible when a CMMS request fails.
-      if (result.status !== "fulfilled") continue;
-      for (const item of result.value) {
-        progress.set(`${item.requisitionId}:${item.sequence}`, item);
-      }
+      if (result.status === "fulfilled") rows.push(...result.value);
     }
   }
-  return progress;
+  return rows;
+}
+
+async function readRequisitionFulfillment(requisitions: PurchaseDispatch[]) {
+  const rows = await readRequisitionPurchases(
+    requisitions.filter(
+      row => row.purchaseNumber && row.externalStatus === "purchase_request_created"
+    ),
+    readCmmsFulfillment
+  );
+  return new Map(
+    rows.map(item => [`${item.requisitionId}:${item.sequence}`, item])
+  );
 }
 
 export async function taskMaterialSummary(
@@ -399,6 +412,153 @@ export async function taskMaterialSummary(
     if (summary && item.readyQuantity > 0) summary.readyItemCount += 1;
   }
   return { items: [...summaries.values()] };
+}
+
+type MaterialCostTotals = {
+  issuedCents: number;
+  returnedCents: number;
+  netCents: number;
+};
+type MaterialDeliveryCost = MaterialCostTotals & {
+  number: string;
+  sequence: number | null;
+};
+const zeroMaterialCosts: MaterialCostTotals = {
+  issuedCents: 0,
+  returnedCents: 0,
+  netCents: 0,
+};
+
+function addMaterialCosts(
+  current: MaterialCostTotals | null,
+  added: MaterialCostTotals | null
+): MaterialCostTotals | null {
+  if (!current || !added) return null;
+  const issuedCents = current.issuedCents + added.issuedCents;
+  const returnedCents = current.returnedCents + added.returnedCents;
+  if (!Number.isSafeInteger(issuedCents) || !Number.isSafeInteger(returnedCents))
+    return null;
+  return { issuedCents, returnedCents, netCents: issuedCents - returnedCents };
+}
+
+export async function taskMaterialCosts(
+  projectId: number,
+  taskId: number | undefined,
+  access: AccessContext
+) {
+  const db = await database();
+  await source(db, projectId, taskId ?? null, access);
+  const requisitions = await db
+    .select({
+      ...purchaseDispatchColumns,
+      taskId: s.materialRequisitions.taskId,
+      taskName: s.projectTasks.name,
+      nextDispatchAt: s.materialRequisitions.cmmsDispatchNextAt,
+      dispatchAttempts: s.materialRequisitions.cmmsDispatchAttempts,
+    })
+    .from(s.materialRequisitions)
+    .leftJoin(
+      s.projectTasks,
+      and(
+        eq(s.materialRequisitions.taskId, s.projectTasks.id),
+        eq(s.projectTasks.projectId, projectId)
+      )
+    )
+    .where(
+      and(
+        eq(s.materialRequisitions.projectId, projectId),
+        eq(s.materialRequisitions.status, "approved"),
+        taskId === undefined
+          ? undefined
+          : eq(s.materialRequisitions.taskId, taskId)
+      )
+    )
+    .orderBy(asc(s.materialRequisitions.taskId), asc(s.materialRequisitions.id));
+
+  const remote = await readRequisitionPurchases(
+    requisitions.filter(
+      row =>
+        (row.taskId === null || row.taskName !== null) &&
+        (row.purchaseNumber || row.instanceId)
+    ),
+    readCmmsMaterialCosts
+  );
+  const byRequisition = new Map(remote.map(row => [row.requisitionId, row]));
+  const seenNumbers = new Set<string>();
+  const ambiguousNumbers = new Set<string>();
+  for (const row of remote) {
+    for (const delivery of row.deliveries) {
+      if (seenNumbers.has(delivery.number)) ambiguousNumbers.add(delivery.number);
+      seenNumbers.add(delivery.number);
+    }
+  }
+
+  let totals: MaterialCostTotals | null = zeroMaterialCosts;
+  let direct: MaterialCostTotals | null = zeroMaterialCosts;
+  const tasks = new Map<
+    number,
+    { taskId: number; taskName: string; totals: MaterialCostTotals | null }
+  >();
+  const details: {
+    requisitionId: number;
+    totals: MaterialCostTotals | null;
+    deliveries: MaterialDeliveryCost[];
+  }[] = [];
+
+  for (const row of requisitions) {
+    const reported = byRequisition.get(row.id);
+    const deliveries = (reported?.deliveries ?? [])
+      .filter(
+        delivery =>
+          !ambiguousNumbers.has(delivery.number) &&
+          (row.taskId === null) === (delivery.sequence === null)
+      )
+      .map(delivery => ({
+        ...delivery,
+        netCents: delivery.issuedCents - delivery.returnedCents,
+      }));
+    // Scheduled or attempted sends may have created a purchase before an acknowledgement arrived.
+    const localOnly =
+      !row.purchaseNumber &&
+      !row.instanceId &&
+      row.dispatchAttempts === 0 &&
+      row.nextDispatchAt === null &&
+      (row.externalStatus === null || row.externalStatus === "pending_send");
+    const known = row.taskId === null || row.taskName !== null;
+    const complete =
+      known &&
+      (reported
+        ? reported.complete && reported.deliveries.length === deliveries.length
+        : localOnly);
+    const cost = complete
+      ? deliveries.reduce<MaterialCostTotals | null>(
+          addMaterialCosts,
+          zeroMaterialCosts
+        )
+      : null;
+
+    totals = addMaterialCosts(totals, cost);
+    if (taskId !== undefined) {
+      details.push({ requisitionId: row.id, totals: cost, deliveries });
+    } else if (row.taskId === null) {
+      direct = addMaterialCosts(direct, cost);
+    } else if (row.taskName !== null) {
+      const task = tasks.get(row.taskId) ?? {
+        taskId: row.taskId,
+        taskName: row.taskName,
+        totals: zeroMaterialCosts,
+      };
+      task.totals = addMaterialCosts(task.totals, cost);
+      tasks.set(row.taskId, task);
+    }
+  }
+
+  return {
+    totals,
+    direct: taskId === undefined ? direct : null,
+    tasks: [...tasks.values()],
+    requisitions: details,
+  };
 }
 
 export async function taskMaterialProgress(

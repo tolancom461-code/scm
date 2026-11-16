@@ -24,6 +24,7 @@ import {
 } from "./GoogleProjectMap";
 import { MaterialRequisitionForm } from "../material-requisitions/MaterialRequisitions";
 import { mrText } from "../material-requisitions/copy";
+import { ProjectMaterialCosts } from "./ProjectMaterialCosts";
 import { TaskMaterialTrigger } from "./TaskMaterialProgress";
 import "./projects.css";
 type Outputs = inferRouterOutputs<AppRouter>["projectManagement"];
@@ -1668,6 +1669,7 @@ function ProjectDetail({
           <dd>{project.requirements || "—"}</dd>
         </div>
       </dl>
+      <ProjectMaterialCosts projectId={id} locale={locale} />
       <ProjectAttachments
         id={id}
         entityType="pm_project"

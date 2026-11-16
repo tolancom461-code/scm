@@ -3,6 +3,7 @@ import {
   cmmsPurchasePayload,
   cmmsPurchaseSettings,
   readCmmsFulfillment,
+  readCmmsMaterialCosts,
   sendCmmsPurchase,
 } from "./purchase-client";
 
@@ -217,5 +218,46 @@ describe("CMMS fulfillment for approved requirements", () => {
     await expect(readCmmsFulfillment(settings, settings.instanceId, [request.id], fetchMock)).rejects.toThrow();
     await expect(readCmmsFulfillment(settings, settings.instanceId, [request.id], fetchMock))
       .resolves.toMatchObject([{ receivedQuantity: 0, issuedQuantity: 0 }]);
+  });
+});
+
+describe("CMMS material cost details", () => {
+  const cost = {
+    requisitionId: request.id,
+    complete: true,
+    deliveries: [{
+      number: "DLV-2026-0001",
+      sequence: 1,
+      issuedCents: 590,
+      returnedCents: 200,
+    }],
+  };
+
+  it("reads the authorized requisition's recorded issue and return amounts", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ requisitions: [cost] }));
+    await expect(readCmmsMaterialCosts(settings, "original-instance", [request.id], fetchMock))
+      .resolves.toEqual([cost]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("https://cmms.example.test/api/v1/pscm/material-costs"),
+      expect.objectContaining({
+        method: "POST",
+        redirect: "error",
+        headers: expect.objectContaining({ Authorization: "Bearer fixture-write-token" }),
+        body: JSON.stringify({ instanceId: "original-instance", requisitionIds: [request.id] }),
+      })
+    );
+  });
+
+  it("rejects duplicate or unrelated purchase identities and invalid return values", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ requisitions: [cost, cost] }))
+      .mockResolvedValueOnce(Response.json({ requisitions: [{ ...cost, requisitionId: request.id + 1 }] }))
+      .mockResolvedValueOnce(Response.json({
+        requisitions: [{ ...cost, deliveries: [{ ...cost.deliveries[0], returnedCents: 591 }] }],
+      }));
+    for (let index = 0; index < 3; index += 1) {
+      await expect(readCmmsMaterialCosts(settings, settings.instanceId, [request.id], fetchMock)).rejects.toThrow();
+    }
   });
 });

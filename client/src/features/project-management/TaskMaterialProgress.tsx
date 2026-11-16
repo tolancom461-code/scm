@@ -4,11 +4,18 @@ import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
 import { localeMeta, type Locale } from "@/lib/i18n";
 import { trpc } from "@/lib/trpc";
+import {
+  materialCostCopy,
+  materialCostFormatter,
+} from "./ProjectMaterialCosts";
 import "./task-materials.css";
 
 type Request =
   inferRouterOutputs<AppRouter>["projectManagement"]["taskMaterialProgress"]["requisitions"][number];
 type Item = Request["items"][number];
+type RequisitionCost =
+  inferRouterOutputs<AppRouter>["projectManagement"]["taskMaterialCosts"]["requisitions"][number];
+type DeliveryProgress = NonNullable<Item["progress"]>["deliveries"][number];
 type MaterialTask = { projectId: number; taskId: number; locale: Locale };
 
 function materialCopy(locale: Locale) {
@@ -111,15 +118,21 @@ function itemStatus(request: Request, item: Item): keyof Copy["statuses"] {
 
 function RequisitionDetails({
   request,
+  requisitionCost,
+  costsLoading,
   locale,
   copy,
   format,
 }: {
   request: Request;
+  requisitionCost: RequisitionCost | undefined;
+  costsLoading: boolean;
   locale: Locale;
   copy: Copy;
   format: Intl.NumberFormat;
 }) {
+  const costCopy = materialCostCopy(locale);
+  const formatCost = materialCostFormatter(locale);
   const items = request.items.map(item => ({
     item,
     status: itemStatus(request, item),
@@ -154,6 +167,25 @@ function RequisitionDetails({
           const progress = item.progress;
           const quantity = (value: number) =>
             `${format.format(value)} ${item.unit[locale]}`;
+          const deliveries = new Map<
+            string,
+            {
+              progress?: DeliveryProgress;
+              cost?: RequisitionCost["deliveries"][number];
+            }
+          >();
+          for (const delivery of progress?.deliveries ?? []) {
+            deliveries.set(delivery.number, { progress: delivery });
+          }
+          for (const delivery of requisitionCost?.deliveries ?? []) {
+            const existing = deliveries.get(delivery.number);
+            if (
+              delivery.sequence === item.sequence ||
+              (delivery.sequence === null && existing)
+            ) {
+              deliveries.set(delivery.number, { ...existing, cost: delivery });
+            }
+          }
           return (
             <div key={item.sequence} className="task-material-item">
               <div className="task-material-item-heading">
@@ -206,15 +238,54 @@ function RequisitionDetails({
                   </>
                 )}
               </dl>
-              {progress && progress.deliveries.length > 0 && (
+              {deliveries.size > 0 && (
                 <ul aria-label={copy.deliveries}>
-                  {progress.deliveries.map(delivery => (
-                    <li key={delivery.number}>
-                      {copy.delivery} <bdi>{delivery.number}</bdi>
-                      {" · "}
-                      {quantity(delivery.quantity)}
-                      {delivery.recipientName && (
-                        <> · {delivery.recipientName}</>
+                  {[...deliveries].map(([number, delivery]) => (
+                    <li key={number} className="task-material-delivery">
+                      <span>
+                        {copy.delivery} <bdi>{number}</bdi>
+                        {delivery.progress && (
+                          <> · {quantity(delivery.progress.quantity)}</>
+                        )}
+                        {delivery.progress?.recipientName && (
+                          <> · {delivery.progress.recipientName}</>
+                        )}
+                      </span>
+                      {delivery.cost ? (
+                        <dl className="task-material-delivery-cost">
+                          <div>
+                            <dt>{costCopy.issued}</dt>
+                            <dd>
+                              <bdi>{formatCost(delivery.cost.issuedCents)}</bdi>
+                            </dd>
+                          </div>
+                          {delivery.cost.returnedCents > 0 && (
+                            <>
+                              <div>
+                                <dt>{costCopy.returned}</dt>
+                                <dd>
+                                  <bdi>
+                                    {formatCost(delivery.cost.returnedCents)}
+                                  </bdi>
+                                </dd>
+                              </div>
+                              <div>
+                                <dt>{costCopy.net}</dt>
+                                <dd>
+                                  <bdi>
+                                    {formatCost(delivery.cost.netCents)}
+                                  </bdi>
+                                </dd>
+                              </div>
+                            </>
+                          )}
+                        </dl>
+                      ) : (
+                        !costsLoading && (
+                          <small className="task-material-cost-unavailable">
+                            {costCopy.unavailable}
+                          </small>
+                        )
                       )}
                     </li>
                   ))}
@@ -243,6 +314,23 @@ export function TaskMaterialProgress({
     { projectId, taskId, beforeId },
     { refetchInterval: 30_000, retry: false }
   );
+  const costsQuery = trpc.projectManagement.taskMaterialCosts.useQuery(
+    { projectId, taskId },
+    { refetchInterval: 30_000, retry: false }
+  );
+  const costs = costsQuery.isError ? undefined : costsQuery.data;
+  const costsByRequisition = new Map(
+    costs?.requisitions.map(item => [item.requisitionId, item])
+  );
+  const costCopy = materialCostCopy(locale);
+  const total = costs?.totals;
+  const totalLabel = total
+    ? materialCostFormatter(locale)(total.netCents)
+    : costsQuery.isLoading
+      ? costCopy.loading
+      : costs
+        ? costCopy.incomplete
+        : costCopy.unavailable;
   const nextBeforeId = query.data?.nextBeforeId;
 
   return (
@@ -254,6 +342,8 @@ export function TaskMaterialProgress({
         <RequisitionDetails
           key={request.id}
           request={request}
+          requisitionCost={costsByRequisition.get(request.id)}
+          costsLoading={costsQuery.isLoading}
           locale={locale}
           copy={copy}
           format={format}
@@ -279,6 +369,10 @@ export function TaskMaterialProgress({
           )}
         </div>
       )}
+      <footer className="task-material-cost-total">
+        <strong>{costCopy.taskTotal}</strong>
+        <bdi>{totalLabel}</bdi>
+      </footer>
     </div>
   );
 }

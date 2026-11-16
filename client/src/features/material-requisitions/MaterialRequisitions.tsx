@@ -183,6 +183,7 @@ export function MaterialRequisitions({
       void utils.materialRequisitions.invalidate();
       void utils.projectManagement.taskMaterialSummary.invalidate();
       void utils.projectManagement.taskMaterialProgress.invalidate();
+      void utils.projectManagement.taskMaterialCosts.invalidate();
       toast.success(c("approvedDone"));
     },
     onError: e => toast.error(e.message),

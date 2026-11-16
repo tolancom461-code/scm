@@ -167,3 +167,95 @@
   margin: 10px 0 0;
   font-size: 0.88rem;
 }
+
+.task-material-delivery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.task-material-delivery + .task-material-delivery {
+  margin-block-start: 8px;
+}
+
+.task-material-item .task-material-delivery-cost,
+.task-material-delivery-cost > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.task-material-item .task-material-delivery-cost {
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.task-material-delivery-cost > div {
+  gap: 4px;
+}
+
+.task-material-cost-unavailable,
+.project-material-costs > p {
+  color: #b5c4dd;
+}
+
+.task-material-cost-total,
+.project-material-costs > summary,
+.project-material-costs dl > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px 14px;
+}
+
+.task-material-cost-total {
+  flex-wrap: wrap;
+  border-block-start: 1px solid #344763;
+  padding-block-start: 12px;
+}
+
+.project-material-costs > summary {
+  align-items: center;
+  flex-wrap: wrap;
+  list-style: none;
+  cursor: pointer;
+}
+
+.project-material-costs > summary::-webkit-details-marker {
+  display: none;
+}
+
+.project-material-costs > summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #deebfc;
+}
+
+.project-material-costs[open] > summary svg {
+  transform: rotate(180deg);
+}
+
+.project-material-costs dl {
+  margin: 12px 0 0;
+}
+
+.project-material-costs dl > div {
+  border-block-start: 1px solid #344763;
+  padding-block: 10px;
+}
+
+.project-material-costs dl > div:last-child {
+  padding-block-end: 0;
+}
+
+.project-material-costs dt {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.project-material-costs dd {
+  margin: 0;
+  text-align: end;
+}

@@ -160,28 +160,49 @@ const fulfillmentResponse = z.object({ items: z.array(fulfillmentItem) });
 
 export type CmmsFulfillmentItem = z.infer<typeof fulfillmentItem>;
 
+async function readCmmsPurchaseData(
+  path: "fulfillment" | "material-costs",
+  settings: CmmsPurchaseSettings,
+  instanceId: string,
+  requisitionIds: number[],
+  request: typeof fetch
+) {
+  const response = await request(
+    new URL(`/api/v1/pscm/${path}`, settings.endpoint),
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${settings.token}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ instanceId, requisitionIds }),
+      redirect: "error",
+      signal: AbortSignal.timeout(8_000),
+    }
+  );
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error(`CMMS ${path} unavailable`);
+  }
+  return readPurchaseResponse(response, 1_000_000);
+}
+
 export async function readCmmsFulfillment(
   settings: CmmsPurchaseSettings,
   instanceId: string,
   requisitionIds: number[],
   request: typeof fetch = fetch
 ): Promise<CmmsFulfillmentItem[]> {
-  const response = await request(new URL("/api/v1/pscm/fulfillment", settings.endpoint), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${settings.token}`,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ instanceId, requisitionIds }),
-    redirect: "error",
-    signal: AbortSignal.timeout(8_000),
-  });
-  if (!response.ok) {
-    await response.body?.cancel().catch(() => {});
-    throw new Error("CMMS fulfillment unavailable");
-  }
-  const parsed = fulfillmentResponse.safeParse(await readPurchaseResponse(response, 1_000_000));
+  const parsed = fulfillmentResponse.safeParse(
+    await readCmmsPurchaseData(
+      "fulfillment",
+      settings,
+      instanceId,
+      requisitionIds,
+      request
+    )
+  );
   if (!parsed.success) throw new Error("Invalid CMMS fulfillment response");
   const requestedIds = new Set(requisitionIds);
   const seen = new Set<string>();
@@ -193,6 +214,51 @@ export async function readCmmsFulfillment(
     seen.add(key);
   }
   return parsed.data.items;
+}
+
+const costCents = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+const materialCostRequisition = z.object({
+  requisitionId: id,
+  complete: z.boolean(),
+  deliveries: z.array(
+    z
+      .object({
+        number: z.string().trim().min(1).max(100),
+        sequence: id.nullable(),
+        issuedCents: costCents,
+        returnedCents: costCents,
+      })
+      .refine(delivery => delivery.returnedCents <= delivery.issuedCents)
+  ),
+});
+const materialCostsResponse = z.object({
+  requisitions: z.array(materialCostRequisition),
+});
+
+export type CmmsMaterialCostRequisition = z.infer<typeof materialCostRequisition>;
+
+export async function readCmmsMaterialCosts(
+  settings: CmmsPurchaseSettings,
+  instanceId: string,
+  requisitionIds: number[],
+  request: typeof fetch = fetch
+): Promise<CmmsMaterialCostRequisition[]> {
+  const parsed = materialCostsResponse.safeParse(
+    await readCmmsPurchaseData(
+      "material-costs",
+      settings,
+      instanceId,
+      requisitionIds,
+      request
+    )
+  );
+  if (!parsed.success) throw new Error("Invalid CMMS material costs response");
+  const requestedIds = new Set(requisitionIds);
+  for (const { requisitionId } of parsed.data.requisitions) {
+    if (!requestedIds.delete(requisitionId))
+      throw new Error("Invalid CMMS material costs reference");
+  }
+  return parsed.data.requisitions;
 }
 
 export async function sendCmmsPurchase(
