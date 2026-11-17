@@ -3,7 +3,9 @@ import { GanttCalendar } from "../../../shared/gantt";
 import {
   calendarDays,
   dependencyDateMovement,
+  dependencyTargetMovement,
   lockedTaskDateChanged,
+  planDependencyMovement,
   propagateTaskChanges,
   shiftIso,
 } from "./scheduling";
@@ -82,6 +84,76 @@ describe("Studio dependency calendars", () => {
       isMilestone: true,
     };
     expect(dependencyDateMovement(fs, milestone, successor, editor)).toBeNull();
+  });
+});
+
+describe("task-centered cross-project dependency movement", () => {
+  const from = {
+    task: {
+      id: 1,
+      name: "Drawings",
+      parentId: null,
+      projectId: 1,
+      startDate: "2026-11-01",
+      endDate: "2026-11-05",
+    },
+    status: "done",
+    settings: null,
+  };
+  const to = {
+    task: {
+      id: 2,
+      name: "Install",
+      parentId: null,
+      projectId: 2,
+      startDate: "2026-11-04",
+      endDate: "2026-11-08",
+    },
+    status: "not_started",
+    settings: null,
+  };
+  const child = {
+    ...to,
+    task: {
+      ...to.task,
+      id: 3,
+      parentId: to.task.id,
+      name: "Equipment",
+      startDate: "2026-11-07",
+    },
+  };
+
+  it("computes the dates to write without modifying the source schedule", () => {
+    const move = dependencyTargetMovement({ type: "FS", lagDays: 1 }, from, to);
+    const planned = planDependencyMovement(to.task.id, [to, child], move!);
+
+    expect(planned.movingIds).toEqual([2, 3]);
+    expect(planned.movingTasks.map(row => row.dates)).toEqual([
+      { startDate: "2026-11-07", endDate: "2026-11-11" },
+      { startDate: "2026-11-10", endDate: "2026-11-11" },
+    ]);
+    expect(to.task.startDate).toBe("2026-11-04");
+    expect(child.task.startDate).toBe("2026-11-07");
+  });
+
+  it("uses the same started-task and descendant lock guards for preview and save", () => {
+    const link = { type: "FS", lagDays: 0 };
+    const started = { ...to, status: "working" };
+    expect(() => dependencyTargetMovement(link, from, started)).toThrow(
+      "Install"
+    );
+    expect(
+      dependencyTargetMovement({ ...link, lagDays: -2 }, from, started)
+    ).toBeNull();
+
+    const move = dependencyTargetMovement(link, from, to);
+    const locked = {
+      ...child,
+      settings: { isMilestone: false, startLocked: false, endLocked: true },
+    };
+    expect(() =>
+      planDependencyMovement(to.task.id, [to, locked], move!)
+    ).toThrow("Equipment");
   });
 });
 

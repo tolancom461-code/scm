@@ -1,14 +1,23 @@
 import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
+import type { SQL } from "drizzle-orm";
+import { MySqlDialect } from "drizzle-orm/mysql-core";
 import { describe, expect, it, vi } from "vitest";
 import * as schema from "../../../drizzle/construction";
 import type { AccessContext } from "../../core/policy";
-import { saveLink, saveProjectSchedule, saveSharedGroup } from "./service";
+import {
+  previewCrossProjectLink,
+  saveLink,
+  saveProjectSchedule,
+  saveSharedGroup,
+  taskCrossProjectLinks,
+} from "./service";
 
 const fixture = vi.hoisted(() => ({
   rows: new Map<unknown, unknown[]>(),
   deleteRow: vi.fn(),
   assertAccess: vi.fn(),
+  filters: [] as SQL[],
 }));
 
 vi.mock("../../core/database", () => ({
@@ -19,8 +28,15 @@ vi.mock("../../core/database", () => ({
           from: (table: unknown) => {
             const query = {
               innerJoin: () => query,
-              where: () => query,
+              leftJoin: () => query,
+              orderBy: () => query,
+              where: (filter: SQL) => {
+                fixture.filters.push(filter);
+                return query;
+              },
               for: async () => fixture.rows.get(table) ?? [],
+              then: (resolve: (rows: unknown[]) => unknown) =>
+                Promise.resolve(fixture.rows.get(table) ?? []).then(resolve),
             };
             return query;
           },
@@ -60,6 +76,61 @@ function actor(projectIds: number[], permissionCodes = ["pm.tasks.manage"]) {
     scope: { allProjects: false, constructionProjectIds: projectIds },
   } as AccessContext;
 }
+
+describe("Gantt cross-project dependency reads", () => {
+  const dialect = new MySqlDialect();
+
+  it("searches both directions and requires a visible project at each endpoint", async () => {
+    fixture.filters.length = 0;
+    fixture.rows.set(schema.projectTasks, [{ id: 5 }]);
+    fixture.rows.set(schema.ganttTaskLinks, []);
+
+    await expect(
+      taskCrossProjectLinks(
+        { projectId: 20, taskId: 5 },
+        actor([10], ["pm.view"])
+      )
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(fixture.filters).toHaveLength(0);
+    await taskCrossProjectLinks(
+      { projectId: 10, taskId: 5 },
+      actor([10, 20], ["pm.view"])
+    );
+
+    const [task, links] = fixture.filters.map(filter =>
+      dialect.sqlToQuery(filter)
+    );
+    expect(task.params).toEqual([5, 10]);
+    expect(links.sql).toContain(
+      "`pm_gantt_task_links`.`from_task_id` = ? or `pm_gantt_task_links`.`to_task_id` = ?"
+    );
+    expect(links.sql).toContain("`from_project`.`id` in (?, ?)");
+    expect(links.sql).toContain("`to_project`.`id` in (?, ?)");
+    expect(links.params).toEqual([5, 5, 10, 20, 10, 20]);
+  });
+
+  it("scopes the proposed tasks before checking the dependency graph", async () => {
+    fixture.filters.length = 0;
+    fixture.rows.set(schema.projectTasks, [{ task: { id: 5, projectId: 10 } }]);
+
+    await expect(
+      previewCrossProjectLink(
+        {
+          projectId: 10,
+          fromTaskId: 8,
+          toTaskId: 5,
+          type: "FS",
+          lagDays: 0,
+        },
+        actor([10])
+      )
+    ).rejects.toMatchObject({ domainCode: "NOT_FOUND" });
+
+    const [lookup] = fixture.filters.map(filter => dialect.sqlToQuery(filter));
+    expect(lookup.sql).toContain("`pm_tasks`.`project_id` in (?)");
+    expect(lookup.params).toEqual([8, 5, 10]);
+  });
+});
 
 describe("Gantt write authorization", () => {
   it("requires access to the saved relationship endpoints before deleting it", async () => {

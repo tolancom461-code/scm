@@ -1,6 +1,11 @@
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, type SQL } from "drizzle-orm";
 import * as s from "../../../drizzle/construction";
-import { ganttDate, type GanttCalendar } from "../../../shared/gantt";
+import { businessDate } from "../../../shared/date";
+import {
+  ganttDate,
+  updateTaskExecutionDates,
+  type GanttCalendar,
+} from "../../../shared/gantt";
 import type { Transaction } from "../../core/database";
 import {
   assertConstructionAccess,
@@ -58,7 +63,8 @@ async function synchronizeSharedTask(
   tx: Transaction,
   sourceTaskId: number,
   a: AccessContext,
-  includeStatusAndAssignees: boolean
+  includeStatusAndAssignees: boolean,
+  executionDate: string
 ): Promise<ScheduleEffects> {
   const [membership] = await tx
     .select()
@@ -92,12 +98,17 @@ async function synchronizeSharedTask(
     await assertConstructionAccess(a, projectId, tx);
   await lockRequisitionSourceProjects(tx, projectIds);
   const members = await tx
-    .select({ task: s.projectTasks, settings: s.ganttTaskSettings })
+    .select({
+      task: s.projectTasks,
+      settings: s.ganttTaskSettings,
+      statusCode: s.taskStatuses.code,
+    })
     .from(s.ganttSharedTaskMembers)
     .innerJoin(
       s.projectTasks,
       eq(s.ganttSharedTaskMembers.taskId, s.projectTasks.id)
     )
+    .innerJoin(s.taskStatuses, eq(s.projectTasks.statusId, s.taskStatuses.id))
     .leftJoin(
       s.ganttTaskSettings,
       eq(s.projectTasks.id, s.ganttTaskSettings.taskId)
@@ -171,6 +182,27 @@ async function synchronizeSharedTask(
       .update(s.projectTasks)
       .set(update)
       .where(eq(s.projectTasks.id, member.task.id));
+    if (statusChanged) {
+      const dates = updateTaskExecutionDates(
+        member.settings,
+        member.statusCode,
+        source.statusCode,
+        executionDate
+      );
+      if (
+        dates.actualStartDate !== (member.settings?.actualStartDate ?? null) ||
+        dates.actualEndDate !== (member.settings?.actualEndDate ?? null)
+      ) {
+        const execution = {
+          ...dates,
+          version: (member.settings?.version ?? 0) + 1,
+        };
+        await tx
+          .insert(s.ganttTaskSettings)
+          .values({ taskId: member.task.id, ...execution })
+          .onDuplicateKeyUpdate({ set: execution });
+      }
+    }
     if (assigneesChanged) {
       await tx
         .delete(s.taskAssignees)
@@ -357,6 +389,34 @@ type EditorCalendar = {
   calendar: GanttCalendar;
 };
 type DependencyTask = TaskDates & { projectId: number; isMilestone: boolean };
+type DependencyTaskRow = {
+  task: TaskDates &
+    Pick<
+      typeof s.projectTasks.$inferSelect,
+      "id" | "parentId" | "projectId" | "name"
+    >;
+  status: string;
+  settings: (TaskLocks & { isMilestone: boolean }) | null;
+};
+
+export function selectDependencyTasks(
+  tx: Transaction,
+  filter: SQL | undefined
+) {
+  return tx
+    .select({
+      task: s.projectTasks,
+      status: s.taskStatuses.code,
+      settings: s.ganttTaskSettings,
+    })
+    .from(s.projectTasks)
+    .innerJoin(s.taskStatuses, eq(s.projectTasks.statusId, s.taskStatuses.id))
+    .leftJoin(
+      s.ganttTaskSettings,
+      eq(s.projectTasks.id, s.ganttTaskSettings.taskId)
+    )
+    .where(filter);
+}
 
 export function dependencyDateMovement(
   { type, lagDays }: Pick<ScheduleDependency, "type" | "lagDays">,
@@ -410,74 +470,30 @@ export function dependencyDateMovement(
   });
 }
 
-async function applyDependencyConstraint(
-  tx: Transaction,
-  link: ScheduleDependency,
-  a: AccessContext,
+export function dependencyTargetMovement(
+  link: Pick<ScheduleDependency, "type" | "lagDays">,
+  from: DependencyTaskRow,
+  to: DependencyTaskRow,
   editor?: EditorCalendar
-): Promise<ScheduleEffects> {
-  const { fromTaskId, toTaskId } = link;
-  const sources = await tx
-    .select({ projectId: s.projectTasks.projectId })
-    .from(s.projectTasks)
-    .where(inArray(s.projectTasks.id, [fromTaskId, toTaskId]));
-  for (const source of sources)
-    await assertConstructionAccess(a, source.projectId, tx);
-  await lockRequisitionSourceProjects(
-    tx,
-    sources.map(source => source.projectId)
-  );
-  const rows = await tx
-    .select({
-      task: s.projectTasks,
-      status: s.taskStatuses.code,
-      settings: s.ganttTaskSettings,
-    })
-    .from(s.projectTasks)
-    .innerJoin(s.taskStatuses, eq(s.projectTasks.statusId, s.taskStatuses.id))
-    .leftJoin(
-      s.ganttTaskSettings,
-      eq(s.projectTasks.id, s.ganttTaskSettings.taskId)
-    )
-    .where(inArray(s.projectTasks.id, [fromTaskId, toTaskId]))
-    .for("update");
-  const from = rows.find(row => row.task.id === fromTaskId);
-  const to = rows.find(row => row.task.id === toTaskId);
-  if (!from || !to) blocked("إحدى مهام العلاقة غير موجودة");
-  await assertConstructionAccess(a, from.task.projectId, tx);
-  await assertConstructionAccess(a, to.task.projectId, tx);
-  const sourceProjects = new Set(sources.map(source => source.projectId));
-  await lockRequisitionSourceProjects(
-    tx,
-    [from.task.projectId, to.task.projectId].filter(
-      projectId => !sourceProjects.has(projectId)
-    )
-  );
+) {
   const move = dependencyDateMovement(
     link,
     { ...from.task, isMilestone: from.settings?.isMilestone ?? false },
     { ...to.task, isMilestone: to.settings?.isMilestone ?? false },
     editor
   );
-  if (!move) return noChanges;
-  if (to.status !== "not_started")
+  if (move && to.status !== "not_started")
     blocked(
       `لا يمكن إزاحة المهمة «${to.task.name}» لأنها بدأت فعليًا. عدّل العلاقة أو فكّها.`
     );
-  const projectTasks = await tx
-    .select({
-      task: s.projectTasks,
-      status: s.taskStatuses.code,
-      settings: s.ganttTaskSettings,
-    })
-    .from(s.projectTasks)
-    .innerJoin(s.taskStatuses, eq(s.projectTasks.statusId, s.taskStatuses.id))
-    .leftJoin(
-      s.ganttTaskSettings,
-      eq(s.projectTasks.id, s.ganttTaskSettings.taskId)
-    )
-    .where(eq(s.projectTasks.projectId, to.task.projectId))
-    .for("update");
+  return move;
+}
+
+export function planDependencyMovement<T extends DependencyTaskRow>(
+  toTaskId: number,
+  projectTasks: T[],
+  move: NonNullable<ReturnType<typeof dependencyTargetMovement>>
+) {
   const childrenByParent = new Map<number, number[]>();
   for (const { task } of projectTasks) {
     if (task.parentId === null) continue;
@@ -504,6 +520,53 @@ async function applyDependencyConstraint(
     blocked(
       `تعذر تطبيق العلاقة لأن المهام التالية بدأت أو تواريخها مقفلة: ${blockedTasks.map(row => row.task.name).join("، ")}`
     );
+  return { movingTasks, movingIds: [...moving] };
+}
+
+async function applyDependencyConstraint(
+  tx: Transaction,
+  link: ScheduleDependency,
+  a: AccessContext,
+  editor?: EditorCalendar
+): Promise<ScheduleEffects> {
+  const { fromTaskId, toTaskId } = link;
+  const sources = await tx
+    .select({ projectId: s.projectTasks.projectId })
+    .from(s.projectTasks)
+    .where(inArray(s.projectTasks.id, [fromTaskId, toTaskId]));
+  for (const source of sources)
+    await assertConstructionAccess(a, source.projectId, tx);
+  await lockRequisitionSourceProjects(
+    tx,
+    sources.map(source => source.projectId)
+  );
+  const rows = await selectDependencyTasks(
+    tx,
+    inArray(s.projectTasks.id, [fromTaskId, toTaskId])
+  ).for("update");
+  const from = rows.find(row => row.task.id === fromTaskId);
+  const to = rows.find(row => row.task.id === toTaskId);
+  if (!from || !to) blocked("إحدى مهام العلاقة غير موجودة");
+  await assertConstructionAccess(a, from.task.projectId, tx);
+  await assertConstructionAccess(a, to.task.projectId, tx);
+  const sourceProjects = new Set(sources.map(source => source.projectId));
+  await lockRequisitionSourceProjects(
+    tx,
+    [from.task.projectId, to.task.projectId].filter(
+      projectId => !sourceProjects.has(projectId)
+    )
+  );
+  const move = dependencyTargetMovement(link, from, to, editor);
+  if (!move) return noChanges;
+  const projectTasks = await selectDependencyTasks(
+    tx,
+    eq(s.projectTasks.projectId, to.task.projectId)
+  ).for("update");
+  const { movingTasks, movingIds } = planDependencyMovement(
+    toTaskId,
+    projectTasks,
+    move
+  );
   for (const row of movingTasks)
     await tx
       .update(s.projectTasks)
@@ -515,7 +578,7 @@ async function applyDependencyConstraint(
       .where(eq(s.projectTasks.id, row.task.id));
   const ancestors = await rollUpAncestors(tx, toTaskId, a);
   return {
-    dateTaskIds: [...moving, ...ancestors],
+    dateTaskIds: [...movingIds, ...ancestors],
     projectIds: [to.task.projectId],
   };
 }
@@ -525,6 +588,7 @@ type ScheduleChanges = {
   dependencyTaskIds: number[];
   dependencyLinkIds?: number[];
   editorCalendar?: EditorCalendar;
+  executionDate?: string;
 };
 
 export async function propagateTaskChanges(
@@ -606,11 +670,18 @@ export async function propagateScheduleChanges(
     .from(s.ganttTaskLinks)
     .orderBy(s.ganttTaskLinks.id)
     .for("update");
+  const executionDate = changes.executionDate ?? businessDate();
   const projects = await propagateTaskChanges(
     changes,
     links,
     (taskId, includeStatusAndAssignees) =>
-      synchronizeSharedTask(tx, taskId, a, includeStatusAndAssignees),
+      synchronizeSharedTask(
+        tx,
+        taskId,
+        a,
+        includeStatusAndAssignees,
+        executionDate
+      ),
     link => applyDependencyConstraint(tx, link, a, changes.editorCalendar)
   );
   for (const projectId of projects)

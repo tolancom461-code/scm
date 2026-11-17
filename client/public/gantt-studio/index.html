@@ -534,6 +534,9 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     "بند جاهز للصرف":"بند جاهز للصرف",
     "بنود جاهزة للصرف ({0})":"بنود جاهزة للصرف ({0})",
     "طلبات الاحتياج ({0})":"طلبات الاحتياج ({0})",
+    "ربط بمهمة في مشروع آخر":"ربط بمهمة في مشروع آخر",
+    "العلاقات مع مشاريع أخرى":"العلاقات مع مشاريع أخرى",
+    "احفظ تغييرات المهمة أولًا، ثم افتح علاقاتها مع المشاريع الأخرى.":"احفظ تغييرات المهمة أولًا، ثم افتح علاقاتها مع المشاريع الأخرى.",
   });
   Object.assign(catalogs.en,{
     "جاهز للصرف":"Ready to issue",
@@ -543,6 +546,17 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     "بند جاهز للصرف":"1 item ready to issue",
     "بنود جاهزة للصرف ({0})":"{0} items ready to issue",
     "طلبات الاحتياج ({0})":"Material requisitions ({0})",
+    "ربط بمهمة في مشروع آخر":"Link to a task in another project",
+    "العلاقات مع مشاريع أخرى":"Links to other projects",
+    "احفظ تغييرات المهمة أولًا، ثم افتح علاقاتها مع المشاريع الأخرى.":"Save the task changes first, then open its links to other projects.",
+    "البداية المخططة":"Planned start",
+    "النهاية المخططة":"Planned finish",
+    "البداية الفعلية":"Actual start",
+    "النهاية الفعلية":"Actual finish",
+    "تأخير البداية (أيام عمل)":"Start delay (workdays)",
+    "تأخير النهاية (أيام عمل)":"Finish delay (workdays)",
+    "تأخير النهاية حتى اليوم (أيام عمل)":"Finish delay as of today (workdays)",
+    "الإنجاز حسب الحالة المحفوظة":"Completion from saved status",
   });
   Object.assign(catalogs.ur,{
     "جاهز للصرف":"اجرا کے لیے تیار",
@@ -552,6 +566,17 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     "بند جاهز للصرف":"ایک آئٹم اجرا کے لیے تیار",
     "بنود جاهزة للصرف ({0})":"اجرا کے لیے تیار آئٹمز ({0})",
     "طلبات الاحتياج ({0})":"مواد کی درخواستیں ({0})",
+    "ربط بمهمة في مشروع آخر":"دوسرے منصوبے کے کام سے جوڑیں",
+    "العلاقات مع مشاريع أخرى":"دوسرے منصوبوں سے روابط",
+    "احفظ تغييرات المهمة أولًا، ثم افتح علاقاتها مع المشاريع الأخرى.":"پہلے کام کی تبدیلیاں محفوظ کریں، پھر دوسرے منصوبوں سے اس کے روابط کھولیں۔",
+    "البداية المخططة":"منصوبہ شدہ آغاز",
+    "النهاية المخططة":"منصوبہ شدہ اختتام",
+    "البداية الفعلية":"حقیقی آغاز",
+    "النهاية الفعلية":"حقیقی اختتام",
+    "تأخير البداية (أيام عمل)":"آغاز میں تاخیر (کام کے دن)",
+    "تأخير النهاية (أيام عمل)":"اختتام میں تاخیر (کام کے دن)",
+    "تأخير النهاية حتى اليوم (أيام عمل)":"آج تک اختتام میں تاخیر (کام کے دن)",
+    "الإنجاز حسب الحالة المحفوظة":"محفوظ حالت کے مطابق تکمیل",
   });
   const demoEnglish = {
   "تجهيز مركز خدمات — مشروع تجريبي": "Service centre fit-out — Demo project",
@@ -1663,6 +1688,41 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const links=[...$('predecessorRows').children].map(row=>[...row.querySelectorAll('[data-field]')].map(n=>[n.dataset.field,n.value]));
     return JSON.stringify({fields,links});
   }
+  function persistedTaskId(task) {
+    const id=task?.pmTaskId;
+    return Number.isSafeInteger(id)&&id>0?id:null;
+  }
+  function watchTaskExecution(task) {
+    clearInterval(taskExecutionTimer);
+    taskExecutionSummary.hidden=true;
+    const taskId=persistedTaskId(task);
+    if(!embedded||!taskId)return;
+    const request=()=>sendToHost('pscm:task-execution-request',{taskId});
+    request();
+    taskExecutionTimer=setInterval(request,60_000);
+  }
+  function showTaskExecution(report) {
+    const date=value=>value?fmt(value):'—';
+    const number=new Intl.NumberFormat(I.language);
+    const days=value=>value===null?'—':number.format(value);
+    const entries=[
+      ['البداية المخططة',date(report.startDate)],
+      ['النهاية المخططة',date(report.endDate)],
+      ['البداية الفعلية',date(report.actualStartDate)],
+      ['النهاية الفعلية',date(report.actualEndDate)],
+      ['تأخير البداية (أيام عمل)',days(report.startDelayDays)],
+      [report.executionStatus==='completed'?'تأخير النهاية (أيام عمل)':'تأخير النهاية حتى اليوم (أيام عمل)',days(report.endDelayDays)],
+    ];
+    if(report.progress===100)entries.push(['الإنجاز حسب الحالة المحفوظة',number.format(100)+'%']);
+    taskExecutionSummary.replaceChildren(...entries.map(([label,value])=>{
+      const item=document.createElement('span');
+      const result=document.createElement('bdi');
+      result.textContent=value;
+      item.append(I.t(label)+' ',result);
+      return item;
+    }));
+    taskExecutionSummary.hidden=false;
+  }
   function canLeaveTask() {
     return !$('taskDialog').open || taskSnapshot===formSignature() || confirm(I.t("توجد تغييرات غير محفوظة في التفاصيل. تجاهلها والانتقال إلى المهمة الأخرى؟"));
   }
@@ -1704,6 +1764,9 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     f.elements.start.min=state.project.start;
     $('taskCode').textContent=(id||I.t('NEW TASK'))+' · '+(parentTask?I.t("مهمة فرعية"):I.t("مهمة رئيسية / مستقلة"));
     $('taskDialogTitle').textContent=id?I.t("تفاصيل المهمة"):I.t("إضافة مهمة");
+    taskDependenciesControls.hidden=!(embedded&&persistedTaskId(existing));
+    taskDependenciesBtn.textContent=I.t(readOnly?'العلاقات مع مشاريع أخرى':'ربط بمهمة في مشروع آخر');
+    taskDependenciesError.hidden=true;
     $('deleteTaskBtn').hidden=!id;$('deleteTaskBtn').disabled=hasChildren;
     $('deleteTaskBtn').title=hasChildren?I.t("انقل أو احذف المهام الفرعية أولًا لتجنب فقدانها."):'';
     $('taskFormError').textContent='';
@@ -1721,6 +1784,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     } else $('taskComputed').textContent=I.t("تُحسب النهاية بعد الحفظ وفق التقويم والعلاقات.");
     taskSnapshot=formSignature();
     if(!$('taskDialog').open)openDialog('taskDialog');
+    watchTaskExecution(existing);
     $('taskDialog').querySelector('.dialog-body').scrollTop=0;
   }
   function saveTask(event) {
@@ -2316,6 +2380,18 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       updateTaskMaterialSummaries(message.items);
       return;
     }
+    if(message.type==='pscm:task-dependencies-saved') {
+      const taskId=persistedTaskId(state?.tasks.find(task=>task.id===editingTask));
+      if(taskId&&message.taskId===taskId&&$('taskDialog').open&&taskSnapshot===formSignature()) {
+        closeDialog('taskDialog');
+      }
+      return;
+    }
+    if(message.type==='pscm:task-execution') {
+      const taskId=persistedTaskId(state?.tasks.find(task=>task.id===editingTask));
+      if(taskId&&message.taskId===taskId&&$('taskDialog').open)showTaskExecution(message);
+      return;
+    }
     if(message.type==='pscm:gantt:saving') {setSaveStatus('جارٍ الحفظ…');return;}
     if(message.type==='pscm:gantt:save-failed') {setSaveStatus('تعذر الحفظ؛ التعديلات لا تزال مفتوحة');return;}
     if(message.type==='pscm:gantt:load') {
@@ -2406,6 +2482,36 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     event.preventDefault();event.inputType==='historyUndo'?undo():redo();
   });
   $('taskForm').elements.notBefore.closest('label').insertAdjacentHTML('afterend','<label class="field"><span>أقفال الجدولة</span><span class="inline-checks"><label><input name="startLocked" type="checkbox"> قفل البداية</label><label><input name="endLocked" type="checkbox"> قفل النهاية</label></span><small>القفل يمنع السحب أو التمديد من تجاوز هذا الحد.</small></label>');
+  let taskExecutionTimer;
+  const taskExecutionSummary=document.createElement('div');
+  taskExecutionSummary.className='computed-box';
+  taskExecutionSummary.hidden=true;
+  taskExecutionSummary.setAttribute('aria-live','polite');
+  $('taskComputed').after(taskExecutionSummary);
+  $('taskDialog').addEventListener('close',()=>clearInterval(taskExecutionTimer));
+  const taskDependenciesControls=document.createElement('div');
+  taskDependenciesControls.hidden=true;
+  const taskDependenciesBtn=document.createElement('button');
+  taskDependenciesBtn.type='button';
+  taskDependenciesBtn.className='button compact';
+  taskDependenciesBtn.setAttribute('aria-haspopup','dialog');
+  const taskDependenciesError=document.createElement('p');
+  taskDependenciesError.className='form-error';
+  taskDependenciesError.setAttribute('role','alert');
+  taskDependenciesError.hidden=true;
+  taskDependenciesControls.append(taskDependenciesBtn,taskDependenciesError);
+  $('taskDialog').querySelector('.dialog-body .form-grid').before(taskDependenciesControls);
+  taskDependenciesBtn.onclick=()=>{
+    const taskId=persistedTaskId(state?.tasks.find(task=>task.id===editingTask));
+    if(!embedded||!taskId||!$('taskDialog').open)return;
+    if(!readOnly&&taskSnapshot!==formSignature()) {
+      taskDependenciesError.textContent=I.t('احفظ تغييرات المهمة أولًا، ثم افتح علاقاتها مع المشاريع الأخرى.');
+      taskDependenciesError.hidden=false;
+      return;
+    }
+    taskDependenciesError.hidden=true;
+    sendToHost('pscm:task-dependencies',{taskId});
+  };
   $('taskForm').addEventListener('submit',saveTask);$('linkForm').addEventListener('submit',saveLink);$('calendarForm').addEventListener('submit',saveCalendar);$('projectForm').addEventListener('submit',saveProject);
   $('addSubtaskBtn').onclick=()=>openTask(null,editingTask);
   $('parentTaskBtn').onclick=()=>openTask($('parentTaskBtn').dataset.parent);

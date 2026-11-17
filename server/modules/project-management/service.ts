@@ -1,5 +1,14 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq, inArray, desc, like, or, lt } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  desc,
+  getTableColumns,
+  like,
+  or,
+  lt,
+} from "drizzle-orm";
 import type { z } from "zod";
 import * as s from "../../../drizzle/construction";
 import { users } from "../../../drizzle/schema";
@@ -15,6 +24,11 @@ import {
   employeeInput,
   statusInput,
 } from "../../../shared/construction";
+import { businessDate } from "../../../shared/date";
+import {
+  taskExecutionStatus,
+  updateTaskExecutionDates,
+} from "../../../shared/gantt";
 import { projectHasCmmsLocation } from "../../../shared/material-requisitions";
 import { database, type Transaction } from "../../core/database";
 import {
@@ -28,6 +42,7 @@ import { once } from "../../core/idempotency";
 import { recordChange } from "../../core/audit";
 import { DomainError } from "../../core/errors";
 import { assertDraftRequisitionSourceStarts } from "../material-requisitions/schedule-guards";
+import { readGanttCalendarSettings } from "../gantt/calendar";
 import {
   calendarDays,
   enforceProjectBounds,
@@ -123,10 +138,20 @@ export async function directory() {
 export async function detail(id: number, a: AccessContext) {
   const project = await assertConstructionAccess(a, id);
   const db = await database();
-  const [tasks, assignees, events] = await Promise.all([
+  const [tasks, assignees, events, [calendar]] = await Promise.all([
     db
-      .select()
+      .select({
+        ...getTableColumns(s.projectTasks),
+        statusCode: s.taskStatuses.code,
+        actualStartDate: s.ganttTaskSettings.actualStartDate,
+        actualEndDate: s.ganttTaskSettings.actualEndDate,
+      })
       .from(s.projectTasks)
+      .innerJoin(s.taskStatuses, eq(s.taskStatuses.id, s.projectTasks.statusId))
+      .leftJoin(
+        s.ganttTaskSettings,
+        eq(s.ganttTaskSettings.taskId, s.projectTasks.id)
+      )
       .where(eq(s.projectTasks.projectId, id))
       .orderBy(s.projectTasks.id),
     db
@@ -149,15 +174,25 @@ export async function detail(id: number, a: AccessContext) {
       .leftJoin(users, eq(s.projectEvents.actorId, users.id))
       .where(eq(s.projectEvents.projectId, id))
       .orderBy(desc(s.projectEvents.id)),
+    db
+      .select({
+        workingDays: s.ganttProjectSettings.workingDays,
+        hoursPerDay: s.ganttProjectSettings.hoursPerDay,
+        holidays: s.ganttProjectSettings.holidays,
+      })
+      .from(s.ganttProjectSettings)
+      .where(eq(s.ganttProjectSettings.projectId, id)),
   ]);
   return {
     project,
-    tasks: tasks.map(t => ({
-      ...t,
+    tasks: tasks.map(({ statusCode, ...task }) => ({
+      ...task,
+      executionStatus: taskExecutionStatus(statusCode),
       employeeIds: assignees
-        .filter(e => e.taskId === t.id)
+        .filter(e => e.taskId === task.id)
         .map(e => e.employeeId),
     })),
+    calendar: readGanttCalendarSettings(calendar),
     events,
   };
 }
@@ -437,10 +472,15 @@ export async function saveTask(
             conflicts.join("، ") +
             " / Task dates conflict with parent or child tasks"
         );
-      const [status] = await tx
+      const statusIds =
+        original && original.statusId !== input.statusId
+          ? [input.statusId, original.statusId]
+          : [input.statusId];
+      const selectedStatuses = await tx
         .select()
         .from(s.taskStatuses)
-        .where(eq(s.taskStatuses.id, input.statusId));
+        .where(inArray(s.taskStatuses.id, statusIds));
+      const status = selectedStatuses.find(item => item.id === input.statusId);
       if (!status) throw new DomainError("INVALID_REFERENCE");
       if (status.code !== "not_started" && parent) {
         const byId = new Map(tasks.map(task => [task.id, task]));
@@ -489,16 +529,17 @@ export async function saveTask(
         updatedAt: new Date(),
       };
       let id = input.id;
+      let taskSchedule: typeof s.ganttTaskSettings.$inferSelect | undefined;
       if (original) {
         await ensureTaskSettings(tx, [original.id]);
-        const [schedule] = await tx
+        [taskSchedule] = await tx
           .select()
           .from(s.ganttTaskSettings)
           .where(eq(s.ganttTaskSettings.taskId, original.id))
           .for("update");
-        if (schedule?.startLocked && original.startDate !== input.startDate)
+        if (taskSchedule?.startLocked && original.startDate !== input.startDate)
           invalid("بداية المهمة مقفلة. افتح القفل من Gantt قبل تغيير التاريخ.");
-        if (schedule?.endLocked && original.endDate !== input.endDate)
+        if (taskSchedule?.endLocked && original.endDate !== input.endDate)
           invalid("نهاية المهمة مقفلة. افتح القفل من Gantt قبل تغيير التاريخ.");
       }
       if (original) {
@@ -514,22 +555,26 @@ export async function saveTask(
           .insert(s.projectTasks)
           .values({ ...data, createdBy: a.user.id });
         id = Number(r.insertId);
+        await ensureTaskSettings(tx, [id]);
       }
       await tx
         .insert(s.taskAssignees)
         .values(
           input.employeeIds.map(employeeId => ({ taskId: id!, employeeId }))
         );
-      await ensureTaskSettings(tx, [id!]);
-      const [taskSchedule] = await tx
-        .select()
-        .from(s.ganttTaskSettings)
-        .where(eq(s.ganttTaskSettings.taskId, id!));
+      const executionDate = businessDate(data.updatedAt);
+      const executionDates = updateTaskExecutionDates(
+        taskSchedule,
+        selectedStatuses.find(item => item.id === original?.statusId)?.code,
+        status.code,
+        executionDate
+      );
       await tx
         .update(s.ganttTaskSettings)
         .set({
           plannedStartDate: taskSchedule?.plannedStartDate ?? input.startDate,
           plannedEndDate: taskSchedule?.plannedEndDate ?? input.endDate,
+          ...executionDates,
           version: (taskSchedule?.version ?? 0) + 1,
         })
         .where(eq(s.ganttTaskSettings.taskId, id!));
@@ -543,6 +588,7 @@ export async function saveTask(
         {
           sharedTaskIds: [id!, ...ancestors],
           dependencyTaskIds: datesChanged ? [id!, ...ancestors] : ancestors,
+          executionDate,
         },
         a
       );

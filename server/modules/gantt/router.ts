@@ -22,6 +22,29 @@ export const ganttRouter = router({
   sharedDirectory: requiring("pm.view").query(({ ctx }) =>
     service.sharedDirectory(ctx.access!)
   ),
+  taskCrossProjectLinks: requiring("pm.view")
+    .input(
+      z.object({
+        projectId: z.number().int().positive(),
+        taskId: z.number().int().positive(),
+      })
+    )
+    .query(({ input, ctx }) =>
+      service.taskCrossProjectLinks(input, ctx.access!)
+    ),
+  previewCrossProjectLink: requiring("pm.tasks.manage")
+    .input(
+      ganttLinkInput.pick({
+        projectId: true,
+        fromTaskId: true,
+        toTaskId: true,
+        type: true,
+        lagDays: true,
+      })
+    )
+    .query(({ input, ctx }) =>
+      service.previewCrossProjectLink(input, ctx.access!)
+    ),
   saveProjectSchedule: requiring("pm.tasks.manage")
     .input(ganttProjectScheduleInput)
     .mutation(({ input, ctx }) =>

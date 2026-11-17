@@ -6,9 +6,11 @@ import type { Locale } from "@/lib/i18n";
 import type { AppRouter } from "../../../../server/routers";
 import { Modal } from "@/components/Modal";
 import { businessDate } from "@shared/date";
+import { taskExecutionMetrics, taskExecutionStatus } from "@shared/gantt";
 import { MaterialRequisitionForm } from "../material-requisitions/MaterialRequisitions";
 import { mrText } from "../material-requisitions/copy";
 import { TaskMaterialPanel } from "../project-management/TaskMaterialProgress";
+import { TaskDependencyPanel } from "./TaskDependencyPanel";
 import "./gantt.css";
 
 type User = { id: number; permissions: string[] };
@@ -236,7 +238,7 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
   const t = (a: string, e: string, u: string) =>
       locale === "ar" ? a : locale === "ur" ? u : e,
     canEdit = user.permissions.includes("pm.tasks.manage"),
-    canViewMaterials = user.permissions.includes("pm.view"),
+    canView = user.permissions.includes("pm.view"),
     canCreateRequisition = user.permissions.includes(
       "materialRequisitions.create"
     );
@@ -246,7 +248,6 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
     [frameKey, setFrameKey] = useState(0),
     [dialog, setDialog] = useState<ScheduleAction | null>(null),
     [sharedOpen, setSharedOpen] = useState(false),
-    [crossOpen, setCrossOpen] = useState(false),
     [hasQueuedEdits, setHasQueuedEdits] = useState(false),
     [saveFailed, setSaveFailed] = useState(false),
     [requisition, setRequisition] = useState<{
@@ -254,6 +255,8 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
       taskId: number | null;
     } | null>(null),
     [materialTaskId, setMaterialTaskId] = useState<number | null>(null),
+    [dependencyTaskId, setDependencyTaskId] = useState<number | null>(null),
+    [waitingForStudioSave, setWaitingForStudioSave] = useState(false),
     [openingRequisition, setOpeningRequisition] = useState(false);
   const detail = trpc.gantt.detail.useQuery(
       { projectId },
@@ -262,13 +265,13 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
     taskMaterials = trpc.projectManagement.taskMaterialSummary.useQuery(
       { projectId },
       {
-        enabled: canViewMaterials && projectId > 0 && Boolean(detail.data),
+        enabled: canView && projectId > 0 && Boolean(detail.data),
         refetchInterval: 30_000,
         retry: false,
       }
     ),
     directory = trpc.gantt.sharedDirectory.useQuery(undefined, {
-      enabled: sharedOpen || crossOpen,
+      enabled: sharedOpen,
     }),
     requisitionDirectory = trpc.materialRequisitions.directory.useQuery(
       undefined,
@@ -278,11 +281,9 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
     ),
     utils = trpc.useUtils(),
     frame = useRef<HTMLIFrameElement>(null),
+    executionTaskId = useRef<number | null>(null),
     saving = useRef(false),
-    pendingRequisition = useRef<{
-      projectId: number;
-      taskId: number | null;
-    } | null>(null),
+    afterStudioSave = useRef<(() => void) | null>(null),
     openFreshRequisition = useRef<
       (target: { projectId: number; taskId: number | null }) => void
     >(() => {}),
@@ -299,10 +300,25 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
       { ...data, type, channel, projectId },
       window.location.origin
     );
+  const postTaskExecution = (taskId: number) => {
+    const data = detail.data;
+    const task = data?.tasks.find(task => task.id === taskId);
+    if (!data || !task) return;
+    const dates = {
+      startDate: task.startDate,
+      endDate: task.endDate,
+      actualStartDate: task.actualStartDate,
+      actualEndDate: task.actualEndDate,
+      executionStatus: taskExecutionStatus(task.statusCode),
+    };
+    post("pscm:task-execution", {
+      taskId,
+      ...dates,
+      ...taskExecutionMetrics(dates, data.settings, businessDate()),
+    });
+  };
   const materialSummaries =
-    canViewMaterials && !taskMaterials.isError
-      ? taskMaterials.data?.items
-      : undefined;
+    canView && !taskMaterials.isError ? taskMaterials.data?.items : undefined;
   const draftKey = `pscm:gantt-draft-v1:${user.id}:${projectId}`;
   const storeDraft = () => {
     try {
@@ -352,8 +368,9 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
         submitted.current = null;
       }
       storeDraft();
-      pendingRequisition.current = null;
+      afterStudioSave.current = null;
       setSaveFailed(true);
+      setWaitingForStudioSave(false);
       setOpeningRequisition(false);
       post("pscm:gantt:save-failed");
       toast.error(e.message);
@@ -367,7 +384,6 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
     void utils.projectManagement.invalidate();
     setDialog(null);
     setSharedOpen(false);
-    setCrossOpen(false);
     toast.success(
       t(
         "تم تحديث Gantt ووحدة المشاريع",
@@ -381,10 +397,6 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
       onError: e => toast.error(e.message),
     }),
     shared = trpc.gantt.saveSharedGroup.useMutation({
-      onSuccess: refreshed,
-      onError: e => toast.error(e.message),
-    }),
-    crossLink = trpc.gantt.saveLink.useMutation({
       onSuccess: refreshed,
       onError: e => toast.error(e.message),
     });
@@ -427,16 +439,20 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
       )
       .finally(() => setOpeningRequisition(false));
   };
-  const requestRequisition = (taskId: number | null) => {
-    if (!canCreateRequisition || !projectId || openingRequisition || saveFailed)
-      return;
-    const target = { projectId, taskId };
+  const runAfterStudioSave = (action: () => void) => {
+    if (afterStudioSave.current || saveFailed) return;
     if (timer.current) clearTimeout(timer.current);
     if (submitted.current || queued.current) {
-      setOpeningRequisition(true);
-      pendingRequisition.current = target;
+      setWaitingForStudioSave(true);
+      afterStudioSave.current = action;
       flush.current();
-    } else openFreshRequisition.current(target);
+    } else action();
+  };
+  const requestRequisition = (taskId: number | null) => {
+    if (!canCreateRequisition || !projectId || openingRequisition) return;
+    runAfterStudioSave(() =>
+      openFreshRequisition.current({ projectId, taskId })
+    );
   };
   useEffect(() => {
     if (!projectId && projects.data?.length)
@@ -505,7 +521,7 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
     }
     if (message.type === "pscm:open-task-materials") {
       if (
-        canViewMaterials &&
+        canView &&
         Number.isSafeInteger(message.taskId) &&
         materialSummaries?.some(item => item.taskId === message.taskId) &&
         detail.data?.tasks.some(task => task.id === message.taskId)
@@ -513,9 +529,29 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
         setMaterialTaskId(message.taskId);
       return;
     }
+    if (message.type === "pscm:task-dependencies") {
+      const taskId = message.taskId;
+      if (
+        canView &&
+        !openingRequisition &&
+        Number.isSafeInteger(taskId) &&
+        detail.data?.tasks.some(task => task.id === taskId)
+      )
+        runAfterStudioSave(() => setDependencyTaskId(taskId));
+      return;
+    }
+    if (message.type === "pscm:task-execution-request") {
+      const taskId = message.taskId;
+      if (canView && Number.isSafeInteger(taskId) && taskId > 0) {
+        executionTaskId.current = taskId;
+        postTaskExecution(taskId);
+      }
+      return;
+    }
     if (message.type === "pscm:gantt:rebase-failed") {
       setSaveFailed(true);
-      pendingRequisition.current = null;
+      afterStudioSave.current = null;
+      setWaitingForStudioSave(false);
       setOpeningRequisition(false);
       return;
     }
@@ -558,10 +594,11 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
     setSaveFailed(false);
     if (timer.current) clearTimeout(timer.current);
     if (pending) timer.current = setTimeout(() => flush.current(), 100);
-    else if (pendingRequisition.current) {
-      const target = pendingRequisition.current;
-      pendingRequisition.current = null;
-      openFreshRequisition.current(target);
+    else if (afterStudioSave.current) {
+      const action = afterStudioSave.current;
+      afterStudioSave.current = null;
+      setWaitingForStudioSave(false);
+      action();
     }
   };
   useEffect(() => {
@@ -587,6 +624,10 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
     if (readyProject.current === projectId)
       post("pscm:task-materials", { items: materialSummaries ?? [] });
   }, [materialSummaries, projectId]);
+  useEffect(() => {
+    if (readyProject.current === projectId && executionTaskId.current !== null)
+      postTaskExecution(executionTaskId.current);
+  }, [detail.data, projectId]);
   useEffect(() => {
     if (
       !state ||
@@ -629,6 +670,9 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
     setFrameKey(v => v + 1);
   };
   const project = detail.data?.project;
+  const dependencyTask = detail.data?.tasks.find(
+    task => task.id === dependencyTaskId
+  );
   const canStart =
     canEdit &&
     user.permissions.includes("pm.start") &&
@@ -643,10 +687,17 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
         <label>{t("مشروع PSCM", "PSCM project", "PSCM منصوبہ")}</label>
         <select
           value={projectId}
-          disabled={save.isPending || hasQueuedEdits || openingRequisition}
+          disabled={
+            save.isPending ||
+            hasQueuedEdits ||
+            waitingForStudioSave ||
+            openingRequisition
+          }
           onChange={e => {
             readyProject.current = 0;
+            executionTaskId.current = null;
             setMaterialTaskId(null);
+            setDependencyTaskId(null);
             setProjectId(Number(e.target.value));
           }}
         >
@@ -679,15 +730,6 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
             >
               {t("مهمة مشتركة", "Shared task", "مشترکہ کام")}
             </button>
-            <button
-              disabled={hasQueuedEdits}
-              onClick={() => setCrossOpen(true)}
-            >
-              {t("ربط مشروعين", "Cross-project link", "منصوبوں کے درمیان ربط")}
-              {detail.data?.crossProjectLinks.length
-                ? ` (${detail.data.crossProjectLinks.length})`
-                : ""}
-            </button>
           </div>
         )}
         {canStart && (
@@ -703,7 +745,9 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
         {canCreateRequisition && project && (
           <div className="gantt-schedule-actions">
             <button
-              disabled={openingRequisition || saveFailed}
+              disabled={
+                openingRequisition || waitingForStudioSave || saveFailed
+              }
               onClick={() => requestRequisition(null)}
             >
               + {mrText(locale, "request")}
@@ -763,7 +807,7 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
             "Approved Gantt chart",
             "منظور شدہ گانٹ چارٹ"
           )}
-          src={`/gantt-studio/index.html?v=pscm-bridge-2&project=${projectId}&channel=${channel}&requisitions=${canCreateRequisition ? "1" : "0"}`}
+          src={`/gantt-studio/index.html?v=pscm-bridge-4&project=${projectId}&channel=${channel}&requisitions=${canCreateRequisition ? "1" : "0"}`}
           className="gantt-studio-frame"
         />
       )}
@@ -773,6 +817,19 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
           taskId={materialTaskId}
           locale={locale}
           close={() => setMaterialTaskId(null)}
+        />
+      )}
+      {dependencyTask && (
+        <TaskDependencyPanel
+          projectId={projectId}
+          taskId={dependencyTask.id}
+          taskName={dependencyTask.name}
+          locale={locale}
+          canEdit={canEdit}
+          onClose={() => setDependencyTaskId(null)}
+          onSaved={() =>
+            post("pscm:task-dependencies-saved", { taskId: dependencyTask.id })
+          }
         />
       )}
       {dialog && project && (
@@ -802,25 +859,6 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
           close={() => setSharedOpen(false)}
           save={data =>
             shared.mutate({ key: uid(), version: 0, action: "save", ...data })
-          }
-        />
-      )}
-      {crossOpen && (
-        <CrossProjectDialog
-          locale={locale}
-          projectId={projectId}
-          data={directory.data}
-          pending={crossLink.isPending}
-          close={() => setCrossOpen(false)}
-          save={data =>
-            crossLink.mutate({
-              key: uid(),
-              id: undefined,
-              version: 0,
-              action: "save",
-              projectId,
-              ...data,
-            })
           }
         />
       )}
@@ -1168,155 +1206,6 @@ function SharedDialog({
             "ہم آہنگ ربط بنائیں"
           )}
         </button>
-      </form>
-    </Modal>
-  );
-}
-
-function CrossProjectDialog({
-  locale,
-  projectId,
-  data,
-  pending,
-  close,
-  save,
-}: {
-  locale: Locale;
-  projectId: number;
-  data: Shared | undefined;
-  pending: boolean;
-  close: () => void;
-  save: (data: {
-    fromTaskId: number;
-    toTaskId: number;
-    type: "FS" | "SS" | "FF" | "SF";
-    lagDays: number;
-  }) => void;
-}) {
-  const t = (a: string, e: string, u: string) =>
-    locale === "ar" ? a : locale === "ur" ? u : e;
-  const [fromTaskId, setFromTaskId] = useState(0),
-    [toTaskId, setToTaskId] = useState(0),
-    [type, setType] = useState<"FS" | "SS" | "FF" | "SF">("FS"),
-    [lagDays, setLagDays] = useState(0);
-  const option = (task: Shared["tasks"][number]) => {
-    const project = data?.projects.find(item => item.id === task.projectId);
-    return `${project?.number ?? "—"} — ${task.name}`;
-  };
-  const valid =
-    fromTaskId > 0 &&
-    toTaskId > 0 &&
-    fromTaskId !== toTaskId &&
-    data?.tasks.find(task => task.id === fromTaskId)?.projectId !==
-      data?.tasks.find(task => task.id === toTaskId)?.projectId;
-  return (
-    <Modal
-      title={t(
-        "علاقة زمنية بين مشروعين",
-        "Cross-project dependency",
-        "منصوبوں کے درمیان انحصار"
-      )}
-      close={close}
-    >
-      <form
-        className="gantt-control-form"
-        onSubmit={event => {
-          event.preventDefault();
-          save({ fromTaskId, toTaskId, type, lagDays });
-        }}
-      >
-        <p>
-          {t(
-            "مثال: لا تبدأ مهمة التركيب في المشروع الثاني حتى تنتهي مهمة التصنيع في المشروع الأول. إذا تعارضت الإزاحة مع قفل أو مهمة بدأت فعليًا، يُرفض الربط مع توضيح السبب.",
-            "Example: installation in project two cannot start until manufacturing in project one finishes. Locked or started work blocks the link with a clear reason.",
-            "مثلاً دوسرے منصوبے میں تنصیب پہلے منصوبے کی تیاری مکمل ہونے کے بعد شروع ہو سکتی ہے۔ مقفل یا شروع شدہ کام ربط کو روکے گا اور وجہ دکھائی جائے گی۔"
-          )}
-        </p>
-        <label>
-          {t("المهمة السابقة", "Predecessor task", "پہلا کام")}
-          <select
-            required
-            value={fromTaskId}
-            onChange={e => setFromTaskId(Number(e.target.value))}
-          >
-            <option value={0}>
-              {t("اختر المهمة", "Choose task", "کام منتخب کریں")}
-            </option>
-            {data?.tasks.map(task => (
-              <option key={task.id} value={task.id}>
-                {option(task)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {t("المهمة التابعة", "Successor task", "اگلا کام")}
-          <select
-            required
-            value={toTaskId}
-            onChange={e => setToTaskId(Number(e.target.value))}
-          >
-            <option value={0}>
-              {t(
-                "اختر مهمة من مشروع آخر",
-                "Choose a task in another project",
-                "دوسرے منصوبے کا کام منتخب کریں"
-              )}
-            </option>
-            {data?.tasks.map(task => (
-              <option key={task.id} value={task.id}>
-                {option(task)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {t("نوع العلاقة", "Dependency type", "ربط کی قسم")}
-          <select
-            value={type}
-            onChange={e => setType(e.target.value as typeof type)}
-          >
-            <option value="FS">
-              FS — {t("نهاية ثم بداية", "Finish to start", "اختتام سے آغاز")}
-            </option>
-            <option value="SS">
-              SS — {t("بداية مع بداية", "Start to start", "آغاز سے آغاز")}
-            </option>
-            <option value="FF">
-              FF — {t("نهاية مع نهاية", "Finish to finish", "اختتام سے اختتام")}
-            </option>
-            <option value="SF">
-              SF — {t("بداية ثم نهاية", "Start to finish", "آغاز سے اختتام")}
-            </option>
-          </select>
-        </label>
-        <label>
-          {t("الفاصل بالأيام", "Lag days", "وقفے کے دن")}
-          <input
-            type="number"
-            min={-2000}
-            max={2000}
-            value={lagDays}
-            onChange={e => setLagDays(Number(e.target.value))}
-          />
-        </label>
-        <button className="primary" disabled={pending || !valid}>
-          {t(
-            "حفظ العلاقة وتطبيق الجدولة",
-            "Save dependency and reschedule",
-            "ربط محفوظ کریں اور شیڈول دوبارہ بنائیں"
-          )}
-        </button>
-        {!valid && fromTaskId > 0 && toTaskId > 0 && (
-          <small>
-            {t(
-              "يجب اختيار مهمتين من مشروعين مختلفين.",
-              "Choose tasks from two different projects.",
-              "دو الگ منصوبوں سے کام منتخب کریں۔"
-            )}
-          </small>
-        )}
-        <input type="hidden" value={projectId} readOnly />
       </form>
     </Modal>
   );

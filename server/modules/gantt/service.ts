@@ -1,5 +1,15 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, inArray, notExists, notInArray, or } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  ne,
+  notExists,
+  notInArray,
+  or,
+} from "drizzle-orm";
+import { alias } from "drizzle-orm/mysql-core";
 import type { z } from "zod";
 import * as s from "../../../drizzle/construction";
 import {
@@ -14,10 +24,12 @@ import {
   ganttStudioStateInput,
   ganttProjectScheduleInput,
   ganttSharedGroupInput,
-  type GanttHoliday,
+  taskExecutionStatus,
+  updateTaskExecutionDates,
   type GanttLink,
   type GanttTask,
 } from "../../../shared/gantt";
+import { businessDate } from "../../../shared/date";
 import { database, type Transaction } from "../../core/database";
 import { projectTransition } from "../../../shared/construction";
 import { once } from "../../core/idempotency";
@@ -36,25 +48,21 @@ import {
 } from "../material-requisitions/schedule-guards";
 import {
   calendarDays,
+  dependencyTargetMovement,
   enforceProjectBounds,
   ensureTaskSettings,
+  planDependencyMovement,
   propagateScheduleChanges,
+  selectDependencyTasks,
   shiftIso,
 } from "./scheduling";
 import { touchGanttStudioStates } from "./studio-state";
+import { parseGanttJson, readGanttCalendarSettings } from "./calendar";
 
 const MAX_STUDIO_STATE_BYTES = 8 * 1024 * 1024;
 
 function invalid(message: string): never {
   throw new TRPCError({ code: "BAD_REQUEST", message });
-}
-
-function parseJson<T>(value: string | null | undefined, fallback: T): T {
-  try {
-    return value ? (JSON.parse(value) as T) : fallback;
-  } catch {
-    return fallback;
-  }
 }
 
 function studioTaskEnd(
@@ -106,6 +114,23 @@ function assertAcyclicLinks(
     invalid("العلاقات تُنشئ دورة مغلقة في الجدول الزمني");
 }
 
+type LinkEdge = Pick<GanttLink, "fromTaskId" | "toTaskId" | "type">;
+function assertLinkCanBeAdded(
+  link: LinkEdge,
+  existing: readonly (Omit<LinkEdge, "type"> & { type: string })[]
+) {
+  if (
+    existing.some(
+      other =>
+        other.fromTaskId === link.fromTaskId &&
+        other.toTaskId === link.toTaskId &&
+        other.type === link.type
+    )
+  )
+    invalid("هذه العلاقة مسجلة مسبقًا");
+  assertAcyclicLinks([...existing, link]);
+}
+
 function remapBaselineTaskIds(
   baseline: z.infer<typeof ganttStudioStateInput>["state"]["baseline"],
   ids: ReadonlyMap<string, number>
@@ -125,14 +150,6 @@ function studioStatusCode(value: unknown) {
     ? "done"
     : value === "in_progress"
       ? "working"
-      : "not_started";
-}
-
-function projectStatusToStudio(code: string) {
-  return code === "done"
-    ? "completed"
-    : code === "working"
-      ? "in_progress"
       : "not_started";
 }
 
@@ -247,9 +264,7 @@ async function readDetail(
   ]);
   const settingsRow = settingRows[0];
   const settings = {
-    workingDays: parseJson<number[]>(settingsRow?.workingDays, [0, 1, 2, 3, 4]),
-    hoursPerDay: settingsRow?.hoursPerDay ?? 8,
-    holidays: parseJson<GanttHoliday[]>(settingsRow?.holidays, []),
+    ...readGanttCalendarSettings(settingsRow),
     mode: (settingsRow?.mode ?? "smart") as "smart" | "free",
     statusDate: settingsRow?.statusDate ?? null,
     deadline: settingsRow?.deadline ?? null,
@@ -315,7 +330,7 @@ async function readDetail(
     analysis,
     studio: studioRows[0]
       ? {
-          state: parseJson<unknown>(studioRows[0].stateJson, null),
+          state: parseGanttJson<unknown>(studioRows[0].stateJson, null),
           version: studioRows[0].version,
           updatedAt: studioRows[0].updatedAt,
         }
@@ -374,6 +389,135 @@ export async function sharedDirectory(a: AccessContext) {
     tasks,
     groups: groups.filter(group => groupIds.has(group.id)),
   };
+}
+
+export async function taskCrossProjectLinks(
+  { projectId, taskId }: { projectId: number; taskId: number },
+  a: AccessContext
+) {
+  return (await database()).transaction(
+    async tx => {
+      await assertConstructionAccess(a, projectId, tx);
+      const [task] = await tx
+        .select({ id: s.projectTasks.id })
+        .from(s.projectTasks)
+        .where(
+          and(
+            eq(s.projectTasks.id, taskId),
+            eq(s.projectTasks.projectId, projectId)
+          )
+        );
+      if (!task) throw new DomainError("NOT_FOUND");
+
+      const link = s.ganttTaskLinks;
+      const fromTask = alias(s.projectTasks, "from_task");
+      const toTask = alias(s.projectTasks, "to_task");
+      const fromProject = alias(s.constructionProjects, "from_project");
+      const toProject = alias(s.constructionProjects, "to_project");
+      const rows = await tx
+        .select({
+          id: link.id,
+          version: link.version,
+          type: link.type,
+          lagDays: link.lagDays,
+          from: {
+            taskId: fromTask.id,
+            taskName: fromTask.name,
+            projectId: fromProject.id,
+            projectName: fromProject.name,
+            projectNumber: fromProject.number,
+          },
+          to: {
+            taskId: toTask.id,
+            taskName: toTask.name,
+            projectId: toProject.id,
+            projectName: toProject.name,
+            projectNumber: toProject.number,
+          },
+        })
+        .from(link)
+        .innerJoin(fromTask, eq(link.fromTaskId, fromTask.id))
+        .innerJoin(toTask, eq(link.toTaskId, toTask.id))
+        .innerJoin(fromProject, eq(fromTask.projectId, fromProject.id))
+        .innerJoin(toProject, eq(toTask.projectId, toProject.id))
+        .where(
+          and(
+            or(eq(link.fromTaskId, taskId), eq(link.toTaskId, taskId)),
+            ne(fromProject.id, toProject.id),
+            constructionScope(a, fromProject.id),
+            constructionScope(a, toProject.id)
+          )
+        )
+        .orderBy(link.id);
+      return rows.map(row => ({ ...row, type: row.type as GanttLink["type"] }));
+    },
+    { isolationLevel: "repeatable read" }
+  );
+}
+
+type LinkPreviewInput = Pick<
+  z.infer<typeof ganttLinkInput>,
+  "projectId" | "fromTaskId" | "toTaskId" | "type" | "lagDays"
+>;
+
+export async function previewCrossProjectLink(
+  input: LinkPreviewInput,
+  a: AccessContext
+) {
+  return (await database()).transaction(
+    async tx => {
+      await assertConstructionAccess(a, input.projectId, tx);
+      if (input.fromTaskId === input.toTaskId)
+        invalid("لا يمكن ربط المهمة بنفسها");
+
+      const rows = await selectDependencyTasks(
+        tx,
+        and(
+          inArray(s.projectTasks.id, [input.fromTaskId, input.toTaskId]),
+          constructionScope(a, s.projectTasks.projectId)
+        )
+      );
+      const from = rows.find(row => row.task.id === input.fromTaskId);
+      const to = rows.find(row => row.task.id === input.toTaskId);
+      if (!from || !to || to.task.projectId !== input.projectId)
+        throw new DomainError("NOT_FOUND");
+      if (from.task.projectId === to.task.projectId)
+        invalid("اختر مهمة من مشروع آخر");
+
+      const existing = await tx
+        .select({
+          fromTaskId: s.ganttTaskLinks.fromTaskId,
+          toTaskId: s.ganttTaskLinks.toTaskId,
+          type: s.ganttTaskLinks.type,
+        })
+        .from(s.ganttTaskLinks);
+      assertLinkCanBeAdded(input, existing);
+
+      const { startDate: currentStartDate, endDate: currentEndDate } = to.task;
+      const move = dependencyTargetMovement(input, from, to);
+      if (!move)
+        return {
+          currentStartDate,
+          currentEndDate,
+          startDate: currentStartDate,
+          endDate: currentEndDate,
+          changed: false,
+        };
+      const projectTasks = await selectDependencyTasks(
+        tx,
+        eq(s.projectTasks.projectId, to.task.projectId)
+      );
+      const { movingTasks } = planDependencyMovement(
+        to.task.id,
+        projectTasks,
+        move
+      );
+      const next = movingTasks.find(row => row.task.id === to.task.id);
+      if (!next) throw new DomainError("NOT_FOUND");
+      return { currentStartDate, currentEndDate, ...next.dates, changed: true };
+    },
+    { isolationLevel: "repeatable read" }
+  );
 }
 
 export async function saveProjectSchedule(
@@ -899,7 +1043,7 @@ export async function saveStudioState(
             !old ||
             old.parentId !== newParent ||
             (!parents.has(task.id) &&
-              projectStatusToStudio(
+              taskExecutionStatus(
                 statusById.get(old.statusId)?.code ?? "not_started"
               ) !== (task.status ?? task.executionStatus))
           ) {
@@ -943,14 +1087,14 @@ export async function saveStudioState(
             parents.has(task.id) &&
             !parentsWithStatusChanges.has(task.id);
           const requestedStudioStatus = preserveParentStatus
-            ? projectStatusToStudio(currentStatusCode)
+            ? taskExecutionStatus(currentStatusCode)
             : (task.status ?? task.executionStatus);
           const preservedStatusCode = preserveParentStatus
             ? currentStatusCode
             : (task.pmStatusCode ?? currentStatusCode);
           const statusCode =
             preservedStatusCode &&
-            projectStatusToStudio(preservedStatusCode) ===
+            taskExecutionStatus(preservedStatusCode) ===
               requestedStudioStatus &&
             statusByCode.has(preservedStatusCode)
               ? preservedStatusCode
@@ -1171,6 +1315,7 @@ export async function saveStudioState(
           updated = 0;
         const sharedTaskIds: number[] = [];
         const dependencyTaskIds: number[] = [];
+        const executionDate = businessDate();
         for (const task of ordered) {
           const item = desired.get(task.id)!;
           const parentId = task.parentId
@@ -1194,10 +1339,12 @@ export async function saveStudioState(
               item.startDate,
             plannedEndDate:
               currentSetting?.plannedEndDate ?? task.plannedEnd ?? item.endDate,
-            actualStartDate:
-              task.actualStart ?? currentSetting?.actualStartDate ?? null,
-            actualEndDate:
-              task.actualEnd ?? currentSetting?.actualEndDate ?? null,
+            ...updateTaskExecutionDates(
+              currentSetting,
+              existing && statusById.get(existing.statusId)?.code,
+              item.statusCode,
+              executionDate
+            ),
             startLocked:
               task.startLocked ?? currentSetting?.startLocked ?? false,
             endLocked: task.endLocked ?? currentSetting?.endLocked ?? false,
@@ -1372,6 +1519,7 @@ export async function saveStudioState(
             sharedTaskIds,
             dependencyTaskIds,
             dependencyLinkIds,
+            executionDate,
             editorCalendar: {
               projectId: input.projectId,
               mode: input.state.project.mode,
@@ -1386,10 +1534,18 @@ export async function saveStudioState(
           a.user.id
         );
         const freshTasks = await tx
-          .select()
+          .select({
+            task: s.projectTasks,
+            actualStartDate: s.ganttTaskSettings.actualStartDate,
+            actualEndDate: s.ganttTaskSettings.actualEndDate,
+          })
           .from(s.projectTasks)
+          .leftJoin(
+            s.ganttTaskSettings,
+            eq(s.projectTasks.id, s.ganttTaskSettings.taskId)
+          )
           .where(eq(s.projectTasks.projectId, input.projectId));
-        const freshById = new Map(freshTasks.map(task => [task.id, task]));
+        const freshById = new Map(freshTasks.map(row => [row.task.id, row]));
         const freshAssignees = await tx
           .select({
             taskId: s.taskAssignees.taskId,
@@ -1409,11 +1565,15 @@ export async function saveStudioState(
         }
         const normalizedTasks = input.state.tasks.map(task => {
           const dbId = dbIdByStudio.get(task.id)!;
-          const row = freshById.get(dbId)!;
+          const {
+            task: row,
+            actualStartDate,
+            actualEndDate,
+          } = freshById.get(dbId)!;
           const employeeIds = assigneesByTask.get(dbId) ?? [];
           const statusCode =
             statusById.get(row.statusId)?.code ?? "not_started";
-          const status = projectStatusToStudio(statusCode);
+          const status = taskExecutionStatus(statusCode);
           return {
             ...task,
             id: `T${dbId}`,
@@ -1436,6 +1596,8 @@ export async function saveStudioState(
             executionStatus: status,
             status,
             progress: status === "completed" ? 100 : 0,
+            actualStart: actualStartDate,
+            actualEnd: actualEndDate,
             pmPriority: row.priority as "critical" | "high" | "medium" | "low",
             pmEmployeeIds: employeeIds,
             startLocked:
@@ -1604,15 +1766,6 @@ export async function saveLink(
         .from(s.ganttTaskLinks)
         .for("update");
       const otherLinks = currentLinks.filter(link => link.id !== current?.id);
-      if (
-        otherLinks.some(
-          link =>
-            link.fromTaskId === input.fromTaskId &&
-            link.toTaskId === input.toTaskId &&
-            link.type === input.type
-        )
-      )
-        invalid("هذه العلاقة مسجلة مسبقًا");
       const fields = {
         projectId: target.projectId,
         fromTaskId: input.fromTaskId,
@@ -1620,7 +1773,7 @@ export async function saveLink(
         type: input.type,
         lagDays: input.lagDays,
       };
-      assertAcyclicLinks([...otherLinks, fields]);
+      assertLinkCanBeAdded(fields, otherLinks);
       let id: number;
       if (current) {
         await tx

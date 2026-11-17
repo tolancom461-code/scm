@@ -103,6 +103,42 @@ textarea {
 button {
   cursor: pointer;
 }
+:where(
+  button:enabled:not(
+      [aria-disabled="true"],
+      .gantt-studio-shell *
+    ):focus-visible
+) {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+}
+:where(
+  button:enabled:not([aria-disabled="true"], .gantt-studio-shell *):active
+) {
+  filter: brightness(1.1);
+}
+@media (prefers-reduced-motion: no-preference) {
+  :where(
+    button:enabled:not(
+        .neo-button,
+        [aria-disabled="true"],
+        .gantt-studio-shell *
+      )
+  ) {
+    transition:
+      scale 120ms ease-out,
+      filter 120ms ease-out;
+  }
+  :where(
+    button:enabled:not(
+        .neo-button,
+        [aria-disabled="true"],
+        .gantt-studio-shell *
+      ):active
+  ) {
+    scale: 0.97;
+  }
+}
 input,
 select,
 textarea {

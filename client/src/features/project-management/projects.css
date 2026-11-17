@@ -219,6 +219,40 @@
   color: #7be4aa;
   font-weight: 700;
 }
+.pm-task-execution {
+  display: grid;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid #2b384b;
+  border-radius: 8px;
+  background: #101a2a;
+}
+.pm-task-execution h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.pm-task-execution dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 18px;
+  margin: 0;
+}
+.pm-task-execution dt {
+  margin-bottom: 4px;
+  color: #a1aec9;
+  font-size: 0.8rem;
+}
+.pm-task-execution dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.pm-task-delay {
+  color: #ffd091;
+}
+.pm-task-completed {
+  color: #7be4aa;
+}
 .pm-save-action {
   display: inline-flex;
   align-items: center;

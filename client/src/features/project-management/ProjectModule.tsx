@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { LoaderCircle } from "lucide-react";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
@@ -6,6 +6,10 @@ import { localeMeta, type Locale } from "@/lib/i18n";
 import { trpc } from "@/lib/trpc";
 import { Modal } from "@/components/Modal";
 import { businessDate } from "@shared/date";
+import {
+  taskExecutionMetrics,
+  type GanttCalendarSettings,
+} from "@shared/gantt";
 import {
   canLinkProjectCmmsLocation,
   projectAttachmentMaxBytes,
@@ -24,6 +28,7 @@ import {
 } from "./GoogleProjectMap";
 import { MaterialRequisitionForm } from "../material-requisitions/MaterialRequisitions";
 import { mrText } from "../material-requisitions/copy";
+import { TaskDependencyAction } from "../gantt/TaskDependencyPanel";
 import { ProjectMaterialCosts } from "./ProjectMaterialCosts";
 import { TaskMaterialTrigger } from "./TaskMaterialProgress";
 import "./projects.css";
@@ -1421,7 +1426,7 @@ function ProjectDetail({
         </button>
       </p>
     );
-  const { project, tasks, events } = query.data,
+  const { project, tasks, events, calendar } = query.data,
     editable = ["draft", "returned"].includes(project.status),
     perform = (a: "submit" | "approve" | "return" | "reject" | "start") =>
       action.mutate({
@@ -1875,6 +1880,7 @@ function ProjectDetail({
           parentId={task.parentId}
           row={task.row}
           tasks={tasks}
+          calendar={calendar}
           directory={directory}
           locale={locale}
           canManage={can("pm.tasks.manage")}
@@ -1883,9 +1889,9 @@ function ProjectDetail({
           canDocumentsView={can("documents.view")}
           canDocumentsUpload={can("documents.upload")}
           close={() => setTask(null)}
-          saved={() => {
+          saved={async () => {
+            await utils.projectManagement.detail.invalidate({ id });
             setTask(null);
-            void utils.projectManagement.detail.invalidate({ id });
           }}
         />
       )}
@@ -1906,11 +1912,103 @@ function ProjectDetail({
     </div>
   );
 }
+function TaskExecutionDetails({
+  task,
+  calendar,
+  locale,
+}: {
+  task: Task;
+  calendar: GanttCalendarSettings;
+  locale: Locale;
+}) {
+  const t = text(locale);
+  const [today, setToday] = useState(businessDate);
+  const completed = task.executionStatus === "completed";
+  useEffect(() => {
+    if (completed) return;
+    const interval = window.setInterval(() => setToday(businessDate()), 60_000);
+    return () => window.clearInterval(interval);
+  }, [completed]);
+
+  const { startDelayDays, endDelayDays, progress } = taskExecutionMetrics(
+    task,
+    calendar,
+    today
+  );
+  const units = localeMeta[locale].formatting;
+  const number = new Intl.NumberFormat(units);
+  const percent = new Intl.NumberFormat(units, { style: "percent" });
+  const date = (value: string | null) =>
+    value ? (
+      <time dateTime={value}>
+        <bdi>{value}</bdi>
+      </time>
+    ) : (
+      "—"
+    );
+  const delay = (value: number | null) =>
+    value === null ? "—" : number.format(value);
+
+  return (
+    <section className="pm-task-execution">
+      <h3>{t("التنفيذ الفعلي", "Task execution", "کام کی عملی پیش رفت")}</h3>
+      <dl>
+        <div>
+          <dt>{t("البداية الفعلية", "Actual start", "حقیقی آغاز")}</dt>
+          <dd>{date(task.actualStartDate)}</dd>
+        </div>
+        <div>
+          <dt>{t("النهاية الفعلية", "Actual finish", "حقیقی اختتام")}</dt>
+          <dd>{date(task.actualEndDate)}</dd>
+        </div>
+        <div>
+          <dt>
+            {t(
+              "تأخير البداية (أيام عمل)",
+              "Start delay (workdays)",
+              "آغاز میں تاخیر (کام کے دن)"
+            )}
+          </dt>
+          <dd className={startDelayDays ? "pm-task-delay" : undefined}>
+            {delay(startDelayDays)}
+          </dd>
+        </div>
+        <div>
+          <dt>
+            {completed
+              ? t(
+                  "تأخير النهاية (أيام عمل)",
+                  "Finish delay (workdays)",
+                  "اختتام میں تاخیر (کام کے دن)"
+                )
+              : t(
+                  "تأخير النهاية حتى اليوم (أيام عمل)",
+                  "Finish delay through today (workdays)",
+                  "آج تک اختتام میں تاخیر (کام کے دن)"
+                )}
+          </dt>
+          <dd className={endDelayDays ? "pm-task-delay" : undefined}>
+            {delay(endDelayDays)}
+          </dd>
+        </div>
+        {progress !== null && (
+          <div>
+            <dt>{t("نسبة الإنجاز", "Completion", "تکمیل")}</dt>
+            <dd className="pm-task-completed">
+              {percent.format(progress / 100)}
+            </dd>
+          </div>
+        )}
+      </dl>
+    </section>
+  );
+}
 function TaskForm({
   projectId,
   parentId,
   row,
   tasks,
+  calendar,
   directory,
   locale,
   canManage,
@@ -1925,6 +2023,7 @@ function TaskForm({
   parentId: number | null;
   row?: Task;
   tasks: Task[];
+  calendar: GanttCalendarSettings;
   directory: Directory;
   locale: Locale;
   canManage: boolean;
@@ -1933,7 +2032,7 @@ function TaskForm({
   canDocumentsView: boolean;
   canDocumentsUpload: boolean;
   close: () => void;
-  saved: () => void;
+  saved: () => Promise<void>;
 }) {
   const t = text(locale),
     parent = tasks.find(v => v.id === parentId),
@@ -1945,6 +2044,7 @@ function TaskForm({
       priority: row?.priority ?? "medium",
       employeeIds: row?.employeeIds ?? [],
     }),
+    [savedTask, setSavedTask] = useState(row),
     [addingStatus, setAddingStatus] = useState(false),
     [statusLabel, setStatusLabel] = useState(""),
     [formError, setFormError] = useState(""),
@@ -1955,10 +2055,10 @@ function TaskForm({
   const attachmentUpload = useProjectAttachmentUpload(locale);
   const utils = trpc.useUtils(),
     save = trpc.projectManagement.saveTask.useMutation({
-      onSuccess: () => {
+      onSuccess: async () => {
         void utils.gantt.detail.invalidate({ projectId });
         toast.success(t("تم حفظ المهمة", "Task saved", "کام محفوظ ہو گیا"));
-        saved();
+        await saved();
       },
       onError: e => {
         setFormError(e.message);
@@ -1983,6 +2083,36 @@ function TaskForm({
   const inputsDisabled = !canManage || taskBusy;
   const requestClose = () => {
     if (!saveInFlight.current && !taskBusy) close();
+  };
+  const refreshAfterDependency = async () => {
+    if (!savedTask) return;
+    const detail = await utils.projectManagement.detail.fetch(
+      { id: projectId },
+      { staleTime: 0 }
+    );
+    const updated = detail.tasks.find(task => task.id === savedTask.id);
+    if (
+      !updated ||
+      updated.parentId !== savedTask.parentId ||
+      updated.name !== savedTask.name ||
+      updated.statusId !== savedTask.statusId ||
+      updated.priority !== savedTask.priority ||
+      updated.employeeIds.length !== savedTask.employeeIds.length ||
+      !updated.employeeIds.every(id => savedTask.employeeIds.includes(id))
+    )
+      return;
+    setForm(current => ({
+      ...current,
+      startDate:
+        current.startDate === savedTask.startDate
+          ? updated.startDate
+          : current.startDate,
+      endDate:
+        current.endDate === savedTask.endDate
+          ? updated.endDate
+          : current.endDate,
+    }));
+    setSavedTask(updated);
   };
   const openTaskRequisition = async () => {
     if (
@@ -2052,7 +2182,7 @@ function TaskForm({
             projectId,
             parentId,
             id: row?.id,
-            version: row?.version ?? 0,
+            version: savedTask?.version ?? 0,
           });
         }}
       >
@@ -2118,7 +2248,13 @@ function TaskForm({
               ))}
             </select>
           </Field>
-          <Field label={t("تاريخ البداية *", "Start date *", "تاریخِ آغاز *")}>
+          <Field
+            label={t(
+              "البداية المخططة *",
+              "Planned start *",
+              "منصوبہ شدہ آغاز *"
+            )}
+          >
             <input
               disabled={inputsDisabled}
               required
@@ -2133,7 +2269,13 @@ function TaskForm({
               onChange={e => setForm({ ...form, startDate: e.target.value })}
             />
           </Field>
-          <Field label={t("تاريخ النهاية *", "End date *", "تاریخِ اختتام *")}>
+          <Field
+            label={t(
+              "النهاية المخططة *",
+              "Planned finish *",
+              "منصوبہ شدہ اختتام *"
+            )}
+          >
             <input
               disabled={inputsDisabled}
               required
@@ -2150,6 +2292,13 @@ function TaskForm({
             />
           </Field>
         </div>
+        {savedTask && (
+          <TaskExecutionDetails
+            task={savedTask}
+            calendar={calendar}
+            locale={locale}
+          />
+        )}
         {addingStatus && (
           <div className="pm-inline">
             <input
@@ -2279,6 +2428,15 @@ function TaskForm({
               projectId={projectId}
               taskId={row.id}
               locale={locale}
+            />
+            <TaskDependencyAction
+              projectId={projectId}
+              taskId={row.id}
+              taskName={row.name}
+              locale={locale}
+              canEdit={canManage}
+              disabled={taskBusy || status.isPending}
+              onSaved={refreshAfterDependency}
             />
           </div>
           <ProjectAttachments

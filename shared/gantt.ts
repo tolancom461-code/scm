@@ -27,6 +27,41 @@ export type GanttCalendarSettings = {
   hoursPerDay: number;
   holidays: GanttHoliday[];
 };
+type ActualTaskDates = {
+  actualStartDate: string | null;
+  actualEndDate: string | null;
+};
+export type TaskExecutionStatus = "not_started" | "in_progress" | "completed";
+
+export function taskExecutionStatus(statusCode: string): TaskExecutionStatus {
+  if (statusCode === "done") return "completed";
+  if (statusCode === "working") return "in_progress";
+  return "not_started";
+}
+
+export function updateTaskExecutionDates(
+  dates: ActualTaskDates | null | undefined,
+  previousStatusCode: string | null | undefined,
+  nextStatusCode: string,
+  today: string
+): ActualTaskDates {
+  const actualStartDate = dates?.actualStartDate ?? null;
+  const actualEndDate = dates?.actualEndDate ?? null;
+  if (nextStatusCode === previousStatusCode)
+    return { actualStartDate, actualEndDate };
+  return {
+    actualStartDate:
+      nextStatusCode === "working"
+        ? (actualStartDate ?? today)
+        : actualStartDate,
+    actualEndDate:
+      nextStatusCode === "done"
+        ? today
+        : previousStatusCode === "done"
+          ? null
+          : actualEndDate,
+  };
+}
 
 const DAY = 86_400_000;
 export function ganttDate(value: string) {
@@ -125,6 +160,13 @@ export class GanttCalendar {
       this.workdaysThrough(last) - this.workdaysThrough(first - 1)
     );
   }
+  workingDaysAfter(start: string, through: string) {
+    if (through <= start) return 0;
+    return (
+      this.workdaysThrough(ganttEpoch(through)) -
+      this.workdaysThrough(ganttEpoch(start))
+    );
+  }
   finish(start: string, duration: number) {
     const at = this.index(start);
     return this.date(at + Math.max(0, duration - 1));
@@ -132,6 +174,30 @@ export class GanttCalendar {
   shift(date: string, amount: number) {
     return this.date(this.index(date) + amount);
   }
+}
+
+export function taskExecutionMetrics(
+  task: ActualTaskDates & {
+    startDate: string;
+    endDate: string;
+    executionStatus: TaskExecutionStatus;
+  },
+  settings: GanttCalendarSettings,
+  today: string
+) {
+  const calendar = new GanttCalendar(task.startDate, settings);
+  const completed = task.executionStatus === "completed";
+  const start =
+    task.actualStartDate ??
+    (task.executionStatus === "not_started" ? today : null);
+  const end = completed ? task.actualEndDate : today;
+  return {
+    startDelayDays:
+      start === null ? null : calendar.workingDaysAfter(task.startDate, start),
+    endDelayDays:
+      end === null ? null : calendar.workingDaysAfter(task.endDate, end),
+    progress: completed ? (100 as const) : null,
+  };
 }
 
 function relationWeight(

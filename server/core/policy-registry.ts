@@ -29,6 +29,8 @@ export const routePolicies: Record<string, RoutePolicy> = {
   "gantt.projects": { any: ["pm.view"] },
   "gantt.detail": { any: ["pm.view"] },
   "gantt.sharedDirectory": { any: ["pm.view"] },
+  "gantt.taskCrossProjectLinks": { any: ["pm.view"] },
+  "gantt.previewCrossProjectLink": { any: ["pm.tasks.manage"] },
   "gantt.saveProjectSchedule": { any: ["pm.tasks.manage"] },
   "gantt.saveSharedGroup": { any: ["pm.tasks.manage"] },
   "gantt.saveSettings": { any: ["pm.tasks.manage"] },
