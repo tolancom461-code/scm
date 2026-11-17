@@ -58,6 +58,7 @@ import {
 } from "./scheduling";
 import { touchGanttStudioStates } from "./studio-state";
 import { parseGanttJson, readGanttCalendarSettings } from "./calendar";
+import { assertPortfolioProjects } from "./portfolio";
 
 const MAX_STUDIO_STATE_BYTES = 8 * 1024 * 1024;
 
@@ -200,6 +201,7 @@ async function readDetail(
         priority: s.projectTasks.priority,
         level: s.projectTasks.level,
         version: s.projectTasks.version,
+        color: s.projectTasks.ganttColor,
         notBefore: s.ganttTaskSettings.notBefore,
         isMilestone: s.ganttTaskSettings.isMilestone,
         plannedStartDate: s.ganttTaskSettings.plannedStartDate,
@@ -457,7 +459,7 @@ export async function taskCrossProjectLinks(
 
 type LinkPreviewInput = Pick<
   z.infer<typeof ganttLinkInput>,
-  "projectId" | "fromTaskId" | "toTaskId" | "type" | "lagDays"
+  "projectId" | "fromTaskId" | "toTaskId" | "type" | "lagDays" | "portfolio"
 >;
 
 export async function previewCrossProjectLink(
@@ -483,6 +485,11 @@ export async function previewCrossProjectLink(
         throw new DomainError("NOT_FOUND");
       if (from.task.projectId === to.task.projectId)
         invalid("اختر مهمة من مشروع آخر");
+      if (input.portfolio)
+        await assertPortfolioProjects(tx, a, [
+          from.task.projectId,
+          to.task.projectId,
+        ]);
 
       const existing = await tx
         .select({
@@ -1712,7 +1719,7 @@ export async function saveLink(
   input: z.infer<typeof ganttLinkInput>,
   a: AccessContext
 ) {
-  return (await database()).transaction(tx =>
+  const mutate = (tx: Transaction) =>
     once(tx, a.user.id, "gantt.link.save", input.key, input, async () => {
       const affected = new Set<number>();
       const [current] = input.id
@@ -1750,6 +1757,28 @@ export async function saveLink(
 
       if (input.fromTaskId === input.toTaskId)
         invalid("لا يمكن ربط المهمة بنفسها");
+      if (input.portfolio) {
+        const endpoints = await tx
+          .select({
+            id: s.projectTasks.id,
+            projectId: s.projectTasks.projectId,
+          })
+          .from(s.projectTasks)
+          .where(
+            and(
+              inArray(s.projectTasks.id, [input.fromTaskId, input.toTaskId]),
+              constructionScope(a, s.projectTasks.projectId)
+            )
+          );
+        const from = endpoints.find(task => task.id === input.fromTaskId);
+        const to = endpoints.find(task => task.id === input.toTaskId);
+        if (!from || !to || to.projectId !== input.projectId)
+          throw new DomainError("NOT_FOUND");
+        if (from.projectId === to.projectId) invalid("اختر مهمة من مشروع آخر");
+        const projectIds = [from.projectId, to.projectId];
+        await lockRequisitionSourceProjects(tx, projectIds);
+        await assertPortfolioProjects(tx, a, projectIds);
+      }
       const taskRows = await tx
         .select()
         .from(s.projectTasks)
@@ -1796,7 +1825,10 @@ export async function saveLink(
         affected.add(projectId);
       await touchGanttStudioStates(tx, affected, a.user.id);
       return { id };
-    })
+    });
+  return (await database()).transaction(
+    mutate,
+    input.portfolio ? { isolationLevel: "read committed" } : undefined
   );
 }
 

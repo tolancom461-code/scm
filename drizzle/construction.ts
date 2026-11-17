@@ -13,6 +13,7 @@ import {
   foreignKey,
   type AnyMySqlColumn,
 } from "drizzle-orm/mysql-core";
+import type { GanttPaletteId } from "../shared/gantt-colors";
 import { users } from "./schema";
 export const constructionProjects = mysqlTable(
   "pm_projects",
@@ -40,6 +41,10 @@ export const constructionProjects = mysqlTable(
     endLocked: boolean("end_locked").notNull().default(false),
     extensionDays: int("extension_days").notNull().default(0),
     extensionReason: text("extension_reason"),
+    ganttPalette: varchar("gantt_palette", {
+      length: 24,
+    }).$type<GanttPaletteId>(),
+    ganttColor: varchar("gantt_color", { length: 7 }),
     status: varchar("status", { length: 20 }).notNull().default("draft"),
     version: int("version").notNull().default(0),
     createdBy: int("created_by")
@@ -97,6 +102,7 @@ export const projectTasks = mysqlTable(
     startDate: varchar("start_date", { length: 10 }).notNull(),
     endDate: varchar("end_date", { length: 10 }).notNull(),
     priority: varchar("priority", { length: 20 }).notNull().default("medium"),
+    ganttColor: varchar("gantt_color", { length: 7 }),
     level: int("level").notNull(),
     version: int("version").notNull().default(0),
     createdBy: int("created_by")

@@ -7,10 +7,16 @@ import type { AppRouter } from "../../../../server/routers";
 import { Modal } from "@/components/Modal";
 import { businessDate } from "@shared/date";
 import { taskExecutionMetrics, taskExecutionStatus } from "@shared/gantt";
+import {
+  ganttColorInput,
+  ganttColorText,
+  ganttProjectColors,
+} from "@shared/gantt-colors";
 import { MaterialRequisitionForm } from "../material-requisitions/MaterialRequisitions";
 import { mrText } from "../material-requisitions/copy";
 import { TaskMaterialPanel } from "../project-management/TaskMaterialProgress";
 import { TaskDependencyPanel } from "./TaskDependencyPanel";
+import { GanttPortfolio } from "./GanttPortfolio";
 import "./gantt.css";
 
 type User = { id: number; permissions: string[] };
@@ -231,10 +237,51 @@ function reconcile(data: Detail): State {
 }
 
 export function GanttModule({ locale, user }: { locale: Locale; user: User }) {
-  return <ScopedGanttModule key={user.id} locale={locale} user={user} />;
+  return <GanttWorkspace key={user.id} locale={locale} user={user} />;
 }
 
-function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
+function GanttWorkspace({ locale, user }: { locale: Locale; user: User }) {
+  const [editor, setEditor] = useState<{
+    projectId: number;
+    taskId?: number;
+  } | null>(null);
+  const utils = trpc.useUtils();
+  return (
+    <>
+      <div hidden={Boolean(editor)}>
+        <GanttPortfolio locale={locale} user={user} openEditor={setEditor} />
+      </div>
+      {editor && (
+        <ScopedGanttModule
+          key={editor.projectId}
+          locale={locale}
+          user={user}
+          projectId={editor.projectId}
+          initialTaskId={editor.taskId}
+          onBack={() => {
+            setEditor(null);
+            void utils.gantt.portfolioDirectory.invalidate();
+            void utils.gantt.portfolio.invalidate();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function ScopedGanttModule({
+  locale,
+  user,
+  projectId,
+  initialTaskId,
+  onBack,
+}: {
+  locale: Locale;
+  user: User;
+  projectId: number;
+  initialTaskId?: number;
+  onBack: () => void;
+}) {
   const t = (a: string, e: string, u: string) =>
       locale === "ar" ? a : locale === "ur" ? u : e,
     canEdit = user.permissions.includes("pm.tasks.manage"),
@@ -242,9 +289,7 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
     canCreateRequisition = user.permissions.includes(
       "materialRequisitions.create"
     );
-  const projects = trpc.gantt.projects.useQuery(),
-    [projectId, setProjectId] = useState(0),
-    [channel] = useState(uid),
+  const [channel] = useState(uid),
     [frameKey, setFrameKey] = useState(0),
     [dialog, setDialog] = useState<ScheduleAction | null>(null),
     [sharedOpen, setSharedOpen] = useState(false),
@@ -281,6 +326,7 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
     ),
     utils = trpc.useUtils(),
     frame = useRef<HTMLIFrameElement>(null),
+    entryTask = useRef(initialTaskId),
     executionTaskId = useRef<number | null>(null),
     saving = useRef(false),
     afterStudioSave = useRef<(() => void) | null>(null),
@@ -319,6 +365,18 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
   };
   const materialSummaries =
     canView && !taskMaterials.isError ? taskMaterials.data?.items : undefined;
+  const palette = useMemo(() => {
+    if (!detail.data) return undefined;
+    const colors = ganttProjectColors(detail.data.project);
+    const withInk = (color: string) => ({ color, ink: ganttColorText(color) });
+    return {
+      levels: colors.levels.map(withInk),
+      overrides: detail.data.tasks.flatMap(task => {
+        const color = ganttColorInput.safeParse(task.color).data;
+        return color ? [{ id: task.id, ...withInk(color) }] : [];
+      }),
+    };
+  }, [detail.data]);
   const draftKey = `pscm:gantt-draft-v1:${user.id}:${projectId}`;
   const storeDraft = () => {
     try {
@@ -454,13 +512,6 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
       openFreshRequisition.current({ projectId, taskId })
     );
   };
-  useEffect(() => {
-    if (!projectId && projects.data?.length)
-      setProjectId(
-        projects.data.find(p => p.status === "active")?.id ??
-          projects.data[0].id
-      );
-  }, [projectId, projects.data]);
   const state = useMemo(
     () => (detail.data ? reconcile(detail.data) : null),
     [detail.data]
@@ -509,7 +560,17 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
         locale,
         readOnly: !canEdit,
         failed: saveFailed || recovered,
+        palette,
       });
+      const taskId = entryTask.current;
+      if (
+        !draft &&
+        taskId &&
+        detail.data?.tasks.some(task => task.id === taskId)
+      ) {
+        entryTask.current = undefined;
+        post("pscm:open-task", { taskId });
+      }
       post("pscm:task-materials", { items: materialSummaries ?? [] });
       if (receipt.current) post("pscm:gantt:saved", receipt.current);
       return;
@@ -625,6 +686,10 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
       post("pscm:task-materials", { items: materialSummaries ?? [] });
   }, [materialSummaries, projectId]);
   useEffect(() => {
+    if (readyProject.current === projectId && palette)
+      post("pscm:gantt:palette", { palette });
+  }, [palette, projectId]);
+  useEffect(() => {
     if (readyProject.current === projectId && executionTaskId.current !== null)
       postTaskExecution(executionTaskId.current);
   }, [detail.data, projectId]);
@@ -684,29 +749,29 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
       dir={locale === "en" ? "ltr" : "rtl"}
     >
       <div className="gantt-project-switcher">
-        <label>{t("مشروع PSCM", "PSCM project", "PSCM منصوبہ")}</label>
-        <select
-          value={projectId}
-          disabled={
-            save.isPending ||
-            hasQueuedEdits ||
-            waitingForStudioSave ||
-            openingRequisition
-          }
-          onChange={e => {
-            readyProject.current = 0;
-            executionTaskId.current = null;
-            setMaterialTaskId(null);
-            setDependencyTaskId(null);
-            setProjectId(Number(e.target.value));
-          }}
-        >
-          {projects.data?.map(p => (
-            <option key={p.id} value={p.id}>
-              {p.number} — {p.name}
-            </option>
-          ))}
-        </select>
+        <div className="gantt-schedule-actions">
+          <button
+            type="button"
+            onClick={onBack}
+            disabled={
+              save.isPending ||
+              hasQueuedEdits ||
+              waitingForStudioSave ||
+              openingRequisition
+            }
+          >
+            {t(
+              "العودة إلى عرض المشاريع",
+              "Back to projects",
+              "منصوبوں پر واپس جائیں"
+            )}
+          </button>
+        </div>
+        {project && (
+          <label>
+            <bdi>{project.number}</bdi> · {project.name}
+          </label>
+        )}
         {canEdit && project && (
           <div className="gantt-schedule-actions">
             <button
@@ -807,7 +872,7 @@ function ScopedGanttModule({ locale, user }: { locale: Locale; user: User }) {
             "Approved Gantt chart",
             "منظور شدہ گانٹ چارٹ"
           )}
-          src={`/gantt-studio/index.html?v=pscm-bridge-4&project=${projectId}&channel=${channel}&requisitions=${canCreateRequisition ? "1" : "0"}`}
+          src={`/gantt-studio/index.html?v=pscm-bridge-5&project=${projectId}&channel=${channel}&requisitions=${canCreateRequisition ? "1" : "0"}`}
           className="gantt-studio-frame"
         />
       )}

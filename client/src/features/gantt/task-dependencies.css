@@ -215,3 +215,48 @@
     text-align: start;
   }
 }
+
+.task-dependency-panel-portfolio {
+  inset: 0;
+  margin: auto;
+  block-size: fit-content;
+  max-block-size: 90dvh;
+  inline-size: min(35rem, calc(100% - 24px));
+  border: 1px solid #d5e2e8;
+  border-radius: 12px;
+  background: #fff;
+  color: #172b3a;
+}
+
+.task-dependency-panel-portfolio
+  :is(.task-dependency-add, .task-dependency-preview) {
+  border-color: #d5e2e8;
+}
+
+.task-dependency-panel-portfolio .task-dependency-preview {
+  background: #eef7f4;
+}
+
+.task-dependency-panel-portfolio :is(.task-dependency-header p, small, dt) {
+  color: #4d6574;
+}
+
+.task-dependency-panel-portfolio .task-dependency-add :is(input, select),
+.task-dependency-panel-portfolio
+  :is(.icon-button, button:not(.task-dependency-save)) {
+  border-color: #d5e2e8;
+  background: #fff;
+  color: #172b3a;
+}
+
+.task-dependency-panel-portfolio .task-dependency-add summary {
+  color: #176a65;
+}
+
+.task-dependency-panel-portfolio .task-dependency-error {
+  color: #9f3039;
+}
+
+.task-dependency-panel-portfolio .task-dependency-saved {
+  color: #176a54;
+}

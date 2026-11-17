@@ -11,6 +11,12 @@ import {
   type GanttCalendarSettings,
 } from "@shared/gantt";
 import {
+  ganttColorText,
+  ganttPaletteInput,
+  ganttPalettes,
+  ganttProjectColors,
+} from "@shared/gantt-colors";
+import {
   canLinkProjectCmmsLocation,
   projectAttachmentMaxBytes,
   projectStates,
@@ -739,7 +745,7 @@ function ProjectCmmsLocationFields({
   );
 }
 
-function ProjectForm({
+export function ProjectForm({
   locale,
   user,
   project,
@@ -760,6 +766,8 @@ function ProjectForm({
       requirements: project?.requirements ?? "",
       plannedStartDate: project?.plannedStartDate ?? null,
       plannedEndDate: project?.plannedEndDate ?? null,
+      ganttPalette: project?.ganttPalette ?? null,
+      ganttColor: project?.ganttColor ?? null,
     }),
     [location, setLocation] = useState<ProjectLocationSelection>({
       siteId: project?.cmmsSiteId ?? null,
@@ -798,6 +806,7 @@ function ProjectForm({
     "Choose the CMMS site and section before saving. The asset is optional.",
     "محفوظ کرنے سے پہلے CMMS کا مقام اور شعبہ منتخب کریں۔ اثاثہ اختیاری ہے۔"
   );
+  const ganttColors = ganttProjectColors({ ...form, id: project?.id });
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (busy || !validateFiles(files, t)) return;
@@ -1061,6 +1070,67 @@ function ProjectForm({
               }
             />
           </Field>
+        </div>
+        <div className="pm-field">
+          <Field
+            label={t(
+              "لوحة ألوان جانت",
+              "Gantt color palette",
+              "گانٹ کے رنگوں کی ترتیب"
+            )}
+          >
+            <select
+              value={form.ganttColor ? "custom" : (form.ganttPalette ?? "")}
+              disabled={busy}
+              onChange={e => {
+                const palette = ganttPaletteInput.safeParse(
+                  e.currentTarget.value
+                );
+                setForm(previous => ({
+                  ...previous,
+                  ganttPalette: palette.data ?? null,
+                  ganttColor: null,
+                }));
+              }}
+            >
+              <option value="">{t("تلقائي", "Automatic", "خودکار")}</option>
+              {ganttPalettes.map(palette => (
+                <option key={palette.id} value={palette.id}>
+                  {palette.label[locale]}
+                </option>
+              ))}
+              {form.ganttColor && (
+                <option value="custom">
+                  {t(
+                    "لون المشروع المخصص",
+                    "Custom project color",
+                    "منصوبے کا حسبِ ضرورت رنگ"
+                  )}
+                </option>
+              )}
+            </select>
+          </Field>
+          <div className="pm-gantt-color-preview">
+            {ganttColors.levels.map((color, level) => (
+              <span
+                key={level}
+                style={{ backgroundColor: color, color: ganttColorText(color) }}
+              >
+                {level
+                  ? t(`فرعي ${level}`, `Sublevel ${level}`, `ذیلی سطح ${level}`)
+                  : t("رئيسية", "Main", "مرکزی")}
+              </span>
+            ))}
+          </div>
+          {!project && !form.ganttPalette && (
+            <small>
+              {t(
+                "درجات مثال للوحة التلقائية. يُحدّد لونها برقم المشروع عند الحفظ.",
+                "Sample shades. The automatic palette is assigned when the project is saved.",
+                "نمونہ شیڈز۔ منصوبہ محفوظ ہونے پر رنگوں کی خودکار ترتیب مقرر ہوگی۔"
+              )}
+            </small>
+          )}
         </div>
         {user.permissions.includes("documents.upload") &&
           user.permissions.includes("pm.edit") && (

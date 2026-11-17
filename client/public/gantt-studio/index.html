@@ -45,6 +45,7 @@
 #selectionHelp{font-size:10px;color:#607a75;line-height:1.6}
 .task-row input[type=checkbox],.task-side-header input[type=checkbox]{width:18px;height:18px;flex-shrink:0}
 .gantt-bar.selected{outline:3px solid #123b4f;outline-offset:3px;box-shadow:0 0 0 5px #0d847115}
+.gantt-bar.palette-bar.critical-bar{border:2px solid #b7424e}
 .time-lane.selected{background:#1282750c}
 @media(max-width:700px){.scheduling-control{font-size:10px;padding:7px 8px;gap:7px}.selection-bar{gap:6px;padding:8px 10px;min-height:76px}#selectionHelp{display:block;flex-basis:100%}.selection-bar button{font-size:10px}.scheduling-control b{font-size:8px}}
 
@@ -1307,6 +1308,18 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   const compactDate = date => date.slice(8,10) + '/' + date.slice(5,7);
   const clone = E.clone;
   let state, analysis, view = 'gantt', dayWidth = 32, viewStart = null, rangeDays = 80;
+  let paletteLevels=[], paletteOverrides=new Map(), paletteSnapshot='';
+  function acceptPalette(palette) {
+    const valid=entry=>/^#[0-9a-f]{6}$/i.test(entry?.color)&&/^#[0-9a-f]{6}$/i.test(entry?.ink);
+    if(!Array.isArray(palette?.levels)||palette.levels.length!==5||!palette.levels.every(valid)||!Array.isArray(palette.overrides))return false;
+    const overrides=palette.overrides.filter(entry=>valid(entry)&&Number.isSafeInteger(entry.id)&&entry.id>0);
+    const signature=JSON.stringify([palette.levels,overrides]);
+    if(signature===paletteSnapshot)return false;
+    paletteSnapshot=signature;
+    paletteLevels=palette.levels;
+    paletteOverrides=new Map(overrides.map(entry=>[entry.id,entry]));
+    return true;
+  }
   let showCritical = true, showLinks = true, showBaseline = true;
   let selected = new Set(), collapsed = new Set(), history = [], future = [], drag = null, linkDrag = null;
   let multiSelectMode = false;
@@ -1617,7 +1630,9 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       }
       if(g.right>=0&&g.left<=r.width) {
         const width=Math.max(4,g.right-g.left-3);
-        timeline+=`<div class="gantt-bar ${status} ${critical?'critical-bar':''} ${sel?'selected':''} ${!t.duration?'milestone':''}" data-task="${t.id}" role="button" tabindex="0" aria-label="${esc(title)}" style="left:${g.left}px;width:${width}px" title="${esc(title)}">`;
+        const palette=paletteOverrides.get(t.pmTaskId)??paletteLevels[Math.min(4,depthOf(t))];
+        const paletteStyle=palette?`;background:${palette.color};color:${palette.ink}`:'';
+        timeline+=`<div class="gantt-bar ${status} ${critical?'critical-bar':''} ${sel?'selected':''} ${!t.duration?'milestone':''} ${palette?'palette-bar':''}" data-task="${t.id}" role="button" tabindex="0" aria-label="${esc(title)}" style="left:${g.left}px;width:${width}px${paletteStyle}" title="${esc(title)}">`;
         if(t.duration) timeline+=`<span class="resize-handle start" data-edge="start"></span><span class="bar-label">${esc(I.field(t,'name'))}</span><span class="bar-progress" style="width:${t.progress}%"></span><span class="resize-handle end" data-edge="end"></span>`;
         timeline+='</div>';
         for (const point of ['S','F']) {
@@ -2316,7 +2331,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   }
   function applyHostState(message,initial) {
     try {
-      if(initial){I.setLanguage(message.locale,false);I.applyStatic();}
+      if(initial){I.setLanguage(message.locale,false);I.applyStatic();acceptPalette(message.palette);}
       const next=P.prepare(message.state);
       E.analyze(next);
       state=next;
@@ -2378,6 +2393,15 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     }
     if(message.type==='pscm:task-materials') {
       updateTaskMaterialSummaries(message.items);
+      return;
+    }
+    if(message.type==='pscm:gantt:palette') {
+      if(acceptPalette(message.palette)&&state&&!hostInteractionInProgress())render();
+      return;
+    }
+    if(message.type==='pscm:open-task') {
+      const task=state?.tasks.find(task=>persistedTaskId(task)===message.taskId);
+      if(task)openTask(task.id);
       return;
     }
     if(message.type==='pscm:task-dependencies-saved') {

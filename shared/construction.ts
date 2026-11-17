@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { dateInput } from "./validation";
+import { ganttColorInput, ganttPaletteInput } from "./gantt-colors";
 const id = z.number().int().positive();
 export const cmmsProjectLocationInput = z.object({
   siteId: id,
@@ -29,6 +30,8 @@ export const projectData = z
     plannedEndDate: dateInput.nullable().default(null),
     cmmsLocation: cmmsProjectLocationInput.optional(),
     directLocation: projectDirectLocationInput.nullable().optional(),
+    ganttPalette: ganttPaletteInput.nullable().optional(),
+    ganttColor: ganttColorInput.nullable().optional(),
   })
   .refine(
     v =>

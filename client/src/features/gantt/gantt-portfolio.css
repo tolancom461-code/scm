@@ -1,0 +1,375 @@
+.content-area.gantt-content-area {
+  padding: 0;
+}
+
+.gantt-content-area .gantt-studio-shell {
+  margin: 0;
+}
+
+.gantt-portfolio-shell.gantt-studio-shell {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 70px);
+  min-height: 0;
+  min-width: 0;
+  background: #f4f6f8;
+  color: #172b3a;
+}
+
+.gantt-portfolio-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 5px 10px;
+  min-height: 42px;
+  flex: none;
+  background: #102536;
+  color: #f2f8fa;
+}
+
+.gantt-portfolio-header > strong {
+  font:
+    600 0.95rem Arial,
+    sans-serif;
+  margin-inline-end: 4px;
+  white-space: nowrap;
+}
+
+.gantt-portfolio-header > .gantt-portfolio-actions {
+  margin-inline-start: auto;
+}
+
+.gantt-portfolio-header small {
+  color: #c2d5df;
+  white-space: nowrap;
+}
+
+.gantt-portfolio-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gantt-portfolio-shell
+  :is(
+    .gantt-portfolio-header,
+    .gantt-portfolio-actions,
+    .gantt-portfolio-link-hint,
+    .gantt-portfolio-message
+  )
+  button,
+.gantt-portfolio-dialog button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 30px;
+  padding: 4px 9px;
+  border: 1px solid #d5e2e8;
+  border-radius: 6px;
+  background: #fff;
+  color: #172b3a;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.gantt-portfolio-shell
+  :is(
+    .gantt-portfolio-header,
+    .gantt-portfolio-actions,
+    .gantt-portfolio-link-hint,
+    .gantt-portfolio-message
+  )
+  button:hover:not(:disabled),
+.gantt-portfolio-dialog button:hover:not(:disabled),
+.gantt-portfolio-shell .gantt-portfolio-actions button[aria-pressed="true"],
+.gantt-portfolio-dialog button[aria-pressed="true"] {
+  border-color: #7dbab2;
+  background: #e8f5f2;
+}
+
+.gantt-portfolio-shell .gantt-portfolio-header button.gantt-portfolio-primary,
+.gantt-portfolio-dialog button.gantt-portfolio-primary {
+  border-color: #087f7b;
+  background: #087f7b;
+  color: #fff;
+}
+
+.gantt-portfolio-shell
+  .gantt-portfolio-header
+  button.gantt-portfolio-primary:hover:not(:disabled),
+.gantt-portfolio-dialog button.gantt-portfolio-primary:hover:not(:disabled) {
+  background: #066662;
+  color: #fff;
+}
+
+.gantt-portfolio-shell button:disabled,
+.gantt-portfolio-dialog button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.gantt-portfolio-actions input[type="search"],
+.gantt-portfolio-dialog input[type="search"] {
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid #d5e2e8;
+  border-radius: 6px;
+  background: #fff;
+  color: #172b3a;
+  font-size: 0.78rem;
+}
+
+.gantt-portfolio-actions input[type="search"] {
+  width: min(160px, 38vw);
+}
+
+.gantt-portfolio-dialog input[type="search"] {
+  width: 100%;
+}
+
+.gantt-portfolio-link-hint {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px;
+  background: #eef7f4;
+  border-block-end: 1px solid #d2e9e3;
+  color: #214e49;
+  font-size: 0.78rem;
+}
+
+.gantt-portfolio-message {
+  margin: 0;
+  padding: 22px;
+  color: #465d6c;
+}
+
+.gantt-portfolio-dialog {
+  width: min(35rem, calc(100% - 24px));
+  max-height: 90dvh;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid #d5e2e8;
+  border-radius: 12px;
+  background: #fff;
+  color: #172b3a;
+  box-shadow: 0 20px 75px rgb(9 38 55 / 30%);
+}
+
+.gantt-portfolio-dialog::backdrop {
+  background: rgb(17 41 55 / 46%);
+}
+
+.gantt-portfolio-dialog > header,
+.gantt-portfolio-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 15px;
+  border-block-end: 1px solid #d5e2e8;
+}
+
+.gantt-portfolio-dialog h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.gantt-portfolio-dialog footer {
+  justify-content: flex-end;
+  border-block-start: 1px solid #d5e2e8;
+  border-block-end: 0;
+  background: #f7fafb;
+}
+
+.gantt-portfolio-dialog-body {
+  display: grid;
+  gap: 12px;
+  padding: 14px 15px;
+}
+
+.gantt-portfolio-dialog p,
+.gantt-portfolio-dialog dl,
+.gantt-portfolio-dialog dd {
+  margin: 0;
+}
+
+.gantt-portfolio-dialog small {
+  color: #4d6574;
+}
+
+.gantt-portfolio-project-list {
+  max-height: min(44dvh, 360px);
+  overflow: auto;
+}
+
+.gantt-portfolio-project-list label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 3px;
+  border-block-end: 1px solid #ebf1f4;
+  cursor: pointer;
+}
+
+.gantt-portfolio-project-list label span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.gantt-portfolio-project-list label input {
+  accent-color: #087f7b;
+}
+
+.gantt-portfolio-project-list i,
+.gantt-portfolio-swatches i {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  border: 1px solid rgb(16 37 54 / 20%);
+}
+
+.gantt-portfolio-palettes,
+.gantt-portfolio-levels,
+.gantt-portfolio-task-dates,
+.gantt-portfolio-summary {
+  display: grid;
+  gap: 7px;
+}
+
+.gantt-portfolio-palettes {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.gantt-portfolio-dialog .gantt-portfolio-palettes button {
+  display: grid;
+  gap: 5px;
+  justify-content: stretch;
+  text-align: start;
+}
+
+.gantt-portfolio-palettes span {
+  display: flex;
+  overflow: hidden;
+  border-radius: 3px;
+}
+
+.gantt-portfolio-palettes i {
+  flex: 1;
+  height: 9px;
+}
+
+.gantt-portfolio-levels {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.gantt-portfolio-levels > div {
+  display: grid;
+  gap: 4px;
+  text-align: center;
+}
+
+.gantt-portfolio-levels i {
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid rgb(16 37 54 / 15%);
+}
+
+.gantt-portfolio-color-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.8rem;
+}
+
+.gantt-portfolio-color-field input {
+  padding: 0;
+  width: 34px;
+  block-size: 28px;
+}
+
+.gantt-portfolio-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gantt-portfolio-dialog .gantt-portfolio-swatches button {
+  width: 28px;
+  block-size: 28px;
+  min-block-size: 28px;
+  padding: 2px;
+}
+
+.gantt-portfolio-swatches i {
+  width: 17px;
+  height: 17px;
+}
+
+.gantt-portfolio-dialog-note,
+.gantt-portfolio-color-preview {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+
+.gantt-portfolio-dialog-note {
+  background: #eef7f4;
+}
+
+.gantt-portfolio-task-dates,
+.gantt-portfolio-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gantt-portfolio-dialog .gantt-portfolio-summary {
+  padding: 15px;
+}
+
+.gantt-portfolio-task-dates dt,
+.gantt-portfolio-summary dt {
+  color: #4d6574;
+  font-size: 0.78rem;
+}
+
+.gantt-portfolio-summary > div {
+  padding: 10px;
+  border: 1px solid #d5e2e8;
+  border-radius: 7px;
+}
+
+.gantt-portfolio-summary dd {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.gantt-portfolio-error {
+  color: #a3353f;
+}
+
+@media (max-width: 430px) {
+  .gantt-portfolio-header {
+    gap: 5px;
+    padding-inline: 6px;
+  }
+  .gantt-portfolio-count {
+    display: none;
+  }
+  .gantt-portfolio-palettes {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-height: 410px) {
+  .gantt-portfolio-shell.gantt-studio-shell {
+    min-height: 295px;
+  }
+}

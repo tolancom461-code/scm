@@ -467,7 +467,9 @@ export function PhaseOneWorkspace({
             </select>
           </div>
         </header>
-        <main className="content-area p1-page">
+        <main
+          className={`content-area p1-page${page === "gantt" ? " gantt-content-area" : ""}`}
+        >
           {!page ? (
             <p role="status">{p("noAccess")}</p>
           ) : page === "projectModule" ? (

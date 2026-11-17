@@ -428,6 +428,7 @@ export const ganttLinkInput = z.object({
   toTaskId: z.number().int().positive(),
   type: z.enum(ganttRelationTypes),
   lagDays: z.number().int().min(-2000).max(2000),
+  portfolio: z.boolean().optional(),
 });
 export const ganttScheduleInput = z.object({
   key,

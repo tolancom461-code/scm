@@ -15,6 +15,12 @@ type TaskDependencyProps = {
   canEdit: boolean;
   onSaved?: () => void | Promise<void>;
 };
+type FixedPredecessor = {
+  id: number;
+  name: string;
+  projectName: string;
+  projectNumber: string;
+};
 
 type GanttOutputs = inferRouterOutputs<AppRouter>["gantt"];
 type Link = GanttOutputs["taskCrossProjectLinks"][number];
@@ -79,7 +85,11 @@ function dependencyCopy(locale: Locale) {
       FF: t("نهاية مع نهاية", "Finish to finish", "اختتام سے اختتام"),
       SF: t("نهاية بعد بداية", "Start to finish", "آغاز سے اختتام"),
     },
-    lag: t("الفاصل بأيام العمل", "Lag in workdays", "کام کے دنوں میں وقفہ"),
+    lag: t(
+      "الفاصل بالأيام التقويمية",
+      "Lag in calendar days",
+      "تقویمی دنوں میں وقفہ"
+    ),
     lagHint: t(
       "القيمة الموجبة تؤخر الموعد، والسالبة تقدّمه.",
       "Positive values delay the date; negative values bring it forward.",
@@ -197,7 +207,7 @@ function RelationSentence({
         <>
           {" "}
           · {t("الفاصل", "Lag", "وقفہ")}: <bdi>{lag}</bdi>{" "}
-          {t("يوم عمل", "workdays", "کام کے دن")}
+          {t("يوم تقويمي", "calendar days", "تقویمی دن")}
         </>
       )}
     </>
@@ -293,7 +303,11 @@ export function TaskDependencyPanel({
   canEdit,
   onSaved,
   onClose,
-}: TaskDependencyProps & { onClose: () => void }) {
+  fixedPredecessor,
+}: TaskDependencyProps & {
+  onClose: () => void;
+  fixedPredecessor?: FixedPredecessor;
+}) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const typeId = useId();
@@ -308,12 +322,12 @@ export function TaskDependencyPanel({
   const [pickerGeneration, resetPicker] = useState(0);
   const lastAttempt = useRef<{ signature: string; key: string } | null>(null);
   const directory = trpc.gantt.sharedDirectory.useQuery(undefined, {
-    enabled: canEdit,
+    enabled: canEdit && !fixedPredecessor,
     retry: false,
   });
   const existing = trpc.gantt.taskCrossProjectLinks.useQuery(
     { projectId, taskId },
-    { retry: false }
+    { enabled: !fixedPredecessor, retry: false }
   );
   const projects =
     directory.data?.projects.filter(project => project.id !== projectId) ?? [];
@@ -323,7 +337,8 @@ export function TaskDependencyPanel({
         task => task.projectId === otherProject.id
       ) ?? [])
     : [];
-  const otherTask = tasks.find(task => task.id === otherTaskId);
+  const otherTask =
+    fixedPredecessor ?? tasks.find(task => task.id === otherTaskId);
   const taskNameCounts = new Map<string, number>();
   for (const task of tasks) {
     const name = normalizeSearch(task.name);
@@ -333,12 +348,16 @@ export function TaskDependencyPanel({
   const validLag = Number.isInteger(lagDays) && Math.abs(lagDays) <= 2000;
   const input = {
     projectId,
-    fromTaskId: otherTaskId,
+    fromTaskId: fixedPredecessor?.id ?? otherTaskId,
     toTaskId: taskId,
     type,
     lagDays: validLag ? lagDays : 0,
+    ...(fixedPredecessor ? { portfolio: true } : {}),
   };
-  const hasDraft = canEdit && !directory.isError && Boolean(otherTask);
+  const hasDraft =
+    canEdit &&
+    Boolean(otherTask) &&
+    (Boolean(fixedPredecessor) || !directory.isError);
   const preview = trpc.gantt.previewCrossProjectLink.useQuery(input, {
     enabled: hasDraft && validLag,
     retry: false,
@@ -359,6 +378,7 @@ export function TaskDependencyPanel({
         utils.projectManagement.invalidate(),
         Promise.resolve().then(onSaved),
       ]);
+      if (fixedPredecessor) onClose();
     },
   });
 
@@ -398,7 +418,11 @@ export function TaskDependencyPanel({
   return (
     <dialog
       ref={dialog}
-      className="task-dependency-panel"
+      className={
+        fixedPredecessor
+          ? "task-dependency-panel task-dependency-panel-portfolio"
+          : "task-dependency-panel"
+      }
       dir={localeMeta[locale].direction}
       aria-labelledby={titleId}
       onCancel={event => {
@@ -408,7 +432,7 @@ export function TaskDependencyPanel({
     >
       <header className="task-dependency-header">
         <div>
-          <h2 id={titleId}>{copy.title}</h2>
+          <h2 id={titleId}>{fixedPredecessor ? copy.create : copy.title}</h2>
           <p>
             {copy.currentTask}:{" "}
             <strong>
@@ -445,41 +469,51 @@ export function TaskDependencyPanel({
         >
           <fieldset className="task-dependency-add" disabled={save.isPending}>
             <legend>{copy.newLink}</legend>
-            {directory.isLoading && (
+            {fixedPredecessor && (
+              <p>
+                {copy.project}{" "}
+                <strong>
+                  <bdi>{fixedPredecessor.projectName}</bdi>
+                </strong>{" "}
+                <bdi>{fixedPredecessor.projectNumber}</bdi>
+              </p>
+            )}
+            {!fixedPredecessor && directory.isLoading && (
               <p role="status">{copy.loadingDirectory}</p>
             )}
-            {directory.isError ? (
-              <div className="task-dependency-error">
-                <p role="alert">{copy.directoryFailed}</p>
-                <button
-                  type="button"
-                  className="task-dependency-button"
-                  onClick={() => void directory.refetch()}
-                >
-                  {copy.retry}
-                </button>
-              </div>
-            ) : (
-              directory.data && (
-                <DirectorySelector
-                  key={pickerGeneration}
-                  label={copy.project}
-                  searchLabel={copy.searchProject}
-                  placeholder={copy.chooseProject}
-                  empty={copy.noProjects}
-                  options={projects.map(project => ({
-                    id: project.id,
-                    label: `${project.name} — ${project.number}`,
-                  }))}
-                  value={otherProjectId}
-                  setValue={id => {
-                    setOtherProjectId(id);
-                    setOtherTaskId(0);
-                    edited();
-                  }}
-                />
-              )
-            )}
+            {!fixedPredecessor &&
+              (directory.isError ? (
+                <div className="task-dependency-error">
+                  <p role="alert">{copy.directoryFailed}</p>
+                  <button
+                    type="button"
+                    className="task-dependency-button"
+                    onClick={() => void directory.refetch()}
+                  >
+                    {copy.retry}
+                  </button>
+                </div>
+              ) : (
+                directory.data && (
+                  <DirectorySelector
+                    key={pickerGeneration}
+                    label={copy.project}
+                    searchLabel={copy.searchProject}
+                    placeholder={copy.chooseProject}
+                    empty={copy.noProjects}
+                    options={projects.map(project => ({
+                      id: project.id,
+                      label: `${project.name} — ${project.number}`,
+                    }))}
+                    value={otherProjectId}
+                    setValue={id => {
+                      setOtherProjectId(id);
+                      setOtherTaskId(0);
+                      edited();
+                    }}
+                  />
+                )
+              ))}
             {otherProject && (
               <DirectorySelector
                 key={otherProjectId}
@@ -601,48 +635,50 @@ export function TaskDependencyPanel({
           </fieldset>
         </form>
       )}
-      <section className="task-dependency-existing">
-        <h3>{copy.existing}</h3>
-        {existing.isLoading ? (
-          <p role="status">{copy.loadingLinks}</p>
-        ) : existing.isError ? (
-          <div className="task-dependency-error">
-            <p role="alert">{copy.linksFailed}</p>
-            <button
-              className="task-dependency-button"
-              type="button"
-              onClick={() => void existing.refetch()}
-            >
-              {copy.retry}
-            </button>
-          </div>
-        ) : existing.data?.length ? (
-          <ul>
-            {existing.data.map((link: Link) => {
-              const other = link.to.taskId === taskId ? link.from : link.to;
-              return (
-                <li key={link.id}>
-                  <strong>
-                    <bdi>{other.projectName}</bdi> ·{" "}
-                    <bdi>{other.projectNumber}</bdi>
-                  </strong>
-                  <p>
-                    <RelationSentence
-                      locale={locale}
-                      from={link.from.taskName}
-                      to={link.to.taskName}
-                      type={link.type}
-                      lagDays={link.lagDays}
-                    />
-                  </p>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <p>{copy.noLinks}</p>
-        )}
-      </section>
+      {!fixedPredecessor && (
+        <section className="task-dependency-existing">
+          <h3>{copy.existing}</h3>
+          {existing.isLoading ? (
+            <p role="status">{copy.loadingLinks}</p>
+          ) : existing.isError ? (
+            <div className="task-dependency-error">
+              <p role="alert">{copy.linksFailed}</p>
+              <button
+                className="task-dependency-button"
+                type="button"
+                onClick={() => void existing.refetch()}
+              >
+                {copy.retry}
+              </button>
+            </div>
+          ) : existing.data?.length ? (
+            <ul>
+              {existing.data.map((link: Link) => {
+                const other = link.to.taskId === taskId ? link.from : link.to;
+                return (
+                  <li key={link.id}>
+                    <strong>
+                      <bdi>{other.projectName}</bdi> ·{" "}
+                      <bdi>{other.projectNumber}</bdi>
+                    </strong>
+                    <p>
+                      <RelationSentence
+                        locale={locale}
+                        from={link.from.taskName}
+                        to={link.to.taskName}
+                        type={link.type}
+                        lagDays={link.lagDays}
+                      />
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p>{copy.noLinks}</p>
+          )}
+        </section>
+      )}
     </dialog>
   );
 }
