@@ -46,7 +46,7 @@
   background: #fff;
 }
 
-.pt-toolbar button,
+.pt-root .pt-toolbar button,
 .pt-root .pt-square {
   border: 1px solid var(--pt-line);
   border-radius: 5px;
@@ -55,7 +55,7 @@
   font: inherit;
 }
 
-.pt-toolbar button {
+.pt-root .pt-toolbar button {
   min-height: 27px;
   padding: 3px 8px;
   white-space: nowrap;
@@ -247,7 +247,7 @@
   content: "";
 }
 
-.pt-label {
+.pt-root .pt-label {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -338,7 +338,7 @@
   background-color: #f3f7f8;
 }
 
-.pt-bar {
+.pt-root .pt-bar {
   position: absolute;
   top: 9px;
   z-index: 3;
