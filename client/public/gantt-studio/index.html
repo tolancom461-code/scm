@@ -833,9 +833,14 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const key=language+':'+kind;if(!dates.has(key))dates.set(key,new Intl.DateTimeFormat(locale(),{...options,...(kind==='timestamp'?{}:{timeZone:'UTC'})}));
     return dates.get(key).format(date instanceof Date?date:new Date(date));
   }
+  const weekdayNames=new Map();
   function weekdays(short=false){
-    const f=new Intl.DateTimeFormat(locale(),{weekday:short?'short':'long',timeZone:'UTC'});
-    return Array.from({length:7},(_,i)=>f.format(new Date(Date.UTC(2026,10,1+i))));
+    const key=language+':'+short;
+    if(!weekdayNames.has(key)) {
+      const f=new Intl.DateTimeFormat(locale(),{weekday:short?'short':'long',timeZone:'UTC'});
+      weekdayNames.set(key,Object.freeze(Array.from({length:7},(_,i)=>f.format(new Date(Date.UTC(2026,10,1+i))))));
+    }
+    return weekdayNames.get(key);
   }
   function captureStatic(rootNode=document.documentElement){
     const walker=document.createTreeWalker(rootNode,NodeFilter.SHOW_TEXT);
@@ -1159,8 +1164,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
         for(const t of next.tasks)if(selected.has(t.id))lift=Math.max(lift,cal.index(t.start)-starts.get(t.id)-appliedOffset);
         if(lift>0){appliedOffset+=lift;continue;}
       }
-      analyze(next);
-      return {state:next,requestedOffset,appliedOffset,limited:appliedOffset!==requestedOffset};
+      return {state:next,analysis:analyze(next),requestedOffset,appliedOffset,limited:appliedOffset!==requestedOffset};
     }
     fail(I.t("تعذر نقل المجموعة مع الحفاظ على العلاقات والفواصل؛ لم تُحفظ تغييرات."));
   }
@@ -1371,7 +1375,16 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   const E = window.GanttEngine, P = window.GanttProgress, $ = id => document.getElementById(id);
   const STORAGE_KEY = 'gantt-studio-v24'; // Isolated from older releases; import their JSON explicitly.
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const fmt = date => I.format(new Date(E.epoch(date) * E.DAY));
+  const dateLabels = new Map();
+  function fmt(date) {
+    const key=I.language+':'+date;
+    const cached=dateLabels.get(key);
+    if(cached!==undefined)return cached;
+    const label=I.format(new Date(E.epoch(date)*E.DAY));
+    if(dateLabels.size>=2048)dateLabels.clear();
+    dateLabels.set(key,label);
+    return label;
+  }
   const compactDate = date => date.slice(8,10) + '/' + date.slice(5,7);
   const clone = E.clone;
   let state, analysis, view = 'gantt', dayWidth = 32, viewStart = null, rangeDays = 80;
@@ -1485,7 +1498,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   let multiSelectMode = false;
   let detailsHandler = null, taskSnapshot = null;
   let editingTask = null, editingLink = null, toastTimer, persistenceAvailable = true, startupError = '';
-  let lastGeometry = new Map(), lastRange = null, suppressChartClickUntil = 0;
+  let lastGeometry = new Map(), lastRange = null, lastChartState = null, suppressChartClickUntil = 0;
+  let renderedTimeline='', renderedSidebar='';
   let revision=0,savedRevision=0,serverVersion=0,readOnly=false;
   let taskMaterialSummaries=new Map();
   let saveStatusKey=embedded?'بانتظار تحميل المشروع…':'محفوظ محليًا';
@@ -1555,7 +1569,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     next.activity = Array.isArray(next.activity) ? next.activity.slice(-59) : [];
     next.activity.push({ at: new Date().toISOString(), action: label, actionI18n: I.messagePair(label) });
   }
-  function commit(label, mutate, { shouldSchedule = true, preserveDates = false, silent = false, errorTarget = null } = {}) {
+  function commit(label, mutate, { shouldSchedule = true, preserveDates = false, silent = false, errorTarget = null, preview = null } = {}) {
     try {
       if(readOnly)throw Error(I.t('هذا المشروع للعرض فقط.'));
       let next = clone(state);
@@ -1567,12 +1581,15 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       next = P.prepare(next);
       if(!preserveDates) next = E.normalizeCalendar(next);
       if (shouldSchedule && next.project.mode === 'smart') next = E.schedule(next);
-      E.analyze(next);
-      if (JSON.stringify(next) === JSON.stringify(state)) return true;
+      const snapshot = JSON.stringify(next);
+      if (snapshot === JSON.stringify(state)) return true;
+      // Reuse the painted preview only if validation left its state intact.
+      const chartRendered = lastChartState === preview?.state && snapshot === preview.snapshot;
+      const nextAnalysis = chartRendered ? preview.analysis : E.analyze(next);
       history.push(clone(state)); if (history.length > 80) history.shift(); future = [];
       record(next, label); state = next;
       selected = new Set([...selected].filter(id => state.tasks.some(t => t.id === id)));
-      save(); render();
+      save(); render(nextAnalysis, chartRendered);
       if (!silent) notify(label + (persistenceAvailable ? '' : I.t(" — صدّر JSON لأن الحفظ المحلي غير متاح.")));
       return true;
     } catch (error) {
@@ -1590,13 +1607,13 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     history.push(clone(state)); state = future.pop(); selected.clear(); save(); render(); notify(I.t("تمت إعادة التغيير."));
   }
   const studioViews=['gantt','analysis','lab'];
-  function setView(next,report=true) {
+  function setView(next,report=true,nextAnalysis) {
     if(!studioViews.includes(next))return;
     if(linkDrag)cancelLinkDrag();
     view = next;
     document.querySelectorAll('.nav-tab').forEach(b => b.classList.toggle('active', b.dataset.view === next));
     for (const name of studioViews) $(name + 'View').hidden = name !== next;
-    render();
+    render(nextAnalysis);
     if(report)sendToHost('pscm:gantt:view',{view});
   }
   function updateSummary(s = state, a = analysis) {
@@ -1619,8 +1636,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     $('criticalCount').textContent = critical;
     $('criticalSub').textContent = I.t("{0} يوم عمل إلى حد نهاية CPM · {1} مخالفة", [a.projectEnd, a.issues.length]);
   }
-  function render() {
-    analysis = E.analyze(state); updateSummary();
+  function render(nextAnalysis = E.analyze(state), chartRendered = false) {
+    analysis = nextAnalysis; updateSummary();
     $('undoBtn').disabled = !history.length; $('redoBtn').disabled = !future.length; $('labUndoBtn').disabled = !history.length;
     $('autoScheduleToggle').checked = state.project.mode === 'smart';
     $('scheduleStatus').textContent = state.project.mode === 'smart' ? I.t("مفعّل") : I.t("متوقف");
@@ -1631,7 +1648,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       const phases = [...new Set(state.tasks.map(t=>t.phase).filter(Boolean))];
       $('phaseFilter').innerHTML = I.markup("<option value=\"\">كل المراحل</option>") + phases.map(p=>`<option value="${esc(p)}">${esc(I.field(state.tasks.find(t=>t.phase===p),'phase'))}</option>`).join('');
       $('phaseFilter').value = phases.includes(filterValue) ? filterValue : '';
-      renderChart(); renderIssuesPreview(); updateSelection();
+      if(!chartRendered)renderChart();
+      renderIssuesPreview(); updateSelection();
     } else if (view === 'analysis') renderAnalysis();
     else renderActivity();
   }
@@ -1698,7 +1716,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     ]);
     return portfolio.projects.some(project=>project.id===projectId)?rows:[...activeRows,...rows];
   }
-  function range(s, a) {
+  function range(s, a, taskDates) {
     const allDates = [s.project.start, ...s.tasks.map(t=>t.start), ...(s.baseline?.tasks||[]).map(t=>t.start)];
     let earliest = Math.min(...allDates.map(E.epoch));
     let finish = Math.max(E.epoch(a.finish), ...(s.baseline?.tasks||[]).map(t=>E.epoch(t.finish)));
@@ -1710,7 +1728,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       }
     }
     if(portfolio?.activeDates)include(portfolio.activeDates);
-    for(const task of s.tasks)include(activeTaskTimelineDates(task,a.cal));
+    for(const task of s.tasks)include(taskDates?.get(task.id)??activeTaskTimelineDates(task,a.cal));
     for(const project of portfolio?.projects??[]) {
       if(project.id===projectId)continue;
       include(project);
@@ -1904,7 +1922,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     if(linkDrag)cancelLinkDrag();
     const scroll=$('ganttScroll'), oldTop=scroll.scrollTop, oldLeft=scroll.scrollLeft;
     const rows=portfolioRows(s,a), visible=rows.filter(row=>row.kind==='active'), visibleCount=rows.filter(row=>row.kind!=='project').length;
-    const r=range(s,a), tree=P.hierarchy(s.tasks), positions=new Map();
+    const taskDates=new Map(s.tasks.map(task=>[task.id,activeTaskTimelineDates(task,a.cal)]));
+    const r=range(s,a,taskDates), tree=P.hierarchy(s.tasks), positions=new Map();
     const activeProject=portfolio?.projects.find(project=>project.id===projectId);
     const projectDates=$('projectTimelineDates');
     const activeDates=portfolio?.activeDates??activeProject;
@@ -1925,18 +1944,21 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     let timeline=`<div class="time-area" style="width:${r.width}px;--day:${dayWidth}px"><div class="time-head"><div class="month-row">`;
     for(const m of monthGroups) timeline+=`<div class="month-cell" style="width:${m.length*dayWidth}px">${esc(I.format(new Date(m.start*E.DAY),'month'))}</div>`;
     timeline+='</div><div class="day-row">';
+    const holidays=new Map(s.calendar.holidays.map(holiday=>[holiday.date,holiday]));
+    const shortWeekdays=dayWidth>=26?I.weekdays(true):null;
     for(let i=0;i<r.count;i++) {
-      const n=r.start+i,date=E.iso(n),holiday=s.calendar.holidays.find(h=>h.date===date),off=!a.cal.isWorkday(n);
-      timeline+=`<div class="day-cell ${off?'off':''} ${holiday?'holiday':''}" style="width:${dayWidth}px" title="${esc(fmt(date)+(holiday?' · '+I.field(holiday,'name'):''))}">${dayWidth>=15||i%7===0?date.slice(8).replace(/^0/,''):''}${dayWidth>=26?`<small>${I.weekdays(true)[E.weekday(n)]}</small>`:''}</div>`;
+      const n=r.start+i,date=E.iso(n),holiday=holidays.get(date),off=!a.cal.isWorkday(n);
+      timeline+=`<div class="day-cell ${off?'off':''} ${holiday?'holiday':''}" style="width:${dayWidth}px" title="${esc(fmt(date)+(holiday?' · '+I.field(holiday,'name'):''))}">${dayWidth>=15||i%7===0?date.slice(8).replace(/^0/,''):''}${shortWeekdays?`<small>${shortWeekdays[E.weekday(n)]}</small>`:''}</div>`;
     }
     const height=Math.max(rows.length*56,rows.length?0:180);
     timeline+=`</div></div><div class="time-body" style="height:${height}px;overflow:hidden"><div class="grid-lines"></div>`;
     for(let i=0;i<r.count;i++) {
-      const n=r.start+i;if(!a.cal.isWorkday(n)) timeline+=`<div class="off-stripe ${s.calendar.holidays.some(h=>h.date===E.iso(n))?'holiday':''}" style="left:${i*dayWidth}px;width:${dayWidth}px"></div>`;
+      const n=r.start+i;if(!a.cal.isWorkday(n)) timeline+=`<div class="off-stripe ${holidays.has(E.iso(n))?'holiday':''}" style="left:${i*dayWidth}px;width:${dayWidth}px"></div>`;
     }
     const namesHeader=I.markup("<div class=\"task-sidebar\"><div class=\"task-side-header\"><input type=\"checkbox\" id=\"selectAllVisible\" title=\"تحديد المهام الظاهرة\" aria-label=\"تحديد المهام الظاهرة\" {0}><span class=\"title-flex\">المهمة / المسؤول<br><small>الأعمدة مثبتة أثناء التمرير</small></span><span>المدة</span></div>", [visible.length&&visible.every(({task})=>selected.has(task.id))?'checked':'']);
     const headerColor=rows.some(row=>row.kind==='project')?'':portfolioColorButton(activeProject,null,activeProject?.color);
     let names=namesHeader.slice(0,-6)+headerColor+'</div><div class="task-tree-body"><svg class="task-tree-svg" aria-hidden="true"></svg>';
+    const baselineTasks=showBaseline&&s.baseline?new Map(s.baseline.tasks.map(task=>[task.id,task])):null;
     rows.forEach((row,index)=>{
       if(row.kind!=='active') {
         const markup=row.kind==='project'?portfolioGroupMarkup(row.project,r):portfolioPeerMarkup(row,index,r,positions);
@@ -1948,7 +1970,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       const persistedId=persistedTaskId(t);
       if(persistedId)positions.set(persistedId,{...g,projectId});
       const critical=showCritical&&m.critical, status=t.status==='completed'?'done':t.status==='in_progress'?'active-task':'',sel=selected.has(t.id);
-      const dates=activeTaskTimelineDates(t,a.cal);
+      const dates=taskDates.get(t.id);
       const title=I.t("{0} · {1}\n{2} ← {3}\n{4} يوم عمل · إنجاز {5}% · سماح {6} يوم", [t.id, I.field(t,'name'), fmt(t.start), fmt(a.cal.finish(t.start,t.duration)), t.duration, t.progress, m.totalFloat])+'\n'+executionTimelineLabel(dates);
       const depth=depthOf(t), hasChildren=(tree.children.get(t.id)||[]).length>0, expanded=!collapsed.has(t.id);
       const toggleLabel=I.t(expanded?'طي تفرعات ':'فتح تفرعات ');
@@ -1962,7 +1984,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
         ?`<button type="button" class="task-materials-badge" data-task-materials="${t.pmTaskId}" data-task-name="${esc(I.field(t,'name'))}" aria-haspopup="dialog" hidden><bdi></bdi><span class="task-materials-long"></span><span class="task-materials-short"></span></button>`:'';
       names+=`<div class="task-row ${sel?'selected':''} ${critical?'critical-row':''} ${hasChildren?'is-parent':''} ${hasChildren&&expanded?'tree-open':''}" data-row="${t.id}" data-parent-id="${t.parentId||''}" data-depth="${depth}"><input type="checkbox" data-select="${t.id}" ${sel?'checked':''} aria-label="${esc(I.t('تحديد ')+I.field(t,'name'))}"><span class="task-code">${esc(t.id)}</span><span class="tree-indent" style="width:${depth*18}px" aria-hidden="true"></span>${treeControl}<div class="task-info"><button class="task-details" data-edit="${t.id}" title="${esc(I.field(t,'name')+' · '+I.field(t,'phase'))}"><b>${esc(I.field(t,'name'))}</b><small>${esc(I.field(t,'owner')||I.t("بلا مسؤول"))} · ${t.progress}%</small></button>${materialsBadge}</div><span class="task-duration">${t.duration||'◆'}<small>${t.duration?I.t("يوم"):I.t("معلم")}</small></span>${requisitionButton}${colorButton}<button class="row-more" data-edit="${t.id}" aria-label="${esc(I.t('تعديل ')+I.field(t,'name'))}">⋮</button></div>`;
       timeline+=`<div class="time-lane ${sel?'selected':''}" data-lane="${t.id}">`;
-      const base=showBaseline?s.baseline?.tasks.find(b=>b.id===t.id):null;
+      const base=baselineTasks?.get(t.id);
       if(base) {
         const x=(E.epoch(base.start)-r.start)*dayWidth, width=base.duration?(E.epoch(base.finish)-E.epoch(base.start)+1)*dayWidth-3:5;
         timeline+=I.markup("<div class=\"baseline-bar {0}\" style=\"left:{1}px;width:{2}px\" title=\"خط الأساس\"></div>", [!base.duration?'baseline-milestone':'', x, Math.max(3,width)]);
@@ -1986,10 +2008,19 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const statusX=(E.epoch(s.project.statusDate)-r.start+.5)*dayWidth;
     if(statusX>=0&&statusX<r.width) timeline+=I.markup("<div class=\"tracking-line\" style=\"left:{0}px\"><span class=\"tracking-label\">متابعة {1}</span></div>", [statusX, compactDate(s.project.statusDate)]);
     timeline+=edgesHTML(s,a,lastGeometry,r,height)+portfolioEdgesHTML(positions,r,height)+'</div></div>'; names+='</div></div>';
-    $('ganttGrid').innerHTML=timeline+names;
-    renderTaskMaterialBadges();
-    renderTaskTreeConnectors();
+    const grid=$('ganttGrid');
+    const timelineChanged=timeline!==renderedTimeline,sidebarChanged=names!==renderedSidebar;
+    const rebuildBoth=grid.childElementCount!==2||(timelineChanged&&sidebarChanged);
+    if(rebuildBoth)grid.innerHTML=timeline+names;
+    else if(timelineChanged)grid.firstElementChild.outerHTML=timeline;
+    else if(sidebarChanged)grid.lastElementChild.outerHTML=names;
+    renderedTimeline=timeline;renderedSidebar=names;
+    if(rebuildBoth||sidebarChanged) {
+      renderTaskMaterialBadges();
+      renderTaskTreeConnectors();
+    }
     scroll.scrollTop=oldTop; scroll.scrollLeft=oldLeft;
+    lastChartState=s;
   }
   function updateSelection() {
     $('selectionBar').hidden=false;
@@ -2279,9 +2310,11 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const edge=event.target.closest('[data-edge]')?.dataset.edge||'move';
     const scroll=$('ganttScroll'), grid=$('ganttGrid');
     scroll.focus({preventScroll:true});
+    const originalSnapshot=JSON.stringify(state);
     drag={x:event.clientX,y:event.clientY,clientX:event.clientX,clientY:event.clientY,
       pointerId:event.pointerId,scrollLeft:scroll.scrollLeft,edge,id,ids:edge==='move'?[...selected]:[id],
-      original:clone(state),preview:clone(state),delta:null,moved:false,activated:false,cal:analysis.cal,
+      original:JSON.parse(originalSnapshot),originalSnapshot,originalAnalysis:analysis,preview:null,
+      delta:null,moved:false,activated:false,cal:analysis.cal,
       additive,wasSelected,selectedBefore,frame:null,result:null,error:null};
     // Delay capture until real movement so ordinary clicks/double-clicks
     // still reach the task bar. The grid remains mounted during repaint.
@@ -2299,38 +2332,46 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       try { $('ganttGrid').setPointerCapture(drag.pointerId); } catch (_) {}
       drag.frame=requestAnimationFrame(autoScrollTaskDrag);
     }
-    paintTaskDrag();
   }
   function paintTaskDrag() {
     if(!drag?.activated)return;
     const delta=Math.round((drag.clientX-drag.x+$('ganttScroll').scrollLeft-drag.scrollLeft)/dayWidth);
     if(delta===drag.delta)return;drag.delta=delta;
     try {
-      let next=clone(drag.original),t=next.tasks.find(t=>t.id===drag.id),old=drag.original.tasks.find(t=>t.id===drag.id),cal=drag.cal;
+      let next, nextAnalysis;
+      const {original,cal}=drag;
+      const old=original.tasks.find(t=>t.id===drag.id);
       if(drag.edge==='move') {
         const desired=E.addDays(old.start,delta),direction=delta<0?-1:1;
         const offset=cal.index(desired,direction)-cal.index(old.start);
-        drag.result=E.shiftTasks(drag.original,drag.ids,offset);next=drag.result.state;
-      } else if(drag.edge==='end') {
-        const oldEnd=cal.finish(old.start,old.duration),target=cal.index(E.addDays(oldEnd,delta),delta<0?-1:1);
-        t.duration=Math.max(1,Math.min(2000,target-cal.index(old.start)+1));
+        drag.result=E.shiftTasks(original,drag.ids,offset);
+        next=drag.result.state;
+        nextAnalysis=drag.result.analysis;
       } else {
-        const end=cal.index(old.start)+old.duration;
-        const start=Math.max(0,Math.min(end-1,cal.index(E.addDays(old.start,delta),delta<0?-1:1)));
-        t.start=t.notBefore=cal.date(start);t.duration=end-start;
+        next=clone(original);
+        const t=next.tasks.find(t=>t.id===drag.id);
+        if(delta!==0&&drag.edge==='end') {
+          const oldEnd=cal.finish(old.start,old.duration),target=cal.index(E.addDays(oldEnd,delta),delta<0?-1:1);
+          t.duration=Math.max(1,Math.min(2000,target-cal.index(old.start)+1));
+        } else if(delta!==0) {
+          const end=cal.index(old.start)+old.duration;
+          const start=Math.max(0,Math.min(end-1,cal.index(E.addDays(old.start,delta),delta<0?-1:1)));
+          t.start=t.notBefore=cal.date(start);t.duration=end-start;
+        }
+        if(next.project.mode==='smart')next=E.schedule(next);
       }
-      if(delta===0)next=clone(drag.original);
-      if(drag.edge!=='move'&&next.project.mode==='smart')next=E.schedule(next);
-      const a=E.analyze(next);
-      drag.preview=next;drag.moved=JSON.stringify(next)!==JSON.stringify(drag.original);drag.error=null;
+      const snapshot=JSON.stringify(next);
+      drag.moved=snapshot!==drag.originalSnapshot;
+      const a=nextAnalysis??(drag.moved?E.analyze(next):drag.originalAnalysis);
+      drag.preview={state:next,snapshot,analysis:a};drag.error=null;
       renderChart(next,a);updateSummary(next,a);
       const summary=drag.edge==='move' ? I.t("{0} مهام · {1}{2} يوم عمل{3}", [drag.ids.length, drag.result.appliedOffset>=0?'+':'', drag.result.appliedOffset, drag.result.limited?I.t(" · الحركة مقيّدة بالعلاقات أو بداية المشروع"):'']) : I.t("تعديل مدة المهمة");
       $('dragHint').textContent=I.t("معاينة: {0} · نهاية المشروع {1} — أفلت للحفظ، Esc للإلغاء", [summary, fmt(a.finish)]);
       $('dragHint').classList.toggle('invalid',Boolean(drag.result?.limited));$('dragHint').hidden=false;
     } catch(error) {
       // Never commit the last valid preview when the latest position is invalid.
-      drag.error=error.message;drag.moved=false;drag.preview=clone(drag.original);
-      renderChart(drag.original,E.analyze(drag.original));updateSummary();
+      drag.error=error.message;drag.moved=false;drag.preview=null;
+      renderChart(drag.original,drag.originalAnalysis);updateSummary();
       $('dragHint').textContent=error.message;$('dragHint').classList.add('invalid');$('dragHint').hidden=false;
     }
   }
@@ -2341,8 +2382,10 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const top=Math.max(0,r.top),bottom=Math.min(innerHeight,r.bottom);
     if(d.clientY>=top&&d.clientY<=bottom&&d.clientX>=left&&d.clientX<=right) {
       const dx=d.clientX<left+24?-6:d.clientX>right-24?6:0;
-      if(dx){const before=scroll.scrollLeft;scroll.scrollLeft+=dx;if(before!==scroll.scrollLeft)paintTaskDrag();}
+      if(dx)scroll.scrollLeft+=dx;
     }
+    // Draw the latest pointer position at most once per animation frame.
+    paintTaskDrag();
     if(drag)drag.frame=requestAnimationFrame(autoScrollTaskDrag);
   }
   function cleanDrag(d) {
@@ -2363,7 +2406,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     }
     suppressChartClickUntil=performance.now()+350;
     if(d.error){render();notify(d.error,true);return;}
-    if(d.moved)commit(d.edge==='move'?groupMoveLabel(d.result,d.ids.length):I.t("تم تعديل مدة المهمة."),()=>d.preview,{shouldSchedule:false});
+    if(d.moved)commit(d.edge==='move'?groupMoveLabel(d.result,d.ids.length):I.t("تم تعديل مدة المهمة."),()=>d.preview.state,{shouldSchedule:false,preview:d.preview});
     else { render();if(d.result?.limited)notify(groupMoveLabel(d.result,d.ids.length),true); }
   }
   function cancelDrag(event) {
@@ -2617,15 +2660,16 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     try{
       const next=E.normalizeCalendar(P.prepare(JSON.parse(event.newValue)));
       if(JSON.stringify(next)===JSON.stringify(state))return;
-      E.analyze(next);state=next;
+      const nextAnalysis=E.analyze(next);state=next;
       selected=new Set([...selected].filter(id=>state.tasks.some(task=>task.id===id)));
-      render();
+      render(nextAnalysis);
     }catch(error){notify(error instanceof Error?error.message:I.t("تعذر تحميل الحفظ السابق؛ فُتح المشروع التجريبي. صدّر JSON للاحتفاظ بعملك."),true);}
   });
 
-  function mergeSavedFields(before,accepted,local) {
+  function mergeSavedFields(before,accepted,local,skip) {
     const result={...accepted};
     for(const key of new Set([...Object.keys(before),...Object.keys(local)])) {
+      if(skip?.has(key)||before[key]===local[key])continue;
       if(JSON.stringify(before[key])===JSON.stringify(local[key]))continue;
       if(Object.hasOwn(local,key))Object.defineProperty(result,key,{value:local[key],writable:true,enumerable:true,configurable:true});
       else delete result[key];
@@ -2648,8 +2692,9 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     }]));
     const submittedTasks=new Map(before.tasks.map(task=>[task.id,task]));
     const submittedLinks=new Map(before.links.map(link=>[link.id,link]));
+    const mergedSeparately=new Set(['project','calendar','tasks','links']);
     return local=>{
-      const next=mergeSavedFields(before,accepted,local);
+      const next=mergeSavedFields(before,accepted,local,mergedSeparately);
       next.project=mergeSavedFields(before.project,accepted.project,local.project);
       next.calendar=mergeSavedFields(before.calendar,accepted.calendar,local.calendar);
       next.tasks=local.tasks.map(task=>{
@@ -2713,7 +2758,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
         restorePortfolioViewport(message.viewport);
       }
       const next=P.prepare(message.state);
-      E.analyze(next);
+      const nextAnalysis=E.analyze(next);
       state=next;
       serverVersion=message.version;
       calendarRevision=calendarVersionOf(message);
@@ -2728,8 +2773,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       }
       showHostNotice();
       if(initial&&typeof message.reviewExpanded==='boolean')setReviewExpanded(message.reviewExpanded);
-      if(initial&&studioViews.includes(message.view))setView(message.view,false);
-      else render();
+      if(initial&&studioViews.includes(message.view))setView(message.view,false,nextAnalysis);
+      else render(nextAnalysis);
       if(initial&&message.viewport) {
         const scroll=$('ganttScroll');
         if(Number.isFinite(message.viewport.scrollLeft))scroll.scrollLeft=Math.max(0,message.viewport.scrollLeft);
@@ -2762,12 +2807,12 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     try {
       const rebase=rebaseStudioSave(message.submitted,message.state);
       const next=P.prepare(rebase(state));
-      E.analyze(next);
+      const nextAnalysis=E.analyze(next);
       history=history.map(rebase);future=future.map(rebase);
       state=next;
       serverVersion=message.version;
       savedRevision=message.sequence;
-      render();
+      render(nextAnalysis);
       setSaveStatus(revision===savedRevision?'محفوظ في قاعدة PSCM':'تعديلات بانتظار الحفظ');
       sendToHost('pscm:gantt:ack',{sequence:revision,savedSequence:savedRevision,version:serverVersion,calendarRevision,state});
       applyDeferredRefresh();
