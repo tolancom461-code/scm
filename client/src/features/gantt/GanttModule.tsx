@@ -10,6 +10,7 @@ import {
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { readTabNavigation, writeTabNavigation } from "@/lib/tab-navigation";
 import type { Locale } from "@/lib/i18n";
 import type { AppRouter } from "../../../../server/routers";
 import { Modal } from "@/components/Modal";
@@ -112,6 +113,13 @@ type BoardViewport = {
   collapsedPeerTasks?: number[];
 };
 type Editor = { projectId: number; taskId?: number; viewport?: BoardViewport };
+type StudioView = "gantt" | "analysis" | "lab";
+type BoardNavigation = {
+  selected: number[] | null;
+  projectId?: number;
+  viewport?: BoardViewport;
+  view: StudioView;
+};
 type RunBoardAction = (action: (viewport?: BoardViewport) => void) => void;
 const emptyDirectory: GanttOutputs["portfolioDirectory"] = [];
 
@@ -195,6 +203,36 @@ function readBoardViewport(value: unknown): BoardViewport | undefined {
       collapsedPeerTasks: ids(collapsedPeerTasks),
     };
 }
+
+function isStudioView(value: unknown): value is StudioView {
+  return value === "gantt" || value === "analysis" || value === "lab";
+}
+
+function readBoardNavigation(userId: number): BoardNavigation {
+  const value = readTabNavigation(userId, "gantt");
+  const saved =
+    value && typeof value === "object"
+      ? (value as Partial<BoardNavigation>)
+      : {};
+  return {
+    selected: Array.isArray(saved.selected)
+      ? [
+          ...new Set(
+            saved.selected.filter(id => Number.isSafeInteger(id) && id > 0)
+          ),
+        ]
+      : null,
+    projectId:
+      saved.projectId &&
+      Number.isSafeInteger(saved.projectId) &&
+      saved.projectId > 0
+        ? saved.projectId
+        : undefined,
+    viewport: readBoardViewport(saved.viewport),
+    view: isStudioView(saved.view) ? saved.view : "gantt",
+  };
+}
+
 type ScheduleAction = "configure" | "start" | "extend" | "lock";
 type StudioEdit = {
   sequence: number;
@@ -370,7 +408,9 @@ function GanttWorkspace({ locale, user }: { locale: Locale; user: User }) {
   const canEdit = user.permissions.includes("pm.tasks.manage");
   const directory = trpc.gantt.portfolioDirectory.useQuery();
   const candidates = directory.data ?? emptyDirectory;
-  const [selected, setSelected] = useState<number[] | null>(null);
+  const [navigation] = useState(() => readBoardNavigation(user.id));
+  const [selected, setSelected] = useState(navigation.selected);
+  const [view, setView] = useState(navigation.view);
   const projectIds = useMemo(
     () =>
       candidates
@@ -409,9 +449,27 @@ function GanttWorkspace({ locale, user }: { locale: Locale; user: User }) {
   );
 
   useEffect(() => {
-    if (editor || !projectIds.length) return;
-    setEditor({ projectId: projectIds[0] });
-  }, [editor, projectIds]);
+    if (!directory.data) return;
+    if (selected && selected.length !== projectIds.length)
+      setSelected(projectIds);
+    if (!editor && projectIds.length) {
+      const savedProjectId = navigation.projectId;
+      setEditor(
+        savedProjectId && projectIds.includes(savedProjectId)
+          ? { projectId: savedProjectId, viewport: navigation.viewport }
+          : { projectId: projectIds[0] }
+      );
+      return;
+    }
+    const eligibleEditor =
+      editor && projectIds.includes(editor.projectId) ? editor : null;
+    writeTabNavigation(user.id, "gantt", {
+      selected: selected === null ? null : projectIds,
+      projectId: eligibleEditor?.projectId,
+      viewport: eligibleEditor?.viewport,
+      view,
+    } satisfies BoardNavigation);
+  }, [directory.data, editor, navigation, projectIds, selected, user.id, view]);
 
   function clearLinkSelection() {
     setLinkMode(false);
@@ -545,6 +603,8 @@ function GanttWorkspace({ locale, user }: { locale: Locale; user: User }) {
           projectId={editor.projectId}
           initialTaskId={editor.taskId}
           initialViewport={editor.viewport}
+          initialView={view}
+          onViewChange={setView}
           portfolio={portfolio}
           renderBoardActions={renderActions}
           onFocusProject={(target, taskId, viewport) => {
@@ -673,6 +733,8 @@ function ScopedGanttModule({
   projectId,
   initialTaskId,
   initialViewport,
+  initialView,
+  onViewChange,
   portfolio,
   renderBoardActions,
   onFocusProject,
@@ -684,6 +746,8 @@ function ScopedGanttModule({
   projectId: number;
   initialTaskId?: number;
   initialViewport?: BoardViewport;
+  initialView: StudioView;
+  onViewChange: (view: StudioView) => void;
   portfolio: BoardPortfolio;
   renderBoardActions: (run: RunBoardAction, blocked: boolean) => ReactNode;
   onFocusProject: (
@@ -971,6 +1035,11 @@ function ScopedGanttModule({
       message.projectId !== projectId
     )
       return;
+    if (message.type === "pscm:gantt:view") {
+      if (readyProject.current === projectId && isStudioView(message.view))
+        onViewChange(message.view);
+      return;
+    }
     if (message.type === "pscm:gantt:board-action-response") {
       const pending = boardAction.current;
       if (!pending || pending.requestId !== message.requestId) return;
@@ -1058,6 +1127,7 @@ function ScopedGanttModule({
         palette,
         portfolio,
         viewport: initialViewport,
+        view: initialView,
       });
       const taskId = entryTask.current;
       if (
@@ -1397,7 +1467,7 @@ function ScopedGanttModule({
             "Approved Gantt chart",
             "منظور شدہ گانٹ چارٹ"
           )}
-          src={`/gantt-studio/index.html?v=pscm-bridge-7&project=${projectId}&channel=${channel}&requisitions=${canCreateRequisition ? "1" : "0"}`}
+          src={`/gantt-studio/index.html?v=pscm-bridge-8&project=${projectId}&channel=${channel}&requisitions=${canCreateRequisition ? "1" : "0"}`}
           className="gantt-studio-frame"
         />
       )}

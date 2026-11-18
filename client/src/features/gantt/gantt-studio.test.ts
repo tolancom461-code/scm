@@ -81,6 +81,9 @@ function createEmbeddedStudio(projectId: number) {
     phaseFilter: { value: "" },
     statusFilter: { value: "" },
     taskDialog: { open: false },
+    ganttView: { hidden: false },
+    analysisView: { hidden: true },
+    labView: { hidden: true },
   };
   const context = vm.createContext({
     projectId,
@@ -93,7 +96,11 @@ function createEmbeddedStudio(projectId: number) {
     renderChart: () => {},
     updateSelection: () => {},
     canLeaveTask: () => true,
-    document: { querySelector: () => null, addEventListener: () => {} },
+    document: {
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      addEventListener: () => {},
+    },
   });
   const origin = "https://pscm.example.test";
   const parent = {
@@ -122,6 +129,7 @@ function createEmbeddedStudio(projectId: number) {
      ${sourceBetween("  let portfolio=null", "  let showCritical")}
      ${sourceBetween("  function sendToHost(", "  function setSaveStatus(")}
      ${sourceBetween("  function save()", "  function record(")}
+     ${sourceBetween("  const studioViews=", "  function updateSummary(")}
      ${sourceBetween("  function visiblePeerTasks(", "  function range(")}
      ${sourceBetween("  let deferredReceipt=", "  // Delegated handlers")}`,
     context
@@ -180,6 +188,27 @@ function studioProjectState(projectId: number, taskId: number) {
 }
 
 describe("embedded Gantt Studio", () => {
+  it("restores the current pane without saving and reports subsequent navigation", () => {
+    const studio = createEmbeddedStudio(101);
+    studio.receive({
+      type: "pscm:gantt:load",
+      state: studioProjectState(101, 1001),
+      view: "lab",
+      version: 5,
+      sequence: 0,
+    });
+    expect(
+      studio.execute("[view, $('ganttView').hidden, $('labView').hidden]")
+    ).toEqual(["lab", true, false]);
+    expect(studio.messages).toEqual([]);
+
+    studio.execute("setView('analysis'); setView('unexpected-pane');");
+    expect(studio.execute("view")).toBe("analysis");
+    expect(studio.messages).toMatchObject([
+      { type: "pscm:gantt:view", projectId: 101, view: "analysis" },
+    ]);
+  });
+
   it("displays two projects while saving only the active project's tasks and links", () => {
     const studio = createEmbeddedStudio(101);
     studio.receive({

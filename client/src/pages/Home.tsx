@@ -1,6 +1,5 @@
 import { lazy, Suspense } from "react";
 import { trpc } from "@/lib/trpc";
-import type { Locale } from "@/lib/i18n";
 import { AuthScreen } from "@/features/auth/AuthScreen";
 import { useLocale } from "@/features/auth/useLocale";
 const PhaseOneWorkspace = lazy(() =>
@@ -9,15 +8,6 @@ const PhaseOneWorkspace = lazy(() =>
   }))
 );
 
-type User = {
-  id: number;
-  username: string | null;
-  name: string | null;
-  email: string | null;
-  locale: Locale;
-  permissions: string[];
-  role: "user" | "admin";
-};
 export default function Home() {
   const me = trpc.auth.me.useQuery(undefined, {
     refetchOnWindowFocus: true,
@@ -31,16 +21,47 @@ export default function Home() {
     refetchOnWindowFocus: false,
   });
   const [locale, setLocale] = useLocale(me.data?.locale, me.data?.id);
-  if (!me.data)
+  const opening = (
+    <div className="boot-screen" role="status">
+      {locale === "ar"
+        ? "جاري فتح البرنامج…"
+        : locale === "en"
+          ? "Opening workspace…"
+          : "پروگرام کھل رہا ہے…"}
+    </div>
+  );
+  if (me.data === undefined && me.isError)
+    return (
+      <div className="boot-screen" role="alert">
+        <p>
+          {locale === "ar"
+            ? "تعذّر الاتصال بالخادم."
+            : locale === "en"
+              ? "Could not reach the server."
+              : "سرور سے رابطہ نہیں ہو سکا۔"}
+        </p>
+        <button
+          type="button"
+          className="neo-button"
+          onClick={() => void me.refetch()}
+        >
+          {locale === "ar"
+            ? "إعادة المحاولة"
+            : locale === "en"
+              ? "Retry"
+              : "دوبارہ کوشش"}
+        </button>
+      </div>
+    );
+  if (me.data === undefined || (me.data === null && setup.isPending))
+    return opening;
+  if (me.data === null)
     return (
       <AuthScreen
         locale={locale}
         setLocale={setLocale}
         setup={Boolean(setup.data?.needsSetup)}
-        checking={
-          me.isLoading || (me.data === null && !setup.data && !setup.error)
-        }
-        checkError={Boolean(me.error || setup.error)}
+        checkError={setup.isError}
         retryChecks={() => {
           void me.refetch();
           void setup.refetch();
@@ -48,19 +69,10 @@ export default function Home() {
       />
     );
   return (
-    <Suspense
-      fallback={
-        <div className="boot-screen">
-          {locale === "ar"
-            ? "جاري فتح البرنامج…"
-            : locale === "en"
-              ? "Opening workspace…"
-              : "پروگرام کھل رہا ہے…"}
-        </div>
-      }
-    >
+    <Suspense fallback={opening}>
       <PhaseOneWorkspace
-        user={me.data as User}
+        key={me.data.id}
+        user={me.data}
         locale={locale}
         setLocale={setLocale}
       />

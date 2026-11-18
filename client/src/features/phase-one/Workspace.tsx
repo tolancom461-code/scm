@@ -16,6 +16,11 @@ import {
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { localeMeta, type Locale } from "@/lib/i18n";
+import {
+  clearTabNavigation,
+  readTabNavigation,
+  writeTabNavigation,
+} from "@/lib/tab-navigation";
 import { UsersPage } from "../users/UsersPage";
 import { PolicyCenter } from "../policy/PolicyCenter";
 import { LinkedDocuments } from "../documents/LinkedDocuments";
@@ -217,10 +222,20 @@ export function PhaseOneWorkspace({
   ].filter(
     x => can(x.permission) || (x.page === "settings" && can("p1.company.view"))
   );
-  const [selected, setPage] = useState<Page>(
-      (user.policy?.landing ?? "contracts") as Page
-    ),
-    page = pages.some(x => x.page === selected) ? selected : pages[0]?.page;
+  const [selected, setSelected] = useState(() => {
+    const saved = readTabNavigation(user.id, "workspace");
+    return typeof saved === "string"
+      ? saved
+      : (user.policy?.landing ?? "contracts");
+  });
+  const page =
+    pages.find(item => item.page === selected)?.page ??
+    pages.find(item => item.page === user.policy?.landing)?.page ??
+    pages[0]?.page;
+  const setPage = (next: Page) => {
+    setSelected(next);
+    writeTabNavigation(user.id, "workspace", next);
+  };
   useSystemTitle(page ? p(page) : p("brand"));
   const [sidebar, setSidebar] = useState(false),
     [dialog, setDialog] = useState<Dialog>(null),
@@ -252,7 +267,10 @@ export function PhaseOneWorkspace({
     setDialog(null);
   }, [policyKey, utils]);
   const logout = trpc.auth.logout.useMutation({
-    onSuccess: () => window.location.reload(),
+    onSuccess: () => {
+      clearTabNavigation(user.id);
+      window.location.reload();
+    },
   });
   const decision = trpc.phaseOne.decideCertificate.useMutation({
       onSuccess: done,

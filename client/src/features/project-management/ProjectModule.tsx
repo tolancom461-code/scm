@@ -3,6 +3,7 @@ import { LoaderCircle } from "lucide-react";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../../server/routers";
 import { localeMeta, type Locale } from "@/lib/i18n";
+import { readTabNavigation, writeTabNavigation } from "@/lib/tab-navigation";
 import { trpc } from "@/lib/trpc";
 import { Modal } from "@/components/Modal";
 import { businessDate } from "@shared/date";
@@ -149,6 +150,42 @@ function notifyAttachmentsUploaded(locale: Locale) {
     )
   );
 }
+type ProjectTab =
+  | "projects"
+  | "reviews"
+  | "employees"
+  | "statuses"
+  | "holidays";
+
+function projectNavigation(saved: unknown, user: Person) {
+  const projectList = { tab: "projects" as const, selected: 0 };
+  if (!saved || typeof saved !== "object") return projectList;
+  const { tab, selected } = saved as { tab?: unknown; selected?: unknown };
+  if (
+    tab !== "projects" &&
+    tab !== "reviews" &&
+    tab !== "employees" &&
+    tab !== "statuses" &&
+    tab !== "holidays"
+  )
+    return projectList;
+  if (
+    (tab === "reviews" && !user.permissions.includes("pm.review")) ||
+    (tab === "statuses" && !user.permissions.includes("pm.statuses.manage"))
+  )
+    return projectList;
+  return {
+    tab,
+    selected:
+      (tab === "projects" || tab === "reviews") &&
+      typeof selected === "number" &&
+      Number.isSafeInteger(selected) &&
+      selected > 0
+        ? selected
+        : 0,
+  };
+}
+
 export function ProjectModule({
   locale,
   user,
@@ -159,20 +196,25 @@ export function ProjectModule({
   const t = text(locale),
     can = (p: string) => user.permissions.includes(p),
     utils = trpc.useUtils();
-  const [tab, setTab] = useState<
-      "projects" | "reviews" | "employees" | "statuses" | "holidays"
-    >("projects"),
+  const [navigation, setNavigation] = useState(() =>
+      readTabNavigation(user.id, "projectModule")
+    ),
     [q, setQ] = useState(""),
     [filter, setFilter] = useState<(typeof projectStates)[number] | "">(""),
     [pageCursors, setPageCursors] = useState<(number | undefined)[]>([
       undefined,
     ]),
-    [selected, setSelected] = useState(0),
     [creating, setCreating] = useState(false),
     [linkingProjectId, setLinkingProjectId] = useState<number | null>(null),
     [linkedProjectIds, setLinkedProjectIds] = useState<Set<number>>(
       () => new Set()
     );
+  const { tab, selected } = projectNavigation(navigation, user);
+  function navigate(tab: ProjectTab, selected = 0) {
+    const next = { tab, selected };
+    setNavigation(next);
+    writeTabNavigation(user.id, "projectModule", next);
+  }
   const projectListTab = tab === "projects" || tab === "reviews";
   const list = trpc.projectManagement.list.useQuery(
       {
@@ -198,11 +240,10 @@ export function ProjectModule({
       ? projects.find(p => p.id === linkingProjectId && mayLinkFromList(p))
       : undefined;
   const linkLocationTitle = linkProjectLocationLabel[localeIndex[locale]];
-  const chooseTab = (v: typeof tab) => {
-    setSelected(0);
+  const chooseTab = (tab: ProjectTab) => {
     setLinkingProjectId(null);
     setPageCursors([undefined]);
-    setTab(v);
+    navigate(tab);
   };
   return (
     <section className="pm-module">
@@ -256,7 +297,7 @@ export function ProjectModule({
                 ]
               : []),
             ["holidays", t("الإجازات", "Holidays", "تعطیلات")],
-          ] as [typeof tab, string][]
+          ] as [ProjectTab, string][]
         ).map(([id, label]) => (
           <button
             key={id}
@@ -307,7 +348,7 @@ export function ProjectModule({
             locale={locale}
             user={user}
             directory={directory.data}
-            back={() => setSelected(0)}
+            back={() => navigate(tab)}
           />
         ) : (
           <>
@@ -424,7 +465,7 @@ export function ProjectModule({
                       }
                       onClick={() => {
                         setLinkingProjectId(null);
-                        setSelected(p.id);
+                        navigate(tab, p.id);
                       }}
                     >
                       {t("فتح المشروع ←", "Open project →", "منصوبہ کھولیں ←")}
@@ -486,9 +527,8 @@ export function ProjectModule({
           close={() => setCreating(false)}
           saved={id => {
             setCreating(false);
-            setTab("projects");
             setPageCursors([undefined]);
-            setSelected(id);
+            navigate("projects", id);
             void utils.projectManagement.invalidate();
             void utils.gantt.projects.invalidate();
             void utils.materialRequisitions.directory.invalidate();
@@ -1498,12 +1538,15 @@ function ProjectDetail({
     );
   if (query.error || !query.data)
     return (
-      <p role="alert">
-        {query.error?.message}
+      <div className="pm-detail">
+        <button onClick={back}>
+          ← {t("قائمة المشاريع", "Project list", "منصوبوں کی فہرست")}
+        </button>
+        <p role="alert">{query.error?.message}</p>
         <button onClick={() => query.refetch()}>
           {t("إعادة المحاولة", "Retry", "دوبارہ کوشش کریں")}
         </button>
-      </p>
+      </div>
     );
   const { project, tasks, events, calendar } = query.data,
     editable = ["draft", "returned"].includes(project.status),
