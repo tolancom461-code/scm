@@ -10,6 +10,9 @@ const scrypt = promisify(scryptCallback);
 
 export const LOCAL_SESSION_COOKIE = "procureflow_session";
 export const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
+export const REMEMBERED_SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000;
+export const REMEMBERED_SESSION_RENEWAL_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const REMEMBERED_SESSION_PREFIX = "remembered.";
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_LOGIN_ATTEMPTS = 5;
 const MAX_TRACKED_KEYS = 4096;
@@ -100,8 +103,13 @@ export async function verifyPassword(password: string, encoded: string | null) {
   );
 }
 
-export function generateSessionToken() {
-  return randomBytes(48).toString("base64url");
+export function generateSessionToken(rememberMe = false) {
+  const token = randomBytes(48).toString("base64url");
+  return rememberMe ? REMEMBERED_SESSION_PREFIX + token : token;
+}
+
+export function isRememberedSessionToken(token: string) {
+  return token.startsWith(REMEMBERED_SESSION_PREFIX);
 }
 
 export function hashSessionToken(token: string) {

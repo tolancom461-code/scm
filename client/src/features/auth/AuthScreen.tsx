@@ -6,6 +6,23 @@ import { toast } from "sonner";
 import { Input } from "@/features/workspace/ui";
 import { SystemBrand, useSystemTitle } from "@/components/SystemBrand";
 import { systemBrand } from "@/lib/branding";
+
+function offerPasswordSave(username: string, password: string) {
+  const { PasswordCredential } = window as Window & {
+    PasswordCredential?: new (data: {
+      id: string;
+      password: string;
+    }) => Credential;
+  };
+  if (!PasswordCredential || !navigator.credentials) return;
+  try {
+    const credential = new PasswordCredential({ id: username, password });
+    void navigator.credentials.store(credential).catch(() => undefined);
+  } catch {
+    // The browser may disallow saving credentials even when it exposes the API.
+  }
+}
+
 export function AuthScreen({
   locale,
   setLocale,
@@ -22,14 +39,13 @@ export function AuthScreen({
   retryChecks?: () => void;
 }) {
   const trpcUtils = trpc.useUtils();
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const t9 = (key: TranslationKey) => t(locale, key);
   useSystemTitle(setup ? t9("setup") : t9("login"));
   const login = trpc.auth.login.useMutation({
-    onSuccess: () => {
+    onSuccess: (_, { username, password, rememberMe }) => {
+      if (rememberMe) offerPasswordSave(username, password);
       void trpcUtils.auth.me.invalidate();
       toast.success(t9("actionDone"));
     },
@@ -43,8 +59,11 @@ export function AuthScreen({
     },
     onError: error => toast.error(error.message),
   });
-  const submit = (event: React.FormEvent) => {
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const fields = new FormData(event.currentTarget);
+    const username = String(fields.get("username") ?? "").trim();
+    const password = String(fields.get("password") ?? "");
     if (setup)
       bootstrap.mutate({
         username,
@@ -53,7 +72,12 @@ export function AuthScreen({
         email: email || undefined,
         locale,
       });
-    else login.mutate({ username, password });
+    else
+      login.mutate({
+        username,
+        password,
+        rememberMe: fields.has("rememberMe"),
+      });
   };
   return (
     <main className="auth-shell">
@@ -76,7 +100,7 @@ export function AuthScreen({
           <h1>{setup ? t9("initialize") : t9("welcomeBack")}</h1>
           {setup && <p>{t9("bootText")}</p>}
         </div>
-        <form onSubmit={submit} className="auth-form">
+        <form method="post" onSubmit={submit} className="auth-form">
           {checking && (
             <p role="status">
               {locale === "ar"
@@ -125,23 +149,23 @@ export function AuthScreen({
             </>
           ) : null}
           <Input label={t9("username")} required>
-            <input
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              autoComplete="username"
-              required
-            />
+            <input name="username" autoComplete="username" required />
           </Input>
           <Input label={t9("password")} required>
             <input
-              value={password}
-              onChange={e => setPassword(e.target.value)}
+              name="password"
               autoComplete={setup ? "new-password" : "current-password"}
               type="password"
               minLength={setup ? 12 : 1}
               required
             />
           </Input>
+          {!setup && (
+            <label className="auth-remember">
+              <input type="checkbox" name="rememberMe" />
+              {t9("rememberLogin")}
+            </label>
+          )}
           <Input label={t9("language")}>
             <select
               value={locale}

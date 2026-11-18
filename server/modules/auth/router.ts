@@ -12,6 +12,8 @@ import {
   isLoginRateLimited,
   LOCAL_SESSION_COOKIE,
   registerLoginFailure,
+  REMEMBERED_SESSION_RENEWAL_WINDOW_MS,
+  REMEMBERED_SESSION_TTL_MS,
   SESSION_TTL_MS,
   verifyPassword,
 } from "../../localAuth";
@@ -72,6 +74,7 @@ export const authRouter = router({
       z.object({
         username: z.string().trim().min(3).max(80),
         password: z.string().min(1).max(128),
+        rememberMe: z.boolean().default(false),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -94,11 +97,14 @@ export const authRouter = router({
         });
       }
       clearLoginFailures(loginKey);
-      const token = generateSessionToken();
+      const token = generateSessionToken(input.rememberMe);
+      const sessionTtl = input.rememberMe
+        ? REMEMBERED_SESSION_TTL_MS
+        : SESSION_TTL_MS;
       const sessionCreated = await db.createSession(
         user.id,
         token,
-        new Date(Date.now() + SESSION_TTL_MS),
+        new Date(Date.now() + sessionTtl),
         user.passwordHash
       );
       if (!sessionCreated)
@@ -108,7 +114,7 @@ export const authRouter = router({
         });
       ctx.res.cookie(LOCAL_SESSION_COOKIE, token, {
         ...getSessionCookieOptions(ctx.req),
-        maxAge: SESSION_TTL_MS,
+        maxAge: sessionTtl,
       });
       await db.createAuditLog(user.id, "auth.login", "user", user.id);
       return { success: true };
@@ -121,27 +127,48 @@ export const authRouter = router({
     ctx.res.clearCookie(LOCAL_SESSION_COOKIE, getSessionCookieOptions(ctx.req));
     return { success: true } as const;
   }),
-  me: publicProcedure.query(({ ctx }) =>
-    ctx.user
-      ? {
-          id: ctx.user.id,
-          username: ctx.user.username,
-          name: ctx.user.name,
-          email: ctx.user.email,
-          locale: ctx.user.preferredLocale,
-          permissions: ctx.user.permissionCodes,
-          role: ctx.user.role,
-          policy: ctx.access
-            ? {
-                ...ctx.access.scope,
-                owner: ctx.user.role === "admin",
-                landing:
-                  ctx.user.role === "admin"
-                    ? "projectModule"
-                    : roleTemplates[ctx.access.scope.template].landing,
-              }
-            : undefined,
-        }
-      : null
-  ),
+  me: publicProcedure.query(async ({ ctx }) => {
+    const { user, rememberedSession } = ctx;
+    if (!user) return null;
+
+    if (rememberedSession) {
+      const { token, expiresAt } = rememberedSession;
+      const now = Date.now();
+      const remaining = expiresAt.getTime() - now;
+      if (
+        remaining > 0 &&
+        remaining <= REMEMBERED_SESSION_RENEWAL_WINDOW_MS &&
+        (await db.renewRememberedSession(
+          token,
+          expiresAt,
+          new Date(now + REMEMBERED_SESSION_TTL_MS)
+        ))
+      ) {
+        ctx.res.cookie(LOCAL_SESSION_COOKIE, token, {
+          ...getSessionCookieOptions(ctx.req),
+          maxAge: REMEMBERED_SESSION_TTL_MS,
+        });
+      }
+    }
+
+    return {
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      email: user.email,
+      locale: user.preferredLocale,
+      permissions: user.permissionCodes,
+      role: user.role,
+      policy: ctx.access
+        ? {
+            ...ctx.access.scope,
+            owner: user.role === "admin",
+            landing:
+              user.role === "admin"
+                ? "projectModule"
+                : roleTemplates[ctx.access.scope.template].landing,
+          }
+        : undefined,
+    };
+  }),
 });

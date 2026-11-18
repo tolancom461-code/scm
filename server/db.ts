@@ -179,7 +179,7 @@ export async function getUserByUsername(username: string) {
   return result[0] ?? null;
 }
 
-export async function getUserBySessionToken(rawToken: string) {
+export async function getActiveSession(rawToken: string) {
   const db = await requireDb();
   const tokenHash = hashSessionToken(rawToken);
   const sessionRows = await db
@@ -200,7 +200,32 @@ export async function getUserBySessionToken(rawToken: string) {
     .from(userPermissions)
     .innerJoin(permissions, eq(userPermissions.permissionId, permissions.id))
     .where(eq(userPermissions.userId, user.id));
-  return { ...user, permissionCodes: grants.map(grant => grant.code) };
+  return {
+    expiresAt: session.expiresAt,
+    user: { ...user, permissionCodes: grants.map(grant => grant.code) },
+  };
+}
+
+export async function getUserBySessionToken(rawToken: string) {
+  return (await getActiveSession(rawToken))?.user ?? null;
+}
+
+export async function renewRememberedSession(
+  rawToken: string,
+  previousExpiresAt: Date,
+  nextExpiresAt: Date
+) {
+  const [result] = await (await requireDb())
+    .update(sessions)
+    .set({ expiresAt: nextExpiresAt })
+    .where(
+      and(
+        eq(sessions.tokenHash, hashSessionToken(rawToken)),
+        eq(sessions.expiresAt, previousExpiresAt),
+        gt(sessions.expiresAt, new Date())
+      )
+    );
+  return result.affectedRows === 1;
 }
 
 export async function createSession(
