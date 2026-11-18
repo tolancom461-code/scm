@@ -88,6 +88,20 @@ export async function seedPermissions() {
       { code: "done", name: "منتهية" },
     ])
     .onDuplicateKeyUpdate({ set: { code: sql`VALUES(code)` } });
+  const [cancelled] = await db
+    .select({ id: taskStatuses.id })
+    .from(taskStatuses)
+    .where(eq(taskStatuses.code, "cancelled"))
+    .limit(1);
+  if (!cancelled)
+    await db
+      .insert(taskStatuses)
+      .values({ code: "cancelled", name: "ملغاة" })
+      .onDuplicateKeyUpdate({
+        set: {
+          code: sql`IF(${taskStatuses.code} LIKE 'custom-%', 'cancelled', ${taskStatuses.code})`,
+        },
+      });
 }
 
 type CreateLocalUserInput = {

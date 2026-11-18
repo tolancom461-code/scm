@@ -82,6 +82,7 @@ const defaultStatuses: Record<string, LocalizedLabel> = {
   working: ["جاري العمل", "In progress", "زیرِ عمل"],
   paused: ["متوقفة", "On hold", "روکا ہوا"],
   done: ["منتهية", "Completed", "مکمل"],
+  cancelled: ["ملغاة", "Cancelled", "منسوخ"],
 };
 const text = (locale: Locale) => (ar: string, en: string, ur: string) =>
   locale === "ar" ? ar : locale === "en" ? en : ur;
@@ -1751,6 +1752,10 @@ function ProjectDetail({
           <dd>{project.actualStartDate || "—"}</dd>
         </div>
         <div>
+          <dt>{t("النهاية الفعلية", "Actual finish", "حقیقی اختتام")}</dt>
+          <dd>{project.actualEndDate || "—"}</dd>
+        </div>
+        <div>
           <dt>{t("النهاية المتوقعة", "Forecast finish", "متوقع اختتام")}</dt>
           <dd>
             {project.forecastEndDate || project.plannedEndDate || "—"}
@@ -1971,16 +1976,16 @@ function ProjectDetail({
           >
             <p className="pm-help">
               {t(
-                "هذا هو تاريخ البدء الفعلي، وتُزاح منه تواريخ الجدول مع الاحتفاظ بالخطة الأصلية.",
-                "This is the actual start date. The schedule shifts from it while preserving the original baseline.",
-                "یہ اصل تاریخِ آغاز ہے۔ ابتدائی منصوبہ محفوظ رہتا ہے اور شیڈول اس تاریخ کے مطابق آگے یا پیچھے ہوتا ہے۔"
+                "يُضبط موعد النهاية المتوقع حسب تاريخ بدء الجدول. يسجّل النظام البداية الفعلية عند بدء أول مهمة تنفيذية.",
+                "The schedule start sets the forecast finish. Actual start is recorded when the first executable task starts.",
+                "شیڈول کے آغاز سے اختتام کی متوقع تاریخ طے ہوتی ہے۔ اصل آغاز پہلی عملی ذمہ داری شروع ہونے پر درج ہوتا ہے۔"
               )}
             </p>
             <Field
               label={t(
-                "تاريخ البدء الفعلي *",
-                "Actual start date *",
-                "اصل تاریخِ آغاز *"
+                "تاريخ بدء الجدول *",
+                "Schedule start date *",
+                "شیڈول کے آغاز کی تاریخ *"
               )}
             >
               <input
@@ -2045,12 +2050,13 @@ function TaskExecutionDetails({
 }) {
   const t = text(locale);
   const [today, setToday] = useState(businessDate);
-  const completed = task.executionStatus === "completed";
+  const hasFinished =
+    task.executionStatus === "completed" || !!task.actualEndDate;
   useEffect(() => {
-    if (completed) return;
+    if (hasFinished) return;
     const interval = window.setInterval(() => setToday(businessDate()), 60_000);
     return () => window.clearInterval(interval);
-  }, [completed]);
+  }, [hasFinished]);
 
   const { startDelayDays, endDelayDays, progress } = taskExecutionMetrics(
     task,
@@ -2097,7 +2103,7 @@ function TaskExecutionDetails({
         </div>
         <div>
           <dt>
-            {completed
+            {hasFinished
               ? t(
                   "تأخير النهاية (أيام عمل)",
                   "Finish delay (workdays)",
@@ -2160,7 +2166,11 @@ function TaskForm({
     parent = tasks.find(v => v.id === parentId),
     [form, setForm] = useState({
       name: row?.name ?? "",
-      statusId: row?.statusId ?? directory.statuses[0]?.id ?? 0,
+      statusId:
+        row?.statusId ??
+        directory.statuses.find(status => status.code === "not_started")?.id ??
+        directory.statuses[0]?.id ??
+        0,
       startDate: row?.startDate ?? parent?.startDate ?? businessDate(),
       endDate: row?.endDate ?? parent?.endDate ?? businessDate(),
       priority: row?.priority ?? "medium",

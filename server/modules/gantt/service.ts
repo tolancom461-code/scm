@@ -47,6 +47,7 @@ import {
   lockRequisitionSourceProjects,
 } from "../material-requisitions/schedule-guards";
 import { readGlobalWorkCalendar } from "../project-management/work-calendar";
+import { projectScheduleStart, rollUpExecutionDates } from "./execution-rollup";
 import {
   calendarDays,
   dependencyTargetMovement,
@@ -630,8 +631,7 @@ export async function saveProjectSchedule(
             project.plannedEndDate;
         }
         if (input.action === "start") {
-          if (project.actualStartDate)
-            invalid("تم تسجيل البدء الفعلي لهذا المشروع مسبقًا");
+          if (project.startedAt) invalid("تم بدء هذا المشروع مسبقًا");
           const actual = input.actualStartDate!;
           const planned =
             project.plannedStartDate ??
@@ -674,7 +674,6 @@ export async function saveProjectSchedule(
               })
               .where(eq(s.ganttTaskSettings.taskId, row.task.id));
           }
-          update.actualStartDate = actual;
           update.startedAt = new Date(`${actual}T00:00:00Z`);
           const previousEnd =
             project.forecastEndDate ??
@@ -728,6 +727,7 @@ export async function saveProjectSchedule(
           { sharedTaskIds: movedTasks, dependencyTaskIds: movedTasks },
           a
         );
+        await rollUpExecutionDates(tx, affected);
         if (input.action === "start")
           await enforceProjectBounds(tx, project.id, a);
         else await assertDraftRequisitionSourceStarts(tx, [project.id]);
@@ -857,6 +857,7 @@ export async function saveSharedGroup(
         { sharedTaskIds: [input.taskIds[0]], dependencyTaskIds: [] },
         a
       );
+      await rollUpExecutionDates(tx, affected);
       await touchGanttStudioStates(
         tx,
         [...oldProjects, ...projects, ...affected],
@@ -1063,6 +1064,9 @@ export async function saveStudioState(
         for (const task of input.state.tasks) depthOf(task.id);
 
         const parents = new Set(input.state.tasks.map(task => task.parentId));
+        const existingParents = new Set(
+          existingTasks.map(task => task.parentId)
+        );
         const parentsWithStatusChanges = new Set<string>();
         const markParents = (parentId: string | null) => {
           while (parentId && !parentsWithStatusChanges.has(parentId)) {
@@ -1073,16 +1077,20 @@ export async function saveStudioState(
         for (const task of input.state.tasks) {
           const id = dbIdByStudio.get(task.id);
           const old = id ? existingById.get(id) : undefined;
+          const currentStatusCode = old && statusById.get(old.statusId)?.code;
           const newParent = task.parentId
             ? dbIdByStudio.get(task.parentId)
             : null;
+          const cancellationChanged =
+            (currentStatusCode === "cancelled") !==
+            ((task.pmStatusCode ?? currentStatusCode) === "cancelled");
           if (
             !old ||
             old.parentId !== newParent ||
             (!parents.has(task.id) &&
-              taskExecutionStatus(
-                statusById.get(old.statusId)?.code ?? "not_started"
-              ) !== (task.status ?? task.executionStatus))
+              (cancellationChanged ||
+                taskExecutionStatus(currentStatusCode ?? "not_started") !==
+                  (task.status ?? task.executionStatus)))
           ) {
             markParents(task.parentId);
           }
@@ -1133,7 +1141,8 @@ export async function saveStudioState(
             preservedStatusCode &&
             taskExecutionStatus(preservedStatusCode) ===
               requestedStudioStatus &&
-            statusByCode.has(preservedStatusCode)
+            (preservedStatusCode === "cancelled" ||
+              statusByCode.has(preservedStatusCode))
               ? preservedStatusCode
               : studioStatusCode(requestedStudioStatus);
           const status = statusByCode.get(statusCode);
@@ -1174,17 +1183,6 @@ export async function saveStudioState(
             employeeIds,
             level: depthOf(task.id),
           });
-        }
-        for (const item of desired.values()) {
-          if (!item.task.parentId) continue;
-          const parent = desired.get(item.task.parentId)!;
-          if (
-            item.statusCode !== "not_started" &&
-            parent.statusCode === "not_started"
-          )
-            invalid(
-              `حدّث حالة المهمة الأم «${parent.task.name}» قبل بدء «${item.task.name}»`
-            );
         }
         for (const task of [...input.state.tasks].sort(
           (left, right) => depthOf(right.id) - depthOf(left.id)
@@ -1227,14 +1225,13 @@ export async function saveStudioState(
           .map(item => item.endDate)
           .sort()
           .at(-1);
-        const projectStart =
-          project.actualStartDate ?? project.plannedStartDate;
+        const projectStart = projectScheduleStart(project);
         const projectEnd = project.forecastEndDate ?? project.plannedEndDate;
         const projectUpdate: Partial<
           typeof s.constructionProjects.$inferInsert
         > = {};
         if (earliest && projectStart && earliest < projectStart) {
-          if (project.startLocked || project.actualStartDate)
+          if (project.startLocked || project.startedAt)
             invalid(
               `المهمة تبدأ في ${earliest} قبل بداية المشروع المقفلة ${projectStart}`
             );
@@ -1367,6 +1364,20 @@ export async function saveStudioState(
           const currentSetting = existing
             ? taskSettingsById.get(existing.id)
             : undefined;
+          const wasParent = existing && existingParents.has(existing.id);
+          const executionDates = parents.has(task.id)
+            ? {
+                actualStartDate: currentSetting?.actualStartDate ?? null,
+                actualEndDate: currentSetting?.actualEndDate ?? null,
+              }
+            : updateTaskExecutionDates(
+                wasParent ? undefined : currentSetting,
+                existing && !wasParent
+                  ? statusById.get(existing.statusId)?.code
+                  : undefined,
+                item.statusCode,
+                executionDate
+              );
           const taskSettingValues = {
             notBefore: task.notBefore,
             isMilestone: task.duration === 0,
@@ -1376,12 +1387,7 @@ export async function saveStudioState(
               item.startDate,
             plannedEndDate:
               currentSetting?.plannedEndDate ?? task.plannedEnd ?? item.endDate,
-            ...updateTaskExecutionDates(
-              currentSetting,
-              existing && statusById.get(existing.statusId)?.code,
-              item.statusCode,
-              executionDate
-            ),
+            ...executionDates,
             startLocked:
               task.startLocked ?? currentSetting?.startLocked ?? false,
             endLocked: task.endLocked ?? currentSetting?.endLocked ?? false,
@@ -1568,6 +1574,7 @@ export async function saveStudioState(
           },
           a
         );
+        await rollUpExecutionDates(tx, [input.projectId, ...affectedProjects]);
         await touchGanttStudioStates(
           tx,
           affectedProjects.filter(id => id !== input.projectId),
@@ -1975,6 +1982,7 @@ export async function saveSchedule(
         { sharedTaskIds: movedTasks, dependencyTaskIds: movedTasks },
         a
       );
+      await rollUpExecutionDates(tx, affected);
       await enforceProjectBounds(tx, input.projectId, a);
       await touchGanttStudioStates(
         tx,

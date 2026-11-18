@@ -48,7 +48,7 @@ export function updateTaskExecutionDates(
 ): ActualTaskDates {
   const actualStartDate = dates?.actualStartDate ?? null;
   const actualEndDate = dates?.actualEndDate ?? null;
-  if (nextStatusCode === previousStatusCode)
+  if (nextStatusCode === previousStatusCode || nextStatusCode === "cancelled")
     return { actualStartDate, actualEndDate };
   return {
     actualStartDate:
@@ -57,8 +57,10 @@ export function updateTaskExecutionDates(
         : actualStartDate,
     actualEndDate:
       nextStatusCode === "done"
-        ? today
-        : previousStatusCode === "done"
+        ? previousStatusCode === "cancelled"
+          ? (actualEndDate ?? today)
+          : today
+        : previousStatusCode === "done" || previousStatusCode === "cancelled"
           ? null
           : actualEndDate,
   };
@@ -192,7 +194,7 @@ export function taskExecutionMetrics(
   const start =
     task.actualStartDate ??
     (task.executionStatus === "not_started" ? today : null);
-  const end = completed ? task.actualEndDate : today;
+  const end = task.actualEndDate ?? (completed ? null : today);
   return {
     startDelayDays:
       start === null ? null : calendar.workingDaysAfter(task.startDate, start),

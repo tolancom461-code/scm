@@ -140,6 +140,10 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
 .portfolio-swatch i{display:block;width:100%;height:100%;border:1px solid #132f4222;border-radius:3px;background:var(--portfolio-color)}
 .portfolio-project-mark{flex:0 0 auto;width:10px;height:10px;border-radius:3px;background:var(--portfolio-color)}
 .portfolio-group-track{position:absolute;top:22px;height:12px;border-radius:3px;background:var(--portfolio-color);opacity:.78}
+.actual-track{position:absolute;top:41px;height:4px;z-index:4;border-radius:3px;background:#087f7b;pointer-events:auto}
+.actual-track.is-point{top:40px;height:6px}
+.legend-actual{width:13px;height:4px;border-radius:3px;background:#087f7b}
+#projectTimelineDates{color:#536e7b}
 .portfolio-peer-bar{cursor:pointer;touch-action:manipulation;padding:0 5px;font-weight:600}
 .portfolio-peer-row{gap:6px}
 .portfolio-predecessor{outline:2px solid #178e85;outline-offset:2px}
@@ -216,7 +220,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       </div>
       <div id="selectionBar" class="selection-bar" aria-label="تحديد المهام ونقل المجموعة"><button id="multiSelectBtn" class="selection-mode" aria-pressed="false">تحديد متعدد</button><span id="selectionCount" aria-live="polite"></span><button id="earlierBtn" disabled>تقديم يوم عمل</button><button id="laterBtn" disabled>تأخير يوم عمل</button><button id="clearSelectionBtn" disabled>إلغاء التحديد</button><span id="selectionHelp">حدّد بمربعات الاختيار أو Ctrl + نقر على الأشرطة أو أسماء المهام.</span></div>
       <div id="ganttScroll" class="gantt-scroll" tabindex="0" aria-label="مخطط جانت، مرر لعرض بقية المهام والتواريخ"><div id="ganttGrid" class="gantt-grid"></div></div>
-      <div class="chart-footer"><div class="legend"><span><i class="legend-dot normal"></i>مخططة</span><span><i class="legend-dot active-task"></i>قيد التنفيذ</span><span><i class="legend-dot done"></i>مكتملة</span><span><i class="legend-dot critical"></i>حرجة</span><span><i class="legend-baseline"></i>خط الأساس</span><span><i class="legend-holiday"></i>يوم غير عامل</span></div><span id="visibleCount"></span></div>
+      <div class="chart-footer"><div class="legend"><span><i class="legend-dot normal"></i>مخططة</span><span><i class="legend-dot active-task"></i>قيد التنفيذ</span><span><i class="legend-dot done"></i>مكتملة</span><span><i class="legend-dot critical"></i>حرجة</span><span><i class="legend-baseline"></i>خط الأساس</span><span><i class="legend-holiday"></i>يوم غير عامل</span><span><i class="legend-actual"></i><span id="actualTimelineLegend"></span></span></div><span id="projectTimelineDates" hidden></span><span id="visibleCount"></span></div>
     </div>
     <div class="below-chart"><span>اسحب الشريط لتحريكه، وطرفه لتغيير المدة. النقر المزدوج يفتح التفاصيل. للتحديد: Ctrl + نقر أو مربعات الاختيار أو زر «تحديد متعدد». اسحب جسم أحد الأشرطة المحددة لنقل المجموعة.</span><button id="exportBtn">تصدير JSON</button><button id="exportCsvBtn">تصدير CSV</button><button id="importBtn">استيراد مشروع</button></div>
     <div id="issuesPreview"></div>
@@ -573,6 +577,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   Object.assign(catalogs.ar,{"بانتظار تحميل المشروع…":"بانتظار تحميل المشروع…","محفوظ محليًا":"محفوظ محليًا","تعديلات بانتظار الحفظ":"تعديلات بانتظار الحفظ","جارٍ الحفظ…":"جارٍ الحفظ…","تعذر الحفظ؛ التعديلات لا تزال مفتوحة":"تعذر الحفظ؛ التعديلات لا تزال مفتوحة","تعذر تحميل مخطط المشروع: ":"تعذر تحميل مخطط المشروع: ","تعذر مطابقة نتيجة الحفظ مع التعديلات.":"تعذر مطابقة نتيجة الحفظ مع التعديلات.","هذا المشروع للعرض فقط.":"هذا المشروع للعرض فقط.","طلب احتياج":"طلب احتياج","أقفال الجدولة":"أقفال الجدولة","قفل البداية":"قفل البداية","قفل النهاية":"قفل النهاية","القفل يمنع السحب أو التمديد من تجاوز هذا الحد.":"القفل يمنع السحب أو التمديد من تجاوز هذا الحد.","طي تفرعات ":"طي تفرعات ","فتح تفرعات ":"فتح تفرعات ","تحديد ":"تحديد ","تعديل ":"تعديل "});
   Object.assign(catalogs.en,{"بانتظار تحميل المشروع…":"Loading project…","محفوظ محليًا":"Saved locally","تعديلات بانتظار الحفظ":"Changes waiting to save","جارٍ الحفظ…":"Saving…","تعذر الحفظ؛ التعديلات لا تزال مفتوحة":"Save failed. Edits are still open.","تعذر تحميل مخطط المشروع: ":"Could not load the project chart: ","تعذر مطابقة نتيجة الحفظ مع التعديلات.":"Could not match the saved result to the edits.","هذا المشروع للعرض فقط.":"This project is read-only.","طلب احتياج":"Material requisition","أقفال الجدولة":"Schedule locks","قفل البداية":"Lock start","قفل النهاية":"Lock finish","القفل يمنع السحب أو التمديد من تجاوز هذا الحد.":"The lock prevents dragging or extending past this date.","طي تفرعات ":"Collapse branches of ","فتح تفرعات ":"Expand branches of ","تحديد ":"Select ","تعديل ":"Edit "});
   Object.assign(catalogs.ar,{
+    "ملغاة":"ملغاة",
+    "تُستبعد المهمة الملغاة من احتساب الإنجاز.":"تُستبعد المهمة الملغاة من احتساب الإنجاز.",
     "استعراض":"استعراض",
     "جاهز للصرف":"جاهز للصرف",
     "جاهز":"جاهز",
@@ -601,6 +607,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     "النهاية المخططة":"Planned finish",
     "البداية الفعلية":"Actual start",
     "النهاية الفعلية":"Actual finish",
+    "ملغاة":"Cancelled",
+    "تُستبعد المهمة الملغاة من احتساب الإنجاز.":"Cancelled tasks are excluded from completion calculations.",
     "تأخير البداية (أيام عمل)":"Start delay (workdays)",
     "تأخير النهاية (أيام عمل)":"Finish delay (workdays)",
     "تأخير النهاية حتى اليوم (أيام عمل)":"Finish delay as of today (workdays)",
@@ -624,6 +632,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     "النهاية المخططة":"منصوبہ شدہ اختتام",
     "البداية الفعلية":"حقیقی آغاز",
     "النهاية الفعلية":"حقیقی اختتام",
+    "ملغاة":"منسوخ",
+    "تُستبعد المهمة الملغاة من احتساب الإنجاز.":"منسوخ کام کو تکمیل کے حساب سے خارج کیا جاتا ہے۔",
     "تأخير البداية (أيام عمل)":"آغاز میں تاخیر (کام کے دن)",
     "تأخير النهاية (أيام عمل)":"اختتام میں تاخیر (کام کے دن)",
     "تأخير النهاية حتى اليوم (أيام عمل)":"آج تک اختتام میں تاخیر (کام کے دن)",
@@ -1050,12 +1060,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const earlyFinish = metrics.size ? [...metrics.values()].map(m => m.earlyFinish).reduce((a,b) => a > b ? a : b) : state.project.start;
     const totalDuration = state.tasks.reduce((n, t) => n + t.duration, 0);
     let progress = totalDuration ? Math.round(state.tasks.reduce((n, t) => n + t.progress * t.duration, 0) / totalDuration) : 0;
-    if (state.completionModel === 'leaf-count-v1') {
-      const parentIds = new Set(state.tasks.map(t=>t.parentId).filter(Boolean));
-      const leaves = state.tasks.filter(t=>!parentIds.has(t.id));
-      const done = leaves.filter(t=>t.executionStatus==='completed').length;
-      progress = !leaves.length ? 0 : done===leaves.length ? 100 : Math.min(99,Math.round(done*100/leaves.length));
-    }
+    if (state.completionModel === 'leaf-count-v1' && globalThis.GanttProgress)
+      progress = globalThis.GanttProgress.summary(state).progress;
     const overdue = state.tasks.filter(t => t.progress < 100 && cal.finish(t.start, t.duration) < state.project.statusDate);
     const deadlineMargin = state.project.deadline ? cal.index(state.project.deadline, -1) - cal.index(finish) : null;
     return { cal, metrics, criticalLinks, issues, order, projectEnd, finish, earlyFinish, progress, overdue, deadlineMargin };
@@ -1229,15 +1235,15 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       const t=tree.byId.get(id), kids=tree.children.get(id);
       let done=0,total=0,started=false;
       if(kids.length) {
-        for(const child of kids) {
+        for(const child of t.pmStatusCode==='cancelled'?[]:kids) {
           const s=derive(child.id); done+=s.done;total+=s.total;started=started||s.started;
         }
         // A parent has no separate execution vote. If its last child is removed,
         // it becomes a new unstarted leaf rather than inheriting a stale 100%.
         t.executionStatus='not_started';t.completionNeedsReview=false;
-      } else {total=1;done=t.executionStatus==='completed'?1:0;started=t.executionStatus!=='not_started';}
+      } else if(t.pmStatusCode!=='cancelled') {total=1;done=t.executionStatus==='completed'?1:0;started=t.executionStatus!=='not_started';}
       t.progress=percent(done,total);
-      t.status=done===total?'completed':started?'in_progress':'not_started';
+      t.status=total&&done===total?'completed':started?'in_progress':'not_started';
       t.completion={done,total};
       const result={done,total,started};stats.set(id,result);return result;
     }
@@ -1246,10 +1252,19 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     return next;
   }
   function summary(state) {
-    const parents=new Set(state.tasks.map(t=>t.parentId).filter(Boolean));
-    const leaves=state.tasks.filter(t=>!parents.has(t.id));
-    const done=leaves.filter(t=>t.executionStatus==='completed').length;
-    return {done,total:leaves.length,progress:percent(done,leaves.length)};
+    const tree=hierarchy(state.tasks);
+    let done=0,total=0;
+    function count(task) {
+      if(task.pmStatusCode==='cancelled')return;
+      const children=tree.children.get(task.id);
+      if(children.length)children.forEach(count);
+      else {
+        total++;
+        if(task.executionStatus==='completed')done++;
+      }
+    }
+    tree.roots.forEach(count);
+    return {done,total,progress:percent(done,total)};
   }
   function descendants(state,id) {
     const tree=hierarchy(state.tasks), result=new Set();
@@ -1375,21 +1390,30 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const date=new Date(value+'T00:00:00Z'), timestamp=date.getTime();
     return Number.isFinite(timestamp)&&date.toISOString().slice(0,10)===value?timestamp/E.DAY:null;
   }
+  function timelineDates(item) {
+    return {
+      startDay:portfolioDay(item.plannedStartDate??item.startDate),
+      endDay:portfolioDay(item.plannedEndDate??item.endDate),
+      actualStartDay:portfolioDay(item.actualStartDate),
+      actualEndDay:portfolioDay(item.actualEndDate)
+    };
+  }
   function acceptPortfolio(value) {
     if(!Array.isArray(value?.projects)||!Array.isArray(value?.links))return;
     portfolio={
       projects:value.projects.filter(project=>positiveId(project?.id)&&Array.isArray(project.tasks)).map(project=>({
         id:project.id, number:project.number, name:project.name,
-        startDay:portfolioDay(project.startDate), endDay:portfolioDay(project.endDate),
+        ...timelineDates(project.id===projectId&&value.activeDates?value.activeDates:project),
         color:validColor(project.color)?project.color:'#087f7b',
         tasks:project.tasks.flatMap(task=>{
           if(!positiveId(task?.id))return [];
           const startDay=portfolioDay(task.startDate),endDay=portfolioDay(task.endDate);
           if(startDay===null||endDay===null||startDay>endDay)return [];
-          return [{id:task.id,parentId:task.parentId,name:task.name,owner:task.owner,statusCode:task.statusCode,isMilestone:Boolean(task.isMilestone),
+           return [{id:task.id,parentId:task.parentId,name:task.name,owner:task.owner,statusCode:task.statusCode,isMilestone:Boolean(task.isMilestone), dates:timelineDates(task),
             startDay,endDay,color:validColor(task.color)?task.color:'#087f7b',ink:validColor(task.ink)?task.ink:'#ffffff'}];
         })
       })),
+      activeDates:value.activeDates?timelineDates(value.activeDates):null,
       links:value.links.filter(link=>positiveId(link?.fromTaskId)&&positiveId(link?.toTaskId)&&E.TYPES.includes(link.type)),
       linkMode:Boolean(value.linkMode),
       predecessorTaskId:positiveId(value.predecessorTaskId)?value.predecessorTaskId:null
@@ -1678,13 +1702,22 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const allDates = [s.project.start, ...s.tasks.map(t=>t.start), ...(s.baseline?.tasks||[]).map(t=>t.start)];
     let earliest = Math.min(...allDates.map(E.epoch));
     let finish = Math.max(E.epoch(a.finish), ...(s.baseline?.tasks||[]).map(t=>E.epoch(t.finish)));
+    function include(dates) {
+      for(const day of [dates.startDay,dates.endDay,dates.actualStartDay,dates.actualEndDay]) {
+        if(day===null)continue;
+        earliest=Math.min(earliest,day);
+        finish=Math.max(finish,day);
+      }
+    }
+    if(portfolio?.activeDates)include(portfolio.activeDates);
+    for(const task of s.tasks)include(activeTaskTimelineDates(task,a.cal));
     for(const project of portfolio?.projects??[]) {
       if(project.id===projectId)continue;
-      if(project.startDay!==null)earliest=Math.min(earliest,project.startDay);
-      if(project.endDay!==null)finish=Math.max(finish,project.endDay);
+      include(project);
       for(const task of project.tasks) {
         earliest=Math.min(earliest,task.startDay);
         finish=Math.max(finish,task.endDay);
+        include(task.dates);
       }
     }
     const length = Math.max(60, Math.min(180, finish - earliest + 17));
@@ -1696,6 +1729,32 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const left = (E.epoch(t.start)-r.start)*dayWidth;
     const right = t.duration ? (E.epoch(cal.finish(t.start,t.duration))-r.start+1)*dayWidth : left;
     return {left, right, row, y:row*56+26, duration:t.duration};
+  }
+  function activeTaskTimelineDates(task,cal) {
+    return timelineDates({
+      startDate:task.plannedStart??task.start,
+      endDate:task.plannedEnd??cal.finish(task.start,task.duration),
+      actualStartDate:task.actualStart,
+      actualEndDate:task.actualEnd
+    });
+  }
+  function executionTimelineLabel({startDay,endDay,actualStartDay,actualEndDay}) {
+    const date=day=>day===null?'—':fmt(E.iso(day));
+    const planned=portfolioCopy('المخطط','Planned','منصوبہ بند');
+    const actual=portfolioCopy('الفعلي','Actual','حقیقی');
+    return planned+' '+date(startDay)+' – '+date(endDay)+' · '+actual+' '+date(actualStartDay)+' – '+date(actualEndDay);
+  }
+  function actualTrackMarkup(dates,r) {
+    const {actualStartDay:start,actualEndDay:end}=dates;
+    if(start===null&&end===null)return '';
+    const point=start===null||end===null;
+    const first=start??end, last=end??start;
+    if(last<first)return '';
+    const left=(first-r.start)*dayWidth+(point?(dayWidth-6)/2:0);
+    const width=point?6:(last-first+1)*dayWidth;
+    if(left>=r.width||left+width<=0)return '';
+    const label=esc(executionTimelineLabel(dates));
+    return '<span class="actual-track'+(point?' is-point':'')+'" style="left:'+left+'px;width:'+width+'px" title="'+label+'" role="img" aria-label="'+label+'"></span>';
   }
   // Connection points sit outside bars. Milestones have two distinct handles at one date.
   function portX(g, point) {
@@ -1804,8 +1863,9 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const label=esc(open?portfolioCopy('طي المشروع','Collapse project','منصوبہ سمیٹیں'):portfolioCopy('توسيع المشروع','Expand project','منصوبہ پھیلائیں'));
     const openLabel=esc(portfolioCopy('العمل على المشروع','Work on project','منصوبے پر کام کریں'));
     const name='<b>'+esc(project.name)+'</b><small><bdi>'+esc(project.number)+'</bdi></small>';
-    const title=current?'<span class="portfolio-project-name" aria-current="true">'+name+'</span>':
-      '<button type="button" class="portfolio-project-name" data-portfolio-focus="'+project.id+'" title="'+openLabel+'">'+name+'</button>';
+    const datesLabel=esc(executionTimelineLabel(project));
+    const title=current?'<span class="portfolio-project-name" aria-current="true" title="'+datesLabel+'">'+name+'</span>':
+      '<button type="button" class="portfolio-project-name" data-portfolio-focus="'+project.id+'" title="'+openLabel+' · '+datesLabel+'">'+name+'</button>';
     const marker='<span class="portfolio-project-mark" style="--portfolio-color:'+project.color+'" aria-hidden="true"></span>';
     const names='<div class="task-row portfolio-group'+(current?' is-current':'')+'"><button type="button" class="tree-toggle" data-portfolio-collapse="'+project.id+
       '" aria-expanded="'+open+'" aria-label="'+label+'">'+(open?'−':'+')+'</button>'+marker+title+portfolioColorButton(project,null,project.color)+'</div>';
@@ -1814,7 +1874,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       const left=(project.startDay-r.start)*dayWidth,width=(project.endDay-project.startDay+1)*dayWidth;
       if(left<r.width&&left+width>0)timeline+='<span class="portfolio-group-track" style="--portfolio-color:'+project.color+';left:'+left+'px;width:'+width+'px"></span>';
     }
-    return {names,timeline:timeline+'</div>'};
+    return {names,timeline:timeline+actualTrackMarkup(project,r)+'</div>'};
   }
   function portfolioPeerMarkup(row,index,r,positions) {
     const {project,task,depth,hasChildren}=row,open=!collapsedPeerTasks.has(task.id);
@@ -1825,7 +1885,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     positions.set(task.id,{left,right,y:index*56+26,duration:task.isMilestone?0:1,projectId:project.id});
     const toggle=hasChildren?'<button type="button" class="tree-toggle" data-portfolio-tree="'+task.id+
       '" aria-expanded="'+open+'" aria-label="'+esc(portfolioCopy('تفرعات المهمة','Task subtasks','ذیلی کام'))+'">'+(open?'−':'+')+'</button>':'<span class="tree-toggle-spacer" aria-hidden="true"></span>';
-    const title=esc(task.name)+' · '+esc(fmt(E.iso(task.startDay)))+' — '+esc(fmt(E.iso(task.endDay)));
+    const title=esc(task.name+' · '+executionTimelineLabel(task.dates));
     const names='<div class="task-row portfolio-peer-row'+(hasChildren?' is-parent':'')+'" data-depth="'+depth+'"><span class="tree-indent" style="width:'+
       Math.min(depth,5)*18+'px" aria-hidden="true"></span>'+toggle+'<div class="task-info"><button type="button" class="task-details"'+taskAttrs+
       ' title="'+title+'"><b>'+esc(task.name)+'</b>'+(task.owner?'<small>'+esc(task.owner)+'</small>':'')+'</button></div>'+
@@ -1837,6 +1897,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
         '" title="'+title+'" aria-label="'+title+'">'+(task.isMilestone?'':'<span class="bar-label">'+esc(task.name)+'</span>')+'</button>';
       if(task.isMilestone)timeline+='<span class="milestone-caption" style="left:'+(left+38)+'px">'+esc(task.name)+'</span>';
     }
+    if(task.statusCode!=='cancelled')timeline+=actualTrackMarkup(task.dates,r);
     return {names,timeline:timeline+'</div>'};
   }
   function renderChart(s=state,a=analysis) {
@@ -1845,6 +1906,11 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const rows=portfolioRows(s,a), visible=rows.filter(row=>row.kind==='active'), visibleCount=rows.filter(row=>row.kind!=='project').length;
     const r=range(s,a), tree=P.hierarchy(s.tasks), positions=new Map();
     const activeProject=portfolio?.projects.find(project=>project.id===projectId);
+    const projectDates=$('projectTimelineDates');
+    const activeDates=portfolio?.activeDates??activeProject;
+    projectDates.hidden=!activeDates||rows.some(row=>row.kind==='project'&&row.project.id===projectId);
+    if(!projectDates.hidden)projectDates.textContent=executionTimelineLabel(activeDates);
+    $('actualTimelineLegend').textContent=portfolioCopy('التنفيذ الفعلي','Actual execution','حقیقی عمل درآمد');
     lastRange=r;lastGeometry=new Map();
     $('ganttGrid').classList.toggle('portfolio-linking',Boolean(portfolio?.linkMode));
     const depthOf=task=>{let depth=0,current=task;while(current.parentId&&tree.byId.has(current.parentId)&&depth<20){depth++;current=tree.byId.get(current.parentId);}return depth;};
@@ -1882,7 +1948,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       const persistedId=persistedTaskId(t);
       if(persistedId)positions.set(persistedId,{...g,projectId});
       const critical=showCritical&&m.critical, status=t.status==='completed'?'done':t.status==='in_progress'?'active-task':'',sel=selected.has(t.id);
-      const title=I.t("{0} · {1}\n{2} ← {3}\n{4} يوم عمل · إنجاز {5}% · سماح {6} يوم", [t.id, I.field(t,'name'), fmt(t.start), fmt(a.cal.finish(t.start,t.duration)), t.duration, t.progress, m.totalFloat]);
+      const dates=activeTaskTimelineDates(t,a.cal);
+      const title=I.t("{0} · {1}\n{2} ← {3}\n{4} يوم عمل · إنجاز {5}% · سماح {6} يوم", [t.id, I.field(t,'name'), fmt(t.start), fmt(a.cal.finish(t.start,t.duration)), t.duration, t.progress, m.totalFloat])+'\n'+executionTimelineLabel(dates);
       const depth=depthOf(t), hasChildren=(tree.children.get(t.id)||[]).length>0, expanded=!collapsed.has(t.id);
       const toggleLabel=I.t(expanded?'طي تفرعات ':'فتح تفرعات ');
       const treeControl=hasChildren?`<button type="button" class="tree-toggle tree-node-anchor" data-tree-toggle="${t.id}" aria-expanded="${expanded}" aria-label="${esc(toggleLabel+I.field(t,'name'))}" title="${esc(toggleLabel+I.field(t,'name'))}">${expanded?'−':'+'}</button>`:'<span class="tree-toggle-spacer tree-node-anchor" aria-hidden="true"></span>';
@@ -1912,6 +1979,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
         }
         if(!t.duration) timeline+=`<span class="milestone-caption" style="left:${g.left+38}px">${esc(I.field(t,'name'))}</span>`;
       }
+      if(t.pmStatusCode!=='cancelled')timeline+=actualTrackMarkup(dates,r);
       timeline+='</div>';
     });
     if(!rows.length) timeline+=I.markup("<div class=\"empty-chart\">لا توجد مهام تطابق التصفية.</div>");
@@ -1998,7 +2066,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       ['البداية الفعلية',date(report.actualStartDate)],
       ['النهاية الفعلية',date(report.actualEndDate)],
       ['تأخير البداية (أيام عمل)',days(report.startDelayDays)],
-      [report.executionStatus==='completed'?'تأخير النهاية (أيام عمل)':'تأخير النهاية حتى اليوم (أيام عمل)',days(report.endDelayDays)],
+      [report.actualEndDate||report.executionStatus==='completed'?'تأخير النهاية (أيام عمل)':'تأخير النهاية حتى اليوم (أيام عمل)',days(report.endDelayDays)],
     ];
     if(report.progress===100)entries.push(['الإنجاز حسب الحالة المحفوظة',number.format(100)+'%']);
     taskExecutionSummary.replaceChildren(...entries.map(([label,value])=>{
@@ -2018,7 +2086,9 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     $('taskProgressOutput').textContent=value+'%';
     $('taskProgressFill').style.width=value+'%';
     $('taskProgressMeter').setAttribute('aria-valuenow',String(value));
-    $('taskProgressExplanation').textContent=hasChildren
+    $('taskProgressExplanation').textContent=t.pmStatusCode==='cancelled'||t.executionStatus==='cancelled'
+      ? I.t("تُستبعد المهمة الملغاة من احتساب الإنجاز.")
+      : hasChildren
       ? I.t("{0} من {1} مهمة تنفيذية مكتملة في أدنى مستوى. الأوزان متساوية؛ تتحدث النسبة عند حفظ حالة أي مهمة فرعية.", [t.completion.done, t.completion.total])
       : I.t("لا توجد مهام فرعية: تُحسب 100% عند اختيار «مكتملة»، و0% بخلاف ذلك. أضف مهامًا فرعية لتفصيل الإنجاز.");
   }
@@ -2040,7 +2110,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     f.elements.parentId.innerHTML=I.markup("<option value=\"\">بدون مهمة رئيسية — مهمة مستقلة</option>")+options(P.ordered(state).filter(c=>!excluded.has(c.id)),t.parentId);
     f.elements.parentId.value=t.parentId||'';
     f.elements.executionStatus.disabled=hasChildren;
-    f.elements.executionStatus.value=hasChildren?t.status:t.executionStatus;
+    f.elements.executionStatus.value=t.pmStatusCode==='cancelled'?'cancelled':hasChildren?t.status:t.executionStatus;
     f.elements.startLocked.checked=Boolean(t.startLocked);
     f.elements.endLocked.checked=Boolean(t.endLocked);
     $('taskStatusHint').textContent=hasChildren?I.t("محسوبة من المهام الفرعية؛ لا يمكن تعيينها يدويًا."):I.t("غيّر حالة التنفيذ هنا؛ نسبة الإنجاز ليست حقل إدخال.");
@@ -2080,7 +2150,10 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const start=f.elements.start.value;
     let notBefore=f.elements.notBefore.value||null;
     if(!old||start!==old.start)notBefore=notBefore||start;
-    const task={...old,id,name:f.elements.name.value.trim(),owner:f.elements.owner.value.trim(),phase:f.elements.phase.value.trim()||I.t("بدون مرحلة"),start,duration:Number(f.elements.duration.value),progress:0,parentId:f.elements.parentId.value||null,executionStatus:hasChildren?'not_started':f.elements.executionStatus.value,notBefore,notes:f.elements.notes.value.trim(),startLocked:f.elements.startLocked.checked,endLocked:f.elements.endLocked.checked};
+    const status=hasChildren?'not_started':f.elements.executionStatus.value;
+    const task={...old,id,name:f.elements.name.value.trim(),owner:f.elements.owner.value.trim(),phase:f.elements.phase.value.trim()||I.t("بدون مرحلة"),start,duration:Number(f.elements.duration.value),progress:0,parentId:f.elements.parentId.value||null,executionStatus:status==='cancelled'?'not_started':status,notBefore,notes:f.elements.notes.value.trim(),startLocked:f.elements.startLocked.checked,endLocked:f.elements.endLocked.checked};
+    if(!hasChildren&&(status==='cancelled'||old?.pmStatusCode==='cancelled'))
+      task.pmStatusCode=status==='in_progress'?'working':status==='completed'?'done':status;
     for(const key of ['name','owner','phase','notes']) {
       const value=f.elements[key].value.trim(), language=f.elements[key].dataset.editLanguage||I.language;
       task[key]=old?.[key]||'';
@@ -2964,6 +3037,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   $('exportBtn').onclick=exportJSON;$('exportCsvBtn').onclick=exportCSV;$('reportCsvBtn').onclick=exportCSV;$('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=importJSON;
   for(const id of ['helpBtn','footerHelp'])$(id).onclick=()=>openDialog('helpDialog');
   document.querySelector('.brand').onclick=event=>{event.preventDefault();setView('gantt');};
+  $('taskForm').elements.executionStatus.add(new Option('ملغاة','cancelled'));
   I.captureStatic();I.applyStatic();
   if(embedded)sendToHost('pscm:gantt:ready');
   else {render();save();if(startupError)notify(startupError,true);else if(!persistenceAvailable)notify(I.t("الحفظ المحلي غير متاح في هذا المتصفح؛ استخدم تصدير JSON."),true);}

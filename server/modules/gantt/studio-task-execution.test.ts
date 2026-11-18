@@ -7,9 +7,16 @@ import { ganttStudioStateInput } from "../../../shared/gantt";
 import type { AccessContext } from "../../core/policy";
 import { saveStudioState } from "./service";
 
+const statusCodes = ["not_started", "working", "done", "cancelled"];
+
 const fixture = vi.hoisted(() => ({
   tasks: new Map<number, Partial<typeof s.projectTasks.$inferSelect>>(),
   settings: new Map<number, typeof s.ganttTaskSettings.$inferInsert>(),
+  project: {
+    actualStartDate: null as string | null,
+    actualEndDate: null as string | null,
+    version: 0,
+  },
   studioVersion: 0,
   workCalendar: null as Pick<
     typeof s.pmWorkCalendar.$inferSelect,
@@ -17,7 +24,7 @@ const fixture = vi.hoisted(() => ({
   > | null,
 }));
 
-function read(table: unknown, withActualDates: boolean) {
+function read(table: unknown, projection?: Record<string, unknown>) {
   if (table === s.constructionProjects)
     return [
       {
@@ -28,6 +35,7 @@ function read(table: unknown, withActualDates: boolean) {
         description: "",
         plannedStartDate: "2026-11-16",
         plannedEndDate: "2026-11-19",
+        ...fixture.project,
       },
     ];
   if (table === s.ganttStudioStates)
@@ -36,7 +44,7 @@ function read(table: unknown, withActualDates: boolean) {
     return fixture.workCalendar ? [fixture.workCalendar] : [];
   if (table === s.employees) return [{ id: 1, name: "Employee", active: true }];
   if (table === s.taskStatuses)
-    return ["not_started", "working", "done"].map((code, index) => ({
+    return statusCodes.map((code, index) => ({
       id: index + 1,
       code,
     }));
@@ -45,15 +53,24 @@ function read(table: unknown, withActualDates: boolean) {
   if (table === s.ganttTaskSettings)
     return [...fixture.settings.values()].map(settings => ({ settings }));
   if (table === s.projectTasks)
-    return [...fixture.tasks].map(([id, task]) =>
-      withActualDates
-        ? {
-            task,
-            actualStartDate: fixture.settings.get(id)?.actualStartDate ?? null,
-            actualEndDate: fixture.settings.get(id)?.actualEndDate ?? null,
-          }
-        : task
-    );
+    return [...fixture.tasks].map(([id, task]) => {
+      const settings = fixture.settings.get(id);
+      const dates = {
+        actualStartDate: settings?.actualStartDate ?? null,
+        actualEndDate: settings?.actualEndDate ?? null,
+      };
+      if (projection?.task) return { task, ...dates };
+      if (projection?.settingsVersion)
+        return {
+          id,
+          projectId: 1,
+          parentId: task.parentId,
+          statusCode: statusCodes[(task.statusId ?? 1) - 1],
+          settingsVersion: settings?.version ?? null,
+          ...dates,
+        };
+      return task;
+    });
   return [];
 }
 
@@ -63,11 +80,12 @@ vi.mock("../../core/database", () => ({
       run({
         select: (projection?: Record<string, unknown>) => ({
           from: (table: unknown) => {
-            const results = () => read(table, Boolean(projection?.task));
+            const results = () => read(table, projection);
             const query = {
               innerJoin: () => query,
               leftJoin: () => query,
               where: () => query,
+              orderBy: () => query,
               for: async () => results(),
               then: (resolve: (rows: unknown[]) => unknown) =>
                 Promise.resolve(results()).then(resolve),
@@ -75,13 +93,16 @@ vi.mock("../../core/database", () => ({
             return query;
           },
         }),
-        update: () => ({
+        update: (table: unknown) => ({
           set: (values: Partial<typeof s.projectTasks.$inferSelect>) => ({
             where: (filter: SQL) => {
               const id = Number(
                 new MySqlDialect().sqlToQuery(filter).params[0]
               );
-              fixture.tasks.set(id, { ...fixture.tasks.get(id), ...values });
+              if (table === s.constructionProjects)
+                Object.assign(fixture.project, values);
+              if (table === s.projectTasks)
+                fixture.tasks.set(id, { ...fixture.tasks.get(id), ...values });
             },
           }),
         }),
@@ -89,7 +110,10 @@ vi.mock("../../core/database", () => ({
           values: (values: typeof s.ganttTaskSettings.$inferInsert) => ({
             onDuplicateKeyUpdate: () => {
               if (table === s.ganttTaskSettings)
-                fixture.settings.set(values.taskId, values);
+                fixture.settings.set(values.taskId, {
+                  ...fixture.settings.get(values.taskId),
+                  ...values,
+                });
               if (table === s.ganttStudioStates)
                 fixture.studioVersion = values.version!;
             },
@@ -125,31 +149,41 @@ afterEach(() => vi.useRealTimers());
 beforeEach(() => {
   fixture.tasks.clear();
   fixture.settings.clear();
+  Object.assign(fixture.project, {
+    actualStartDate: null,
+    actualEndDate: null,
+    version: 0,
+  });
   fixture.studioVersion = 0;
   fixture.workCalendar = null;
 });
 
-it("stamps persisted parent and child status transitions and ignores dates supplied by Studio", async () => {
+it("rolls up descendant execution dates and excludes cancelled tasks from ancestors and the project", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   const plannedStart = "2026-11-16";
   const plannedEnd = "2026-11-19";
-  for (const id of [1, 2]) {
+  for (const [id, parentId, name, level] of [
+    [1, null, "Parent", 1],
+    [2, 1, "Nested parent", 2],
+    [3, 2, "Child", 3],
+    [4, 2, "Cancelled sibling", 3],
+  ] as const) {
     fixture.tasks.set(id, {
       id,
-      parentId: id === 1 ? null : 1,
-      name: id === 1 ? "Parent" : "Child",
+      parentId,
+      name,
       statusId: 1,
       startDate: plannedStart,
       endDate: plannedEnd,
       priority: "medium",
-      level: id,
+      level,
       version: 0,
     });
   }
   const save = (
     status: "in_progress" | "completed",
     now: string,
-    edited = false
+    { edited = false, cancelled = false, duration = 4 } = {}
   ) => {
     vi.setSystemTime(new Date(now));
     return saveStudioState(
@@ -178,17 +212,25 @@ it("stamps persisted parent and child status transitions and ignores dates suppl
           activity: [],
           tasks: [...fixture.tasks].map(([id, task]) => ({
             id: `T${id}`,
-            parentId: id === 1 ? null : "T1",
-            name: id === 2 && edited ? "Renamed child" : task.name,
-            duration: 4,
+            parentId: task.parentId ? `T${task.parentId}` : null,
+            name: id === 3 && edited ? "Renamed child" : task.name,
+            duration: id === 3 ? duration : 4,
             phase: "Implementation",
             owner: "Employee",
             progress: 0,
             start: plannedStart,
             notBefore: null,
             notes: "",
-            executionStatus: id === 1 ? "not_started" : status,
-            status,
+            executionStatus: id === 3 ? status : "not_started",
+            status:
+              id === 3
+                ? status
+                : id === 4
+                  ? "not_started"
+                  : cancelled
+                    ? "completed"
+                    : "in_progress",
+            pmStatusCode: id === 4 && cancelled ? "cancelled" : undefined,
             pmVersion: task.version,
             actualStart: "2020-01-01",
             actualEnd: "2020-01-02",
@@ -200,23 +242,50 @@ it("stamps persisted parent and child status transitions and ignores dates suppl
   };
 
   const started = await save("in_progress", "2026-11-16T21:15:00Z");
-  for (const task of started.state.tasks) {
+  for (const task of started.state.tasks.slice(0, 3)) {
     expect(task.actualStart).toBe("2026-11-17");
     expect(task.actualEnd).toBeNull();
   }
-  const edited = await save("in_progress", "2026-11-18T12:00:00Z", true);
-  expect(edited.state.tasks[1].name).toBe("Renamed child");
-  for (const task of edited.state.tasks)
+  expect(fixture.project.actualStartDate).toBe("2026-11-17");
+  const edited = await save("in_progress", "2026-11-18T12:00:00Z", {
+    edited: true,
+  });
+  expect(edited.state.tasks[2].name).toBe("Renamed child");
+  for (const task of edited.state.tasks.slice(0, 3))
     expect(task.actualStart).toBe("2026-11-17");
 
-  for (const timestamp of ["2026-11-22T12:00:00Z", "2026-11-24T12:00:00Z"]) {
-    const completed = await save("completed", timestamp);
-    for (const task of completed.state.tasks) {
+  const pending = await save("completed", "2026-11-22T12:00:00Z");
+  expect(pending.state.tasks.map(task => task.actualEnd)).toEqual([
+    null,
+    null,
+    "2026-11-22",
+    null,
+  ]);
+  expect(fixture.project.actualEndDate).toBeNull();
+  for (const timestamp of ["2026-11-24T12:00:00Z", "2026-11-25T12:00:00Z"]) {
+    const completed = await save("completed", timestamp, { cancelled: true });
+    for (const task of completed.state.tasks.slice(0, 3)) {
       expect(task.actualStart).toBe("2026-11-17");
       expect(task.actualEnd).toBe("2026-11-22");
       expect(task.progress).toBe(100);
     }
+    expect(completed.state.tasks[3].pmStatusCode).toBe("cancelled");
+    expect(fixture.project.actualEndDate).toBe("2026-11-22");
   }
+
+  const version = fixture.studioVersion;
+  const parentSettings = fixture.settings.get(1)!;
+  fixture.settings.set(1, { ...parentSettings, endLocked: true });
+  await expect(
+    save("completed", "2026-11-26T12:00:00Z", {
+      cancelled: true,
+      duration: 5,
+    })
+  ).rejects.toThrow("لا يمكن تمديد نهاية المهمة الأم «Parent» لأنها مقفلة");
+  expect(fixture.studioVersion).toBe(version);
+  expect(fixture.tasks.get(1)?.endDate).toBe(plannedEnd);
+  expect(fixture.tasks.get(2)?.endDate).toBe(plannedEnd);
+  expect(fixture.tasks.get(3)?.endDate).toBe(plannedEnd);
 });
 
 it("keeps approved dates and schedules edits with the current central calendar", async () => {

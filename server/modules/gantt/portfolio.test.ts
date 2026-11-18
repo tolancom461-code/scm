@@ -73,6 +73,7 @@ const projectRows = [
     "active",
     "2026-11-15",
     "2026-11-30",
+    "2026-11-16",
     null,
     null,
     "blue",
@@ -86,6 +87,7 @@ const projectRows = [
     "approved",
     "2026-11-17",
     "2026-11-30",
+    null,
     null,
     null,
     null,
@@ -124,6 +126,30 @@ describe("Gantt portfolio", () => {
     fixture.query.mockImplementation(async (statement: string) => {
       if (statement.includes("from `pm_projects`"))
         return { rows: projectRows };
+      if (statement.includes("`pm_gantt_task_settings`.`actual_start_date`"))
+        return {
+          rows: [
+            [
+              1,
+              10,
+              null,
+              "Task",
+              "working",
+              "In progress",
+              "2026-11-17",
+              "2026-11-23",
+              "2026-11-15",
+              "2026-11-20",
+              "2026-11-16",
+              null,
+              "medium",
+              1,
+              null,
+              0,
+              null,
+            ],
+          ],
+        };
       if (statement.includes("from `pm_gantt_task_links`"))
         return { rows: [[5, 1, 3, "FS", 0]] };
       return { rows: [] };
@@ -131,7 +157,18 @@ describe("Gantt portfolio", () => {
     await expect(
       portfolio({ projectIds: [20, 999, 10, 10] }, actor([10, 20]))
     ).resolves.toMatchObject({
-      projects: [{ id: 10 }, { id: 20 }],
+      projects: [{ id: 10, actualStartDate: "2026-11-16" }, { id: 20 }],
+      tasks: [
+        {
+          id: 1,
+          startDate: "2026-11-17",
+          endDate: "2026-11-23",
+          plannedStartDate: "2026-11-15",
+          plannedEndDate: "2026-11-20",
+          actualStartDate: "2026-11-16",
+          actualEndDate: null,
+        },
+      ],
       links: [{ id: 5, fromTaskId: 1, toTaskId: 3, type: "FS", lagDays: 0 }],
     });
     expect(fixture.query).toHaveBeenCalledTimes(6);

@@ -43,6 +43,7 @@ import { recordChange } from "../../core/audit";
 import { DomainError } from "../../core/errors";
 import { assertDraftRequisitionSourceStarts } from "../material-requisitions/schedule-guards";
 import { readGanttCalendarSettings } from "../gantt/calendar";
+import { rollUpExecutionDates } from "../gantt/execution-rollup";
 import { readGlobalWorkCalendar } from "./work-calendar";
 import {
   calendarDays,
@@ -412,7 +413,6 @@ export async function projectAction(
                   invalid("نهاية المشروع مقفلة. افتح القفل أولًا.");
                 return {
                   startedAt: new Date(`${actual}T00:00:00Z`),
-                  actualStartDate: actual,
                   forecastEndDate,
                 };
               })()
@@ -495,30 +495,6 @@ export async function saveTask(
         .where(inArray(s.taskStatuses.id, statusIds));
       const status = selectedStatuses.find(item => item.id === input.statusId);
       if (!status) throw new DomainError("INVALID_REFERENCE");
-      if (status.code !== "not_started" && parent) {
-        const byId = new Map(tasks.map(task => [task.id, task]));
-        const ancestors: typeof tasks = [];
-        let ancestor = parent;
-        while (ancestor) {
-          ancestors.push(ancestor);
-          ancestor = ancestor.parentId
-            ? byId.get(ancestor.parentId)!
-            : undefined!;
-        }
-        const ancestorStatuses = await tx.select().from(s.taskStatuses);
-        const statusById = new Map(
-          ancestorStatuses.map(item => [item.id, item])
-        );
-        const notStarted = ancestors.filter(
-          task => statusById.get(task.statusId)?.code === "not_started"
-        );
-        if (notStarted.length)
-          invalid(
-            "حدّث حالة المهام الأم أولًا إلى «جاري العمل»: " +
-              notStarted.map(task => task.name).join("، ") +
-              " / Update parent task statuses to In progress first"
-          );
-      }
       const responsible = await tx
         .select()
         .from(s.employees)
@@ -606,7 +582,9 @@ export async function saveTask(
         a
       );
       await enforceProjectBounds(tx, project.id, a);
-      await touchGanttStudioStates(tx, [project.id, ...affected], a.user.id);
+      const affectedProjects = [project.id, ...affected];
+      await rollUpExecutionDates(tx, affectedProjects);
+      await touchGanttStudioStates(tx, affectedProjects, a.user.id);
       await recordChange(tx, {
         actorId: a.user.id,
         action: original ? "pm.task.edited" : "pm.task.created",

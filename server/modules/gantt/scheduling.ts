@@ -18,6 +18,7 @@ import {
 } from "../material-requisitions/schedule-guards";
 import { readGlobalWorkCalendar } from "../project-management/work-calendar";
 import { readGanttCalendarSettings } from "./calendar";
+import { projectScheduleStart } from "./execution-rollup";
 
 const DAY = 86_400_000;
 export function shiftIso(date: string, days: number) {
@@ -349,12 +350,12 @@ export async function enforceProjectBounds(
     .map(task => task.endDate)
     .sort()
     .at(-1)!;
-  const start = project.actualStartDate ?? project.plannedStartDate;
+  const start = projectScheduleStart(project);
   const end = project.forecastEndDate ?? project.plannedEndDate;
   if (
     start &&
     earliest < start &&
-    (project.startLocked || project.actualStartDate)
+    (project.startLocked || project.startedAt)
   )
     blocked(
       `المهام تبدأ في ${earliest} قبل بداية المشروع المقفلة ${start}. افتح القفل أو عدّل المهمة.`
@@ -364,7 +365,7 @@ export async function enforceProjectBounds(
       `المهام تنتهي في ${latest} بعد نهاية المشروع المقفلة ${end}. مدّد المشروع أو افتح القفل.`
     );
   const update: Partial<typeof s.constructionProjects.$inferInsert> = {};
-  if (start && earliest < start && !project.actualStartDate)
+  if (start && earliest < start && !project.startedAt)
     update.plannedStartDate = earliest;
   if (!end || latest > end) {
     update.forecastEndDate = latest;

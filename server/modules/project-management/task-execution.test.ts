@@ -5,6 +5,7 @@ import { businessDate } from "../../../shared/date";
 import { taskExecutionMetrics } from "../../../shared/gantt";
 import type { HolidayCalendarSettings } from "../../../shared/work-calendar";
 import type { AccessContext } from "../../core/policy";
+import { rollUpExecutionDates } from "../gantt/execution-rollup";
 import { detail, saveTask } from "./service";
 
 const database = vi.hoisted(() => vi.fn());
@@ -26,6 +27,7 @@ vi.mock("../../core/idempotency", () => ({
   ) => run(),
 }));
 vi.mock("../../core/audit", () => ({ recordChange: vi.fn() }));
+vi.mock("../gantt/execution-rollup", () => ({ rollUpExecutionDates: vi.fn() }));
 vi.mock("../gantt/scheduling", () => ({
   ensureTaskSettings: vi.fn(),
   rollUpAncestors: vi.fn().mockResolvedValue([]),
@@ -72,7 +74,7 @@ function taskFixture(
     name: "Refit",
     startDate: "2026-11-10",
     endDate: "2026-11-24",
-    statusId: 2,
+    statusId: 1,
   };
   let schedule = {
     actualStartDate: null as string | null,
@@ -163,6 +165,23 @@ function taskFixture(
 describe("Project task execution dates", () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.mocked(rollUpExecutionDates).mockClear();
+  });
+
+  it("uses the recorded finish for delay when the parent is still marked in progress", () => {
+    const metrics = taskExecutionMetrics(
+      {
+        startDate: "2026-11-12",
+        endDate: "2026-11-16",
+        actualStartDate: "2026-11-13",
+        actualEndDate: "2026-11-20",
+        executionStatus: "in_progress",
+      },
+      calendar,
+      "2026-11-24"
+    );
+    expect(metrics.endDelayDays).toBe(3);
+    expect(metrics.progress).toBeNull();
   });
 
   it("uses weekly and dated holidays from the shared calendar for existing tasks", async () => {
@@ -212,6 +231,9 @@ describe("Project task execution dates", () => {
       // Both saves are on the following calendar day in Riyadh.
       vi.setSystemTime(new Date("2026-11-12T21:15:00Z"));
       await task.save(2);
+      expect(rollUpExecutionDates).toHaveBeenCalledWith(expect.anything(), [
+        project.id,
+      ]);
       expect(await task.read()).toMatchObject({
         executionStatus: "in_progress",
         actualStartDate: "2026-11-13",

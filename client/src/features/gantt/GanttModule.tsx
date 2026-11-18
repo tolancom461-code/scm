@@ -124,6 +124,23 @@ type BoardNavigation = {
 type RunBoardAction = (action: (viewport?: BoardViewport) => void) => void;
 const emptyDirectory: GanttOutputs["portfolioDirectory"] = [];
 
+function projectTimelineDates(
+  project: Pick<
+    Detail["project"],
+    | "plannedStartDate"
+    | "plannedEndDate"
+    | "actualStartDate"
+    | "actualEndDate"
+  >
+) {
+  return {
+    startDate: project.plannedStartDate,
+    endDate: project.plannedEndDate,
+    actualStartDate: project.actualStartDate,
+    actualEndDate: project.actualEndDate,
+  };
+}
+
 // Presentation only. The editor still sends a complete snapshot of its own project.
 function projectRows(data?: Portfolio) {
   const tasksByProject = new Map<number, PortfolioTask[]>();
@@ -138,8 +155,7 @@ function projectRows(data?: Portfolio) {
       id: project.id,
       number: project.number,
       name: project.name,
-      startDate: project.actualStartDate ?? project.plannedStartDate,
-      endDate: project.forecastEndDate ?? project.plannedEndDate,
+      ...projectTimelineDates(project),
       color: colors.base,
       ink: ganttColorText(colors.base),
       tasks: (tasksByProject.get(project.id) ?? []).map(task => {
@@ -152,6 +168,10 @@ function projectRows(data?: Portfolio) {
           name: task.name,
           startDate: task.startDate,
           endDate: task.endDate,
+          plannedStartDate: task.plannedStartDate ?? task.startDate,
+          plannedEndDate: task.plannedEndDate ?? task.endDate,
+          actualStartDate: task.actualStartDate,
+          actualEndDate: task.actualEndDate,
           color,
           ink: ganttColorText(color),
           statusCode: task.statusCode,
@@ -168,6 +188,7 @@ type BoardPortfolio = {
   links: Portfolio["links"];
   linkMode: boolean;
   predecessorTaskId: number | null;
+  activeDates?: ReturnType<typeof projectTimelineDates>;
 };
 
 function readBoardViewport(value: unknown): BoardViewport | undefined {
@@ -290,11 +311,16 @@ function taskDuration(
   return Math.max(1, count);
 }
 function initialState(data: Detail): State {
-  const start =
-    data.project.actualStartDate ??
+  const firstTaskStart = data.tasks.map(t => t.startDate).sort()[0];
+  const scheduleStart =
+    data.project.startedAt?.toISOString().slice(0, 10) ??
     data.project.plannedStartDate ??
-    data.tasks.map(t => t.startDate).sort()[0] ??
+    firstTaskStart ??
     businessDate();
+  const start =
+    firstTaskStart && firstTaskStart < scheduleStart
+      ? firstTaskStart
+      : scheduleStart;
   const calendar = {
     workingDays: data.settings.workingDays,
     hoursPerDay: data.settings.hoursPerDay,
@@ -852,13 +878,22 @@ function ScopedGanttModule({
       { ...data, type, channel, projectId },
       window.location.origin
     );
+  const boardPortfolio = useMemo(
+    () => ({
+      ...portfolio,
+      activeDates: detail.data
+        ? projectTimelineDates(detail.data.project)
+        : undefined,
+    }),
+    [portfolio, detail.data]
+  );
   const postTaskExecution = (taskId: number) => {
     const data = detail.data;
     const task = data?.tasks.find(task => task.id === taskId);
     if (!data || !task) return;
     const dates = {
-      startDate: task.startDate,
-      endDate: task.endDate,
+      startDate: task.plannedStartDate ?? task.startDate,
+      endDate: task.plannedEndDate ?? task.endDate,
       actualStartDate: task.actualStartDate,
       actualEndDate: task.actualEndDate,
       executionStatus: taskExecutionStatus(task.statusCode),
@@ -1158,7 +1193,7 @@ function ScopedGanttModule({
         readOnly: !canEdit,
         failed: saveFailed || recovered,
         palette,
-        portfolio,
+        portfolio: boardPortfolio,
         viewport: initialViewport,
         view: initialView,
         reviewExpanded,
@@ -1299,8 +1334,8 @@ function ScopedGanttModule({
   }, [palette, projectId]);
   useEffect(() => {
     if (readyProject.current === projectId)
-      post("pscm:gantt:portfolio", { portfolio });
-  }, [portfolio, projectId]);
+      post("pscm:gantt:portfolio", { portfolio: boardPortfolio });
+  }, [boardPortfolio, projectId]);
   useEffect(() => {
     if (readyProject.current === projectId && executionTaskId.current !== null)
       postTaskExecution(executionTaskId.current);
@@ -1370,7 +1405,7 @@ function ScopedGanttModule({
     canEdit &&
     user.permissions.includes("pm.start") &&
     (project?.status === "approved" || project?.status === "active") &&
-    !project.actualStartDate;
+    !project.startedAt;
   return (
     <section
       className="gantt-studio-shell"

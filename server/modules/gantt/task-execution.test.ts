@@ -4,6 +4,7 @@ import {
   taskExecutionMetrics,
   updateTaskExecutionDates,
 } from "../../../shared/gantt";
+import { deriveExecutionDates } from "./execution-rollup";
 
 const noActualDates = { actualStartDate: null, actualEndDate: null };
 const schedule = { startDate: "2026-11-19", endDate: "2026-11-19" };
@@ -70,6 +71,19 @@ describe("task execution dates", () => {
     ).toEqual({ startDelayDays: null, endDelayDays: null, progress: 100 });
   });
 
+  it("retains execution history when a completed task is cancelled", () => {
+    const executed = {
+      actualStartDate: "2026-10-21",
+      actualEndDate: "2026-10-27",
+    };
+    expect(
+      updateTaskExecutionDates(executed, "done", "cancelled", "2026-10-29")
+    ).toEqual(executed);
+    expect(
+      updateTaskExecutionDates(executed, "cancelled", "done", "2026-10-30")
+    ).toEqual(executed);
+  });
+
   it("counts only workdays strictly after the planned date", () => {
     const task = {
       ...schedule,
@@ -88,5 +102,79 @@ describe("task execution dates", () => {
       endDelayDays: 1,
       progress: null,
     });
+  });
+});
+
+describe("execution date roll-up", () => {
+  it("derives the earliest start and latest finish through nested tasks", () => {
+    const tasks: Parameters<typeof deriveExecutionDates>[0] = [
+      { id: 1, parentId: null, statusCode: "not_started", ...noActualDates },
+      { id: 2, parentId: 1, statusCode: "not_started", ...noActualDates },
+      {
+        id: 3,
+        parentId: 2,
+        statusCode: "done",
+        actualStartDate: "2026-10-21",
+        actualEndDate: "2026-10-26",
+      },
+      {
+        id: 4,
+        parentId: 1,
+        statusCode: "done",
+        actualStartDate: "2026-10-22",
+        actualEndDate: "2026-10-27",
+      },
+      {
+        id: 5,
+        parentId: null,
+        statusCode: "working",
+        actualStartDate: "2026-10-24",
+        actualEndDate: null,
+      },
+    ];
+    const inProgress = deriveExecutionDates(tasks);
+    expect(inProgress.parentDates.get(1)).toEqual({
+      actualStartDate: "2026-10-21",
+      actualEndDate: "2026-10-27",
+    });
+    expect(inProgress.projectDates).toEqual({
+      actualStartDate: "2026-10-21",
+      actualEndDate: null,
+    });
+
+    tasks[4] = {
+      ...tasks[4],
+      statusCode: "done",
+      actualEndDate: "2026-10-31",
+    };
+    expect(deriveExecutionDates(tasks).projectDates).toEqual({
+      actualStartDate: "2026-10-21",
+      actualEndDate: "2026-10-31",
+    });
+
+    tasks[3] = { ...tasks[3], statusCode: "cancelled" };
+    expect(deriveExecutionDates(tasks).parentDates.get(1)).toEqual({
+      actualStartDate: "2026-10-21",
+      actualEndDate: "2026-10-26",
+    });
+    tasks[4] = { ...tasks[4], statusCode: "cancelled" };
+    expect(deriveExecutionDates(tasks).projectDates.actualEndDate).toBe(
+      "2026-10-26"
+    );
+  });
+
+  it("excludes a cancelled branch and keeps dates unknown when no work remains", () => {
+    const result = deriveExecutionDates([
+      { id: 1, parentId: null, statusCode: "cancelled", ...noActualDates },
+      {
+        id: 2,
+        parentId: 1,
+        statusCode: "done",
+        actualStartDate: "2026-10-21",
+        actualEndDate: "2026-10-26",
+      },
+    ]);
+    expect(result.parentDates.get(1)).toEqual(noActualDates);
+    expect(result.projectDates).toEqual(noActualDates);
   });
 });

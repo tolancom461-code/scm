@@ -85,6 +85,13 @@
       "when": 1794922264568,
       "tag": "0011_work_calendar",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1795008082662,
+      "tag": "0012_cancelled_task_status",
+      "breakpoints": true
     }
   ]
 }
