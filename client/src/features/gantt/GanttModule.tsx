@@ -82,11 +82,17 @@ type State = {
 type Detail = inferRouterOutputs<AppRouter>["gantt"]["detail"];
 type Shared = inferRouterOutputs<AppRouter>["gantt"]["sharedDirectory"];
 type ScheduleAction = "configure" | "start" | "extend" | "lock";
-type StudioEdit = { sequence: number; version: number; state: State };
+type StudioEdit = {
+  sequence: number;
+  version: number;
+  calendarRevision?: number;
+  state: State;
+};
 type StudioSave = StudioEdit & { key: string; projectId: number };
 type StudioReceipt = {
   sequence: number;
   version: number;
+  calendarRevision?: number;
   state: State;
   submitted: State;
 };
@@ -98,6 +104,9 @@ function isStudioEdit(value: unknown): value is StudioEdit {
     edit.sequence! > 0 &&
     Number.isSafeInteger(edit.version) &&
     edit.version! >= 0 &&
+    (edit.calendarRevision === undefined ||
+      (Number.isSafeInteger(edit.calendarRevision) &&
+        edit.calendarRevision >= 0)) &&
     edit.state?.schemaVersion === 2 &&
     Array.isArray(edit.state.tasks) &&
     Array.isArray(edit.state.links)
@@ -336,6 +345,7 @@ function ScopedGanttModule({
     readyProject = useRef(0),
     recoveredProject = useRef(0),
     serverVersion = useRef(0),
+    sentCalendarRevision = useRef(0),
     timer = useRef<ReturnType<typeof setTimeout> | null>(null),
     queued = useRef<StudioEdit | null>(null),
     submitted = useRef<StudioSave | null>(null),
@@ -400,6 +410,7 @@ function ScopedGanttModule({
       const accepted: StudioReceipt = {
         sequence: submitted.current.sequence,
         version: r.version,
+        calendarRevision: submitted.current.calendarRevision,
         state: r.state as State,
         submitted: submitted.current.state,
       };
@@ -431,6 +442,8 @@ function ScopedGanttModule({
       setWaitingForStudioSave(false);
       setOpeningRequisition(false);
       post("pscm:gantt:save-failed");
+      if (e.data?.code === "CONFLICT")
+        void utils.gantt.detail.invalidate({ projectId });
       toast.error(e.message);
     },
     onSettled: () => {
@@ -473,6 +486,9 @@ function ScopedGanttModule({
       key: edit.key,
       projectId: edit.projectId,
       version: edit.version,
+      ...(edit.calendarRevision
+        ? { calendarRevision: edit.calendarRevision }
+        : {}),
       state: edit.state,
     });
   };
@@ -517,6 +533,8 @@ function ScopedGanttModule({
     [detail.data]
   );
   const dataVersion = detail.data?.studio?.version ?? 0;
+  const calendarRevision = detail.data?.settings.calendarRevision ?? 0;
+  const calendarManaged = detail.data?.settings.calendarManaged ?? false;
   const currentBridge = useRef<(event: MessageEvent) => void>(() => {});
   currentBridge.current = event => {
     const message = event.data;
@@ -551,10 +569,17 @@ function ScopedGanttModule({
         }
       }
       const draft = queued.current ?? submitted.current;
-      if (!draft) serverVersion.current = dataVersion;
+      if (!draft) {
+        serverVersion.current = dataVersion;
+        sentCalendarRevision.current = calendarRevision;
+      }
       post("pscm:gantt:load", {
         state: draft?.state ?? state,
         version: draft?.version ?? dataVersion,
+        calendarRevision: draft
+          ? (draft.calendarRevision ?? 0)
+          : calendarRevision,
+        calendarManaged,
         sequence: draft?.sequence ?? 0,
         dirty: Boolean(draft),
         locale,
@@ -622,6 +647,7 @@ function ScopedGanttModule({
       queued.current = {
         sequence: message.sequence,
         version: message.version,
+        calendarRevision: message.calendarRevision,
         state: message.state,
       };
       storeDraft();
@@ -635,6 +661,7 @@ function ScopedGanttModule({
     if (
       message.savedSequence !== saved.sequence ||
       message.version !== saved.version ||
+      (message.calendarRevision ?? 0) !== (saved.calendarRevision ?? 0) ||
       !Number.isSafeInteger(message.sequence) ||
       message.sequence < saved.sequence ||
       (message.sequence > saved.sequence && !validEdit)
@@ -647,6 +674,7 @@ function ScopedGanttModule({
       ? {
           sequence: message.sequence,
           version: message.version,
+          calendarRevision: message.calendarRevision,
           state: message.state,
         }
       : null;
@@ -699,12 +727,27 @@ function ScopedGanttModule({
       readyProject.current !== projectId ||
       queued.current ||
       submitted.current ||
-      dataVersion <= serverVersion.current
+      dataVersion < serverVersion.current ||
+      (dataVersion === serverVersion.current &&
+        calendarRevision <= sentCalendarRevision.current)
     )
       return;
     serverVersion.current = dataVersion;
-    post("pscm:gantt:refresh", { state, version: dataVersion });
-  }, [state, projectId, dataVersion, hasQueuedEdits]);
+    sentCalendarRevision.current = calendarRevision;
+    post("pscm:gantt:refresh", {
+      state,
+      version: dataVersion,
+      calendarRevision,
+      calendarManaged,
+    });
+  }, [
+    state,
+    projectId,
+    dataVersion,
+    calendarRevision,
+    calendarManaged,
+    hasQueuedEdits,
+  ]);
   const retry = () => {
     if (receipt.current) post("pscm:gantt:saved", receipt.current);
     else {
@@ -872,7 +915,7 @@ function ScopedGanttModule({
             "Approved Gantt chart",
             "منظور شدہ گانٹ چارٹ"
           )}
-          src={`/gantt-studio/index.html?v=pscm-bridge-5&project=${projectId}&channel=${channel}&requisitions=${canCreateRequisition ? "1" : "0"}`}
+          src={`/gantt-studio/index.html?v=pscm-bridge-6&project=${projectId}&channel=${channel}&requisitions=${canCreateRequisition ? "1" : "0"}`}
           className="gantt-studio-frame"
         />
       )}

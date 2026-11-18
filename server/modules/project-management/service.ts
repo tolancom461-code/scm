@@ -43,6 +43,7 @@ import { recordChange } from "../../core/audit";
 import { DomainError } from "../../core/errors";
 import { assertDraftRequisitionSourceStarts } from "../material-requisitions/schedule-guards";
 import { readGanttCalendarSettings } from "../gantt/calendar";
+import { readGlobalWorkCalendar } from "./work-calendar";
 import {
   calendarDays,
   enforceProjectBounds,
@@ -138,51 +139,63 @@ export async function directory() {
 export async function detail(id: number, a: AccessContext) {
   const project = await assertConstructionAccess(a, id);
   const db = await database();
-  const [tasks, assignees, events, [calendar]] = await Promise.all([
-    db
-      .select({
-        ...getTableColumns(s.projectTasks),
-        statusCode: s.taskStatuses.code,
-        actualStartDate: s.ganttTaskSettings.actualStartDate,
-        actualEndDate: s.ganttTaskSettings.actualEndDate,
-      })
-      .from(s.projectTasks)
-      .innerJoin(s.taskStatuses, eq(s.taskStatuses.id, s.projectTasks.statusId))
-      .leftJoin(
-        s.ganttTaskSettings,
-        eq(s.ganttTaskSettings.taskId, s.projectTasks.id)
-      )
-      .where(eq(s.projectTasks.projectId, id))
-      .orderBy(s.projectTasks.id),
-    db
-      .select({
-        taskId: s.taskAssignees.taskId,
-        employeeId: s.taskAssignees.employeeId,
-      })
-      .from(s.taskAssignees)
-      .innerJoin(s.projectTasks, eq(s.taskAssignees.taskId, s.projectTasks.id))
-      .where(eq(s.projectTasks.projectId, id)),
-    db
-      .select({
-        id: s.projectEvents.id,
-        action: s.projectEvents.action,
-        comment: s.projectEvents.comment,
-        createdAt: s.projectEvents.createdAt,
-        actor: users.name,
-      })
-      .from(s.projectEvents)
-      .leftJoin(users, eq(s.projectEvents.actorId, users.id))
-      .where(eq(s.projectEvents.projectId, id))
-      .orderBy(desc(s.projectEvents.id)),
-    db
-      .select({
-        workingDays: s.ganttProjectSettings.workingDays,
-        hoursPerDay: s.ganttProjectSettings.hoursPerDay,
-        holidays: s.ganttProjectSettings.holidays,
-      })
-      .from(s.ganttProjectSettings)
-      .where(eq(s.ganttProjectSettings.projectId, id)),
-  ]);
+  const [tasks, assignees, events, [calendar], globalCalendar] =
+    await Promise.all([
+      db
+        .select({
+          ...getTableColumns(s.projectTasks),
+          statusCode: s.taskStatuses.code,
+          actualStartDate: s.ganttTaskSettings.actualStartDate,
+          actualEndDate: s.ganttTaskSettings.actualEndDate,
+        })
+        .from(s.projectTasks)
+        .innerJoin(
+          s.taskStatuses,
+          eq(s.taskStatuses.id, s.projectTasks.statusId)
+        )
+        .leftJoin(
+          s.ganttTaskSettings,
+          eq(s.ganttTaskSettings.taskId, s.projectTasks.id)
+        )
+        .where(eq(s.projectTasks.projectId, id))
+        .orderBy(s.projectTasks.id),
+      db
+        .select({
+          taskId: s.taskAssignees.taskId,
+          employeeId: s.taskAssignees.employeeId,
+        })
+        .from(s.taskAssignees)
+        .innerJoin(
+          s.projectTasks,
+          eq(s.taskAssignees.taskId, s.projectTasks.id)
+        )
+        .where(eq(s.projectTasks.projectId, id)),
+      db
+        .select({
+          id: s.projectEvents.id,
+          action: s.projectEvents.action,
+          comment: s.projectEvents.comment,
+          createdAt: s.projectEvents.createdAt,
+          actor: users.name,
+        })
+        .from(s.projectEvents)
+        .leftJoin(users, eq(s.projectEvents.actorId, users.id))
+        .where(eq(s.projectEvents.projectId, id))
+        .orderBy(desc(s.projectEvents.id)),
+      db
+        .select({
+          workingDays: s.ganttProjectSettings.workingDays,
+          hoursPerDay: s.ganttProjectSettings.hoursPerDay,
+          holidays: s.ganttProjectSettings.holidays,
+        })
+        .from(s.ganttProjectSettings)
+        .where(eq(s.ganttProjectSettings.projectId, id)),
+      readGlobalWorkCalendar(db),
+    ]);
+  const { workingDays, hoursPerDay, holidays } = readGanttCalendarSettings(
+    calendar,
+    globalCalendar
+  );
   return {
     project,
     tasks: tasks.map(({ statusCode, ...task }) => ({
@@ -192,7 +205,7 @@ export async function detail(id: number, a: AccessContext) {
         .filter(e => e.taskId === task.id)
         .map(e => e.employeeId),
     })),
-    calendar: readGanttCalendarSettings(calendar),
+    calendar: { workingDays, hoursPerDay, holidays },
     events,
   };
 }

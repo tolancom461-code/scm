@@ -8,6 +8,8 @@ export const routePolicies: Record<string, RoutePolicy> = {
   "projectManagement.list": { any: ["pm.view"] },
   "projectManagement.directory": { any: ["pm.view"] },
   "projectManagement.detail": { any: ["pm.view"] },
+  "projectManagement.holidayCalendar": { any: ["pm.view"] },
+  "projectManagement.saveHolidayCalendar": { any: ["pm.tasks.manage"] },
   "projectManagement.taskMaterialCosts": { any: ["pm.view"] },
   "projectManagement.taskMaterialProgress": { any: ["pm.view"] },
   "projectManagement.taskMaterialSummary": { any: ["pm.view"] },

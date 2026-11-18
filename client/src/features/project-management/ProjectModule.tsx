@@ -35,6 +35,7 @@ import {
 import { MaterialRequisitionForm } from "../material-requisitions/MaterialRequisitions";
 import { mrText } from "../material-requisitions/copy";
 import { TaskDependencyAction } from "../gantt/TaskDependencyPanel";
+import { HolidayCalendar } from "./HolidayCalendar";
 import { ProjectMaterialCosts } from "./ProjectMaterialCosts";
 import { TaskMaterialTrigger } from "./TaskMaterialProgress";
 import "./projects.css";
@@ -159,7 +160,7 @@ export function ProjectModule({
     can = (p: string) => user.permissions.includes(p),
     utils = trpc.useUtils();
   const [tab, setTab] = useState<
-      "projects" | "reviews" | "employees" | "statuses"
+      "projects" | "reviews" | "employees" | "statuses" | "holidays"
     >("projects"),
     [q, setQ] = useState(""),
     [filter, setFilter] = useState<(typeof projectStates)[number] | "">(""),
@@ -172,13 +173,19 @@ export function ProjectModule({
     [linkedProjectIds, setLinkedProjectIds] = useState<Set<number>>(
       () => new Set()
     );
-  const list = trpc.projectManagement.list.useQuery({
-      q,
-      status: tab === "reviews" ? "pending" : filter,
-      beforeId: pageCursors.at(-1),
-      pageSize: projectPageSize + 1,
-    }),
-    directory = trpc.projectManagement.directory.useQuery();
+  const projectListTab = tab === "projects" || tab === "reviews";
+  const list = trpc.projectManagement.list.useQuery(
+      {
+        q,
+        status: tab === "reviews" ? "pending" : filter,
+        beforeId: pageCursors.at(-1),
+        pageSize: projectPageSize + 1,
+      },
+      { enabled: projectListTab }
+    ),
+    directory = trpc.projectManagement.directory.useQuery(undefined, {
+      enabled: tab !== "holidays",
+    });
   const projects = list.data?.slice(0, projectPageSize) ?? [];
   const lastProject = projects.at(-1);
   const hasNextPage = (list.data?.length ?? 0) > projectPageSize;
@@ -210,7 +217,7 @@ export function ProjectModule({
             )}
           </p>
         </div>
-        {can("pm.create") && (
+        {can("pm.create") && tab !== "holidays" && (
           <button className="primary" onClick={() => setCreating(true)}>
             + {t("إنشاء مشروع", "Create project", "منصوبہ بنائیں")}
           </button>
@@ -248,6 +255,7 @@ export function ProjectModule({
                   ],
                 ]
               : []),
+            ["holidays", t("الإجازات", "Holidays", "تعطیلات")],
           ] as [typeof tab, string][]
         ).map(([id, label]) => (
           <button
@@ -259,7 +267,7 @@ export function ProjectModule({
           </button>
         ))}
       </nav>
-      {list.error && (
+      {projectListTab && list.error && (
         <p role="alert">
           {list.error.message}
           <button onClick={() => list.refetch()}>
@@ -267,7 +275,7 @@ export function ProjectModule({
           </button>
         </p>
       )}
-      {directory.error && (
+      {tab !== "holidays" && directory.error && (
         <p role="alert">
           {directory.error.message}
           <button onClick={() => directory.refetch()}>
@@ -291,7 +299,8 @@ export function ProjectModule({
           canManage={can("pm.statuses.manage")}
         />
       )}
-      {(tab === "projects" || tab === "reviews") &&
+      {tab === "holidays" && <HolidayCalendar locale={locale} />}
+      {projectListTab &&
         (selected ? (
           <ProjectDetail
             id={selected}

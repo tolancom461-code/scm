@@ -3,6 +3,7 @@ import * as s from "../../../drizzle/construction";
 import { taskInput } from "../../../shared/construction";
 import { businessDate } from "../../../shared/date";
 import { taskExecutionMetrics } from "../../../shared/gantt";
+import type { HolidayCalendarSettings } from "../../../shared/work-calendar";
 import type { AccessContext } from "../../core/policy";
 import { detail, saveTask } from "./service";
 
@@ -47,7 +48,10 @@ const calendar = {
   holidays: [{ date: "2026-11-17", name: "Office closure" }],
 };
 
-function taskFixture(parentId: number | null) {
+function taskFixture(
+  parentId: number | null,
+  globalCalendar?: HolidayCalendarSettings & { version: number }
+) {
   let task = {
     id: 20,
     projectId: project.id,
@@ -108,6 +112,8 @@ function taskFixture(parentId: number | null) {
             },
           ];
         }
+        if (table === s.pmWorkCalendar && globalCalendar)
+          rows = [globalCalendar];
         const query = Object.assign(Promise.resolve(rows), {
           where: () => query,
           for: () => query,
@@ -146,9 +152,9 @@ function taskFixture(parentId: number | null) {
         }),
         actor
       ),
-    async read() {
+    async read(expectedCalendar = calendar) {
       const projectDetail = await detail(project.id, actor);
-      expect(projectDetail.calendar).toEqual(calendar);
+      expect(projectDetail.calendar).toEqual(expectedCalendar);
       return projectDetail.tasks.find(item => item.id === task.id)!;
     },
   };
@@ -157,6 +163,36 @@ function taskFixture(parentId: number | null) {
 describe("Project task execution dates", () => {
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("uses weekly and dated holidays from the shared calendar for existing tasks", async () => {
+    const task = taskFixture(null, {
+      version: 1,
+      weeklyDaysOff: [5, 6],
+      holidays: [
+        {
+          name: "Holiday",
+          startDate: "2026-11-17",
+          endDate: "2026-11-18",
+        },
+      ],
+    });
+    const effective = {
+      workingDays: [0, 1, 2, 3, 4],
+      hoursPerDay: calendar.hoursPerDay,
+      holidays: [
+        { name: "Holiday", date: "2026-11-17" },
+        { name: "Holiday", date: "2026-11-18" },
+      ],
+    };
+    const row = await task.read(effective);
+    expect(row).toMatchObject({
+      startDate: "2026-11-12",
+      endDate: "2026-11-16",
+    });
+    expect(
+      taskExecutionMetrics(row, effective, "2026-11-19").endDelayDays
+    ).toBe(1);
   });
 
   it.each([

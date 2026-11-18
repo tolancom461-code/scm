@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { SQL } from "drizzle-orm";
 import { MySqlDialect } from "drizzle-orm/mysql-core";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as s from "../../../drizzle/construction";
 import { ganttStudioStateInput } from "../../../shared/gantt";
 import type { AccessContext } from "../../core/policy";
@@ -11,6 +11,10 @@ const fixture = vi.hoisted(() => ({
   tasks: new Map<number, Partial<typeof s.projectTasks.$inferSelect>>(),
   settings: new Map<number, typeof s.ganttTaskSettings.$inferInsert>(),
   studioVersion: 0,
+  workCalendar: null as Pick<
+    typeof s.pmWorkCalendar.$inferSelect,
+    "weeklyDaysOff" | "holidays" | "version"
+  > | null,
 }));
 
 function read(table: unknown, withActualDates: boolean) {
@@ -28,6 +32,8 @@ function read(table: unknown, withActualDates: boolean) {
     ];
   if (table === s.ganttStudioStates)
     return [{ version: fixture.studioVersion }];
+  if (table === s.pmWorkCalendar)
+    return fixture.workCalendar ? [fixture.workCalendar] : [];
   if (table === s.employees) return [{ id: 1, name: "Employee", active: true }];
   if (table === s.taskStatuses)
     return ["not_started", "working", "done"].map((code, index) => ({
@@ -116,6 +122,12 @@ vi.mock("./scheduling", async importOriginal => ({
 }));
 
 afterEach(() => vi.useRealTimers());
+beforeEach(() => {
+  fixture.tasks.clear();
+  fixture.settings.clear();
+  fixture.studioVersion = 0;
+  fixture.workCalendar = null;
+});
 
 it("stamps persisted parent and child status transitions and ignores dates supplied by Studio", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -205,4 +217,91 @@ it("stamps persisted parent and child status transitions and ignores dates suppl
       expect(task.progress).toBe(100);
     }
   }
+});
+
+it("keeps approved dates and schedules edits with the current central calendar", async () => {
+  fixture.workCalendar = {
+    version: 2,
+    weeklyDaysOff: [5, 6],
+    holidays: [
+      {
+        name: "Annual holiday",
+        startDate: "2026-11-17",
+        endDate: "2026-11-17",
+      },
+    ],
+  };
+  fixture.tasks.set(1, {
+    id: 1,
+    parentId: null,
+    name: "Task",
+    statusId: 1,
+    startDate: "2026-11-16",
+    endDate: "2026-11-19",
+    priority: "medium",
+    level: 1,
+    version: 0,
+  });
+
+  const save = (duration: number, calendarRevision?: number) =>
+    saveStudioState(
+      ganttStudioStateInput.parse({
+        key: randomUUID(),
+        projectId: 1,
+        version: fixture.studioVersion,
+        calendarRevision,
+        state: {
+          schemaVersion: 2,
+          completionModel: "leaf-count-v1",
+          project: {
+            id: "PRJ-1",
+            name: "Project",
+            description: "",
+            start: "2026-11-16",
+            statusDate: "2026-11-16",
+            deadline: null,
+            mode: "smart",
+          },
+          calendar: {
+            workingDays: [0, 1, 2, 3, 4],
+            hoursPerDay: 6,
+            holidays: [],
+          },
+          tasks: [
+            {
+              id: "T1",
+              parentId: null,
+              name: "Task",
+              duration,
+              phase: "Implementation",
+              owner: "Employee",
+              progress: 0,
+              start: "2026-11-16",
+              notBefore: null,
+              notes: "",
+              executionStatus: "not_started",
+              pmVersion: fixture.tasks.get(1)?.version,
+            },
+          ],
+          links: [],
+          activity: [],
+        },
+      }),
+      { user: { id: 1 } } as AccessContext
+    );
+
+  await expect(save(2)).rejects.toMatchObject({ code: "CONFLICT" });
+  expect(fixture.studioVersion).toBe(0);
+  await expect(save(3, 2)).resolves.toMatchObject({
+    state: {
+      calendar: {
+        hoursPerDay: 6,
+        holidays: [{ date: "2026-11-17", name: "Annual holiday" }],
+      },
+      tasks: [{ start: "2026-11-16", duration: 3 }],
+    },
+  });
+  expect(fixture.tasks.get(1)?.endDate).toBe("2026-11-19");
+  await save(2, 2);
+  expect(fixture.tasks.get(1)?.endDate).toBe("2026-11-18");
 });

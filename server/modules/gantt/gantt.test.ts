@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   analyzeGantt,
   GanttCalendar,
+  ganttEpoch,
+  ganttIso,
   ganttProgress,
   type GanttTask,
 } from "../../../shared/gantt";
@@ -47,6 +49,20 @@ describe("Gantt scheduling engine", () => {
     expect(calendar.duration("1000-01-01", "9998-12-31")).toBe(
       future - old + 1
     );
+  });
+
+  it("finds the next workday during a prolonged central holiday calendar", () => {
+    const sunday = ganttEpoch("2026-11-01");
+    const holidays = Array.from({ length: 550 }, (_, week) => ({
+      date: ganttIso(sunday + week * 7),
+      name: "Holiday",
+    }));
+    const calendar = new GanttCalendar("2026-11-01", {
+      workingDays: [0],
+      hoursPerDay: 8,
+      holidays,
+    });
+    expect(calendar.date(0)).toBe(ganttIso(sunday + 550 * 7));
   });
   it("calculates a finish-to-start critical path on working days", () => {
     const result = analyzeGantt(

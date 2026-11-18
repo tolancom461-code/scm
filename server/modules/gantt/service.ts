@@ -46,6 +46,7 @@ import {
   assertTasksWithoutRequisitions,
   lockRequisitionSourceProjects,
 } from "../material-requisitions/schedule-guards";
+import { readGlobalWorkCalendar } from "../project-management/work-calendar";
 import {
   calendarDays,
   dependencyTargetMovement,
@@ -57,13 +58,29 @@ import {
   shiftIso,
 } from "./scheduling";
 import { touchGanttStudioStates } from "./studio-state";
-import { parseGanttJson, readGanttCalendarSettings } from "./calendar";
+import {
+  localCalendarValues,
+  parseGanttJson,
+  readGanttCalendarSettings,
+  type GlobalGanttCalendar,
+} from "./calendar";
 import { assertPortfolioProjects } from "./portfolio";
 
 const MAX_STUDIO_STATE_BYTES = 8 * 1024 * 1024;
 
 function invalid(message: string): never {
   throw new TRPCError({ code: "BAD_REQUEST", message });
+}
+
+function assertCalendarRevision(
+  submitted: number | undefined,
+  global: GlobalGanttCalendar | null
+) {
+  if ((submitted ?? 0) !== (global?.version ?? 0))
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: "تغيّر تقويم الإجازات. حدّث المخطط قبل حفظ تعديلات الجدول.",
+    });
 }
 
 function studioTaskEnd(
@@ -187,6 +204,7 @@ async function readDetail(
     baselineRows,
     studioRows,
     sharedRows,
+    globalCalendar,
   ] = await Promise.all([
     db
       .select({
@@ -263,10 +281,11 @@ async function readDetail(
         eq(s.ganttSharedTaskMembers.taskId, s.projectTasks.id)
       )
       .where(eq(s.projectTasks.projectId, projectId)),
+    readGlobalWorkCalendar(db),
   ]);
   const settingsRow = settingRows[0];
   const settings = {
-    ...readGanttCalendarSettings(settingsRow),
+    ...readGanttCalendarSettings(settingsRow, globalCalendar),
     mode: (settingsRow?.mode ?? "smart") as "smart" | "free",
     statusDate: settingsRow?.statusDate ?? null,
     deadline: settingsRow?.deadline ?? null,
@@ -879,6 +898,17 @@ export async function saveStudioState(
           .where(eq(s.constructionProjects.id, input.projectId))
           .for("update");
         if (!project) throw new DomainError("NOT_FOUND");
+        const globalCalendar = await readGlobalWorkCalendar(tx);
+        assertCalendarRevision(input.calendarRevision, globalCalendar);
+        if (!globalCalendar && input.state.calendar.holidays.length > 366)
+          invalid("الحد الأقصى لتقويم المشروع 366 إجازة.");
+        const studioCalendar = globalCalendar
+          ? {
+              ...input.state.calendar,
+              workingDays: globalCalendar.workingDays,
+              holidays: globalCalendar.holidays,
+            }
+          : input.state.calendar;
         const taskIds = new Set(input.state.tasks.map(task => task.id));
         if (taskIds.size !== input.state.tasks.length)
           invalid("معرفات المهام مكررة");
@@ -995,7 +1025,7 @@ export async function saveStudioState(
         );
         const ganttCalendar = new GanttCalendar(
           input.state.project.start,
-          input.state.calendar
+          studioCalendar
         );
         const dbIdByStudio = new Map<string, number>();
         const studioByDbId = new Map<number, string>();
@@ -1496,9 +1526,12 @@ export async function saveStudioState(
           .where(eq(s.ganttProjectSettings.projectId, input.projectId))
           .for("update");
         const settingValues = {
-          workingDays: JSON.stringify(input.state.calendar.workingDays),
-          hoursPerDay: input.state.calendar.hoursPerDay,
-          holidays: JSON.stringify(input.state.calendar.holidays),
+          ...localCalendarValues(
+            studioCalendar,
+            settingsRow,
+            Boolean(globalCalendar)
+          ),
+          hoursPerDay: studioCalendar.hoursPerDay,
           mode: input.state.project.mode,
           statusDate: input.state.project.statusDate,
           deadline: input.state.project.deadline,
@@ -1617,6 +1650,7 @@ export async function saveStudioState(
         });
         const normalizedState = {
           ...input.state,
+          calendar: studioCalendar,
           project: {
             ...input.state.project,
             id: project.number,
@@ -1645,6 +1679,11 @@ export async function saveStudioState(
           input.projectId,
           ...affectedProjects,
         ]);
+        // Verify against a current locking read before committing schedule writes.
+        assertCalendarRevision(
+          input.calendarRevision,
+          await readGlobalWorkCalendar(tx, true)
+        );
         await recordChange(tx, {
           actorId: a.user.id,
           action: "gantt.studio.saved",
@@ -1687,10 +1726,10 @@ export async function saveSettings(
         .for("update");
       if ((current?.version ?? 0) !== input.version)
         throw new DomainError("CONFLICT");
+      const globalCalendar = await readGlobalWorkCalendar(tx, true);
       const values = {
-        workingDays: JSON.stringify(input.workingDays),
+        ...localCalendarValues(input, current, Boolean(globalCalendar)),
         hoursPerDay: input.hoursPerDay,
-        holidays: JSON.stringify(input.holidays),
         mode: input.mode,
         statusDate: input.statusDate,
         deadline: input.deadline,

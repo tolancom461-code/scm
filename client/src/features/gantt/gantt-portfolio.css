@@ -222,8 +222,18 @@
   overflow-wrap: anywhere;
 }
 
-.gantt-portfolio-project-list label input {
+.gantt-portfolio-project-list label input[type="checkbox"] {
+  flex: none;
+  inline-size: 1rem;
+  block-size: 1rem;
+  margin: 0;
+  padding: 0;
   accent-color: #087f7b;
+}
+
+.gantt-portfolio-project-list label small {
+  flex: none;
+  white-space: nowrap;
 }
 
 .gantt-portfolio-project-list i,

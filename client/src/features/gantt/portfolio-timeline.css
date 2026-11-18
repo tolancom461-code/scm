@@ -331,7 +331,7 @@
       transparent 0 calc(var(--pt-grid-step) - 1px),
       #e9eff2 calc(var(--pt-grid-step) - 1px) var(--pt-grid-step)
     ),
-    var(--pt-week-shade);
+    var(--pt-holiday-shade, none), var(--pt-week-shade);
 }
 
 .pt-project .pt-track {
@@ -456,6 +456,12 @@
 
 .pt-legend-link {
   border-top: 2px solid #5b9292;
+}
+
+.pt-legend-holiday {
+  height: 8px;
+  background: #f2bc6e62;
+  border-radius: 2px;
 }
 
 @media (max-width: 800px) {

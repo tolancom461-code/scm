@@ -3,8 +3,8 @@ import * as s from "../../../drizzle/construction";
 import { businessDate } from "../../../shared/date";
 import {
   ganttDate,
+  GanttCalendar,
   updateTaskExecutionDates,
-  type GanttCalendar,
 } from "../../../shared/gantt";
 import type { Transaction } from "../../core/database";
 import {
@@ -16,6 +16,8 @@ import {
   assertDraftRequisitionSourceStarts,
   lockRequisitionSourceProjects,
 } from "../material-requisitions/schedule-guards";
+import { readGlobalWorkCalendar } from "../project-management/work-calendar";
+import { readGanttCalendarSettings } from "./calendar";
 
 const DAY = 86_400_000;
 export function shiftIso(date: string, days: number) {
@@ -527,7 +529,10 @@ async function applyDependencyConstraint(
   tx: Transaction,
   link: ScheduleDependency,
   a: AccessContext,
-  editor?: EditorCalendar
+  calendarForProject: (
+    projectId: number,
+    startDate: string
+  ) => Promise<EditorCalendar | undefined>
 ): Promise<ScheduleEffects> {
   const { fromTaskId, toTaskId } = link;
   const sources = await tx
@@ -556,6 +561,11 @@ async function applyDependencyConstraint(
       projectId => !sourceProjects.has(projectId)
     )
   );
+  // Cross-project relationship lags are expressed in calendar days.
+  const editor =
+    from.task.projectId === to.task.projectId
+      ? await calendarForProject(to.task.projectId, from.task.startDate)
+      : undefined;
   const move = dependencyTargetMovement(link, from, to, editor);
   if (!move) return noChanges;
   const projectTasks = await selectDependencyTasks(
@@ -671,6 +681,31 @@ export async function propagateScheduleChanges(
     .orderBy(s.ganttTaskLinks.id)
     .for("update");
   const executionDate = changes.executionDate ?? businessDate();
+  let globalCalendar: ReturnType<typeof readGlobalWorkCalendar> | undefined;
+  const calendarByProject = new Map<number, EditorCalendar>();
+  const calendarForProject = async (projectId: number, startDate: string) => {
+    if (changes.editorCalendar?.projectId === projectId)
+      return changes.editorCalendar;
+    const cached = calendarByProject.get(projectId);
+    if (cached) return cached;
+    globalCalendar ??= readGlobalWorkCalendar(tx, true);
+    const global = await globalCalendar;
+    if (!global) return undefined;
+    const [local] = await tx
+      .select()
+      .from(s.ganttProjectSettings)
+      .where(eq(s.ganttProjectSettings.projectId, projectId));
+    const calendar: EditorCalendar = {
+      projectId,
+      mode: local?.mode === "free" ? "free" : "smart",
+      calendar: new GanttCalendar(
+        startDate,
+        readGanttCalendarSettings(local, global)
+      ),
+    };
+    calendarByProject.set(projectId, calendar);
+    return calendar;
+  };
   const projects = await propagateTaskChanges(
     changes,
     links,
@@ -682,7 +717,7 @@ export async function propagateScheduleChanges(
         includeStatusAndAssignees,
         executionDate
       ),
-    link => applyDependencyConstraint(tx, link, a, changes.editorCalendar)
+    link => applyDependencyConstraint(tx, link, a, calendarForProject)
   );
   for (const projectId of projects)
     await enforceProjectBounds(tx, projectId, a);

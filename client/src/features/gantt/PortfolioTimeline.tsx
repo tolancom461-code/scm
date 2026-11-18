@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { localeMeta, type Locale } from "@/lib/i18n";
 import { businessDate } from "@shared/date";
-import type { GanttRelationType } from "@shared/gantt";
+import type { GanttHoliday, GanttRelationType } from "@shared/gantt";
 import { ganttColorText } from "@shared/gantt-colors";
 import "./portfolio-timeline.css";
 
@@ -44,6 +44,8 @@ export type PortfolioTimelineProject = {
   plannedStartDate?: string | null;
   color: string;
   workingDays?: number[];
+  holidays?: GanttHoliday[];
+  calendarRevision?: number;
   tasks: PortfolioTimelineTask[];
 };
 
@@ -166,6 +168,39 @@ function weekShade(rangeStart: number, pixelDay: number, workdays: number[]) {
     return `${fill} ${index * pixelDay}px ${(index + 1) * pixelDay}px`;
   });
   return `repeating-linear-gradient(to right, ${stops.join(", ")})`;
+}
+
+function holidayShade(
+  start: number,
+  end: number,
+  pixelDay: number,
+  holidays: GanttHoliday[] = []
+) {
+  const dates = holidays
+    .flatMap(({ date }) => {
+      const day = toDay(date);
+      return day !== null && day >= start && day <= end ? [day] : [];
+    })
+    .sort((a, b) => a - b);
+  if (!dates.length) return "none";
+  const spans: Range[] = [];
+  for (const day of dates) {
+    const last = spans.at(-1);
+    if (last && day <= last.end + 1) last.end = day;
+    else spans.push({ start: day, end: day });
+  }
+  const stops = ["transparent 0"];
+  for (const span of spans) {
+    const left = `${(span.start - start) * pixelDay}px`;
+    const right = `${(span.end - start + 1) * pixelDay}px`;
+    stops.push(
+      `transparent ${left}`,
+      `#f2bc6e34 ${left} ${right}`,
+      `transparent ${right}`
+    );
+  }
+  stops.push("transparent 100%");
+  return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
 function projectCompare(
@@ -386,6 +421,29 @@ export function PortfolioTimeline({
   const pixelDay = (fitWidth / days) * zoom;
   const timelineWidth = Math.max(fitWidth, days * pixelDay);
   const geometry = timelineGeometry(range, pixelDay);
+  const shadesByProject = useMemo(() => {
+    const central = new Map<number, string>();
+    return new Map(
+      projects.map(project => {
+        const revision = project.calendarRevision ?? 0;
+        const holiday =
+          central.get(revision) ??
+          holidayShade(range.start, range.end, pixelDay, project.holidays);
+        if (revision) central.set(revision, holiday);
+        return [
+          project.id,
+          {
+            holiday,
+            week: weekShade(
+              range.start,
+              pixelDay,
+              project.workingDays ?? defaultWorkingDays
+            ),
+          },
+        ];
+      })
+    );
+  }, [projects, range.start, range.end, pixelDay]);
   const months = useMemo(
     () =>
       monthsInRange(
@@ -679,11 +737,10 @@ export function PortfolioTimeline({
                 "--pt-color": color,
                 "--pt-text-color": ganttColorText(color),
                 "--pt-indent": isProject ? 0 : Math.min(row.depth, 5),
-                "--pt-week-shade": weekShade(
-                  range.start,
-                  pixelDay,
-                  row.project.workingDays ?? defaultWorkingDays
-                ),
+                "--pt-week-shade":
+                  shadesByProject.get(row.project.id)?.week ?? "none",
+                "--pt-holiday-shade":
+                  shadesByProject.get(row.project.id)?.holiday ?? "none",
                 top: (drawFrom + visibleIndex) * rowHeight,
               };
               return (
@@ -835,6 +892,14 @@ export function PortfolioTimeline({
         <span>
           <i className="pt-legend-today" /> {t("تاريخ المتابعة", "Today", "آج")}
         </span>
+        {[...shadesByProject.values()].some(
+          ({ holiday }) => holiday !== "none"
+        ) && (
+          <span>
+            <i className="pt-legend-holiday" aria-hidden="true" />
+            {t("الإجازات المسجّلة", "Recorded holidays", "درج شدہ تعطیلات")}
+          </span>
+        )}
         {showLinks && (
           <span>
             <i className="pt-legend-link" />{" "}

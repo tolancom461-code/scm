@@ -738,6 +738,8 @@ export function GanttPortfolio({
           endDate: project.forecastEndDate ?? project.plannedEndDate,
           color: shades.base,
           workingDays: project.settings.workingDays,
+          holidays: project.settings.holidays,
+          calendarRevision: project.settings.calendarRevision,
           tasks: (byProject.get(project.id) ?? []).map(task => {
             const executionStatus = taskExecutionStatus(task.statusCode);
             const delay =

@@ -10,10 +10,12 @@ import {
   boolean,
   decimal,
   double,
+  json,
   foreignKey,
   type AnyMySqlColumn,
 } from "drizzle-orm/mysql-core";
 import type { GanttPaletteId } from "../shared/gantt-colors";
+import type { HolidayRange } from "../shared/work-calendar";
 import { users } from "./schema";
 export const constructionProjects = mysqlTable(
   "pm_projects",
@@ -253,6 +255,14 @@ export const materialRequisitionItems = mysqlTable(
     }),
   ]
 );
+
+export const pmWorkCalendar = mysqlTable("pm_work_calendar", {
+  id: int("id").primaryKey(),
+  weeklyDaysOff: json("weekly_days_off").$type<number[]>().notNull(),
+  holidays: json("holidays").$type<HolidayRange[]>().notNull(),
+  version: int("version").notNull().default(0),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+});
 
 export const ganttProjectSettings = mysqlTable("pm_gantt_project_settings", {
   projectId: int("project_id")

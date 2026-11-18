@@ -558,6 +558,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     "تأخير النهاية (أيام عمل)":"Finish delay (workdays)",
     "تأخير النهاية حتى اليوم (أيام عمل)":"Finish delay as of today (workdays)",
     "الإنجاز حسب الحالة المحفوظة":"Completion from saved status",
+    "تُدار أيام العمل والإجازات من صفحة الإجازات في وحدة المشاريع.":"Manage workdays and holidays on the Holidays page in Project Management.",
+    "الحد الأقصى 3660 يوم إجازة.":"At most 3,660 holiday dates are allowed.",
   });
   Object.assign(catalogs.ur,{
     "جاهز للصرف":"اجرا کے لیے تیار",
@@ -578,6 +580,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     "تأخير النهاية (أيام عمل)":"اختتام میں تاخیر (کام کے دن)",
     "تأخير النهاية حتى اليوم (أيام عمل)":"آج تک اختتام میں تاخیر (کام کے دن)",
     "الإنجاز حسب الحالة المحفوظة":"محفوظ حالت کے مطابق تکمیل",
+    "تُدار أيام العمل والإجازات من صفحة الإجازات في وحدة المشاريع.":"کام کے دن اور تعطیلات منصوبوں کے تعطیلات صفحے سے مقرر ہوتے ہیں۔",
+    "الحد الأقصى 3660 يوم إجازة.":"زیادہ سے زیادہ ۳۶۶۰ تعطیلات کی تاریخیں درج ہو سکتی ہیں۔",
   });
   const demoEnglish = {
   "تجهيز مركز خدمات — مشروع تجريبي": "Service centre fit-out — Demo project",
@@ -858,7 +862,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       let count = 0;
       while (!this.isWorkday(day)) {
         day += direction;
-        if (++count > 3660) fail(I.t("لا توجد أيام عمل متاحة ضمن نطاق التقويم."));
+        if (++count > Math.max(3660,(this.holidays.size+1)*7)) fail(I.t("لا توجد أيام عمل متاحة ضمن نطاق التقويم."));
       }
       return day;
     }
@@ -905,7 +909,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     if (!Array.isArray(state.links) || state.links.length > 3000) fail(I.t("الحد الأقصى 3000 علاقة."));
     integer(state.calendar.hoursPerDay, 1, 24, I.t("ساعات يوم العمل"));
     if (!Array.isArray(state.calendar.workingDays) || new Set(state.calendar.workingDays).size !== state.calendar.workingDays.length) fail(I.t("أيام العمل غير صالحة."));
-    if (!Array.isArray(state.calendar.holidays) || state.calendar.holidays.length > 366) fail(I.t("الحد الأقصى 366 استثناء تقويم."));
+    if (!Array.isArray(state.calendar.holidays) || state.calendar.holidays.length > 3660) fail(I.t("الحد الأقصى 3660 يوم إجازة."));
     if(I.validTranslations && ![state.project,...(state.tasks||[]),...(state.calendar.holidays||[])].every(I.validTranslations)) fail(I.t('بيانات الترجمة غير صالحة.'));
     const holidayDates = new Set();
     for (const h of state.calendar.holidays) {
@@ -1308,6 +1312,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   const compactDate = date => date.slice(8,10) + '/' + date.slice(5,7);
   const clone = E.clone;
   let state, analysis, view = 'gantt', dayWidth = 32, viewStart = null, rangeDays = 80;
+  let calendarManaged=false, calendarRevision=0;
+  const calendarVersionOf=message=>Number.isSafeInteger(message?.calendarRevision)&&message.calendarRevision>=0?message.calendarRevision:0;
   let paletteLevels=[], paletteOverrides=new Map(), paletteSnapshot='';
   function acceptPalette(palette) {
     const valid=entry=>/^#[0-9a-f]{6}$/i.test(entry?.color)&&/^#[0-9a-f]{6}$/i.test(entry?.ink);
@@ -1381,7 +1387,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   function save() {
     if(embedded) {
       setSaveStatus('تعديلات بانتظار الحفظ');
-      sendToHost('pscm:gantt:edit',{state,version:serverVersion,sequence:++revision});
+      sendToHost('pscm:gantt:edit',{state,version:serverVersion,calendarRevision,sequence:++revision});
       return;
     }
     try {
@@ -1395,13 +1401,17 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     next.activity = Array.isArray(next.activity) ? next.activity.slice(-59) : [];
     next.activity.push({ at: new Date().toISOString(), action: label, actionI18n: I.messagePair(label) });
   }
-  function commit(label, mutate, { shouldSchedule = true, silent = false, errorTarget = null } = {}) {
+  function commit(label, mutate, { shouldSchedule = true, preserveDates = false, silent = false, errorTarget = null } = {}) {
     try {
       if(readOnly)throw Error(I.t('هذا المشروع للعرض فقط.'));
       let next = clone(state);
       const result = mutate(next); if (result) next = result;
+      if(calendarManaged) {
+        next.calendar.workingDays=clone(state.calendar.workingDays);
+        next.calendar.holidays=clone(state.calendar.holidays);
+      }
       next = P.prepare(next);
-      next = E.normalizeCalendar(next);
+      if(!preserveDates) next = E.normalizeCalendar(next);
       if (shouldSchedule && next.project.mode === 'smart') next = E.schedule(next);
       E.analyze(next);
       if (JSON.stringify(next) === JSON.stringify(state)) return true;
@@ -1870,15 +1880,21 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     $('holidayRows').append(row);
   }
   function openCalendar() {
-    $('workingDayOptions').innerHTML=I.weekdays().map((name,i)=>`<label><input type="checkbox" name="weekday" value="${i}" ${state.calendar.workingDays.includes(i)?'checked':''}>${name}</label>`).join('');
+    $('workingDayOptions').innerHTML=I.weekdays().map((name,i)=>`<label><input type="checkbox" name="weekday" value="${i}" ${state.calendar.workingDays.includes(i)?'checked':''} ${calendarManaged?'disabled':''}>${name}</label>`).join('');
     $('calendarForm').elements.hoursPerDay.value=state.calendar.hoursPerDay;
-    $('holidayRows').innerHTML='';state.calendar.holidays.forEach(holidayRow);$('calendarFormError').textContent='';openDialog('calendarDialog');
+    $('holidayRows').innerHTML='';
+    if(!calendarManaged)state.calendar.holidays.forEach(holidayRow);
+    $('addHolidayBtn').closest('.relations-head').hidden=calendarManaged;
+    managedCalendarHint.hidden=!calendarManaged;
+    managedCalendarHint.textContent=I.t('تُدار أيام العمل والإجازات من صفحة الإجازات في وحدة المشاريع.');
+    $('calendarFormError').textContent='';
+    openDialog('calendarDialog');
   }
   function saveCalendar(event) {
     event.preventDefault();
-    const workingDays=[...$('workingDayOptions').querySelectorAll('input:checked')].map(i=>Number(i.value));
-    const holidays=[...$('holidayRows').children].map(row=>{const h=clone(row._originalHoliday||{name:''});h.date=row.querySelector('[data-holiday-date]').value;const input=row.querySelector('[data-holiday-name]');I.setField(h,'name',input.value.trim()||I.t("توقف إضافي"),input.dataset.editLanguage||I.language);return h;});
-    if(commit(I.t("تم تطبيق تقويم العمل."),next=>{next.calendar={workingDays,hoursPerDay:Number(event.currentTarget.elements.hoursPerDay.value),holidays};},{errorTarget:'calendarFormError'}))closeDialog('calendarDialog');
+    const workingDays=calendarManaged?state.calendar.workingDays:[...$('workingDayOptions').querySelectorAll('input:checked')].map(i=>Number(i.value));
+    const holidays=calendarManaged?state.calendar.holidays:[...$('holidayRows').children].map(row=>{const h=clone(row._originalHoliday||{name:''});h.date=row.querySelector('[data-holiday-date]').value;const input=row.querySelector('[data-holiday-name]');I.setField(h,'name',input.value.trim()||I.t("توقف إضافي"),input.dataset.editLanguage||I.language);return h;});
+    if(commit(I.t("تم تطبيق تقويم العمل."),next=>{next.calendar={workingDays,hoursPerDay:Number(event.currentTarget.elements.hoursPerDay.value),holidays};},{errorTarget:'calendarFormError',shouldSchedule:!calendarManaged,preserveDates:calendarManaged}))closeDialog('calendarDialog');
   }
   function openProject() {
     const f=$('projectForm');for(const key of ['name','start','deadline','statusDate','description']){const el=f.elements[key];el.value=['name','description'].includes(key)?I.field(state.project,key):(state.project[key]||'');el.dataset.baseValue=el.value;delete el.dataset.editLanguage;}
@@ -2336,6 +2352,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       E.analyze(next);
       state=next;
       serverVersion=message.version;
+      calendarRevision=calendarVersionOf(message);
+      calendarManaged=Boolean(message.calendarManaged);
       if(initial) {
         readOnly=Boolean(message.readOnly);
         revision=message.sequence;
@@ -2354,13 +2372,13 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     if(!deferredRefresh||!state||revision!==savedRevision||hostInteractionInProgress())return;
     const message=deferredRefresh;
     deferredRefresh=null;
-    if(message.version>=serverVersion)applyHostState(message,false);
+    if(message.version>=serverVersion&&calendarVersionOf(message)>=calendarRevision)applyHostState(message,false);
   }
   function applySaveReceipt() {
     if(!deferredReceipt||!state||hostInteractionInProgress())return;
     const message=deferredReceipt;
     deferredReceipt=null;
-    if(message.sequence<savedRevision)return;
+    if(message.sequence<savedRevision||calendarVersionOf(message)!==calendarRevision)return;
     try {
       const rebase=rebaseStudioSave(message.submitted,message.state);
       const next=P.prepare(rebase(state));
@@ -2371,7 +2389,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       savedRevision=message.sequence;
       render();
       setSaveStatus(revision===savedRevision?'محفوظ في قاعدة PSCM':'تعديلات بانتظار الحفظ');
-      sendToHost('pscm:gantt:ack',{sequence:revision,savedSequence:savedRevision,version:serverVersion,state});
+      sendToHost('pscm:gantt:ack',{sequence:revision,savedSequence:savedRevision,version:serverVersion,calendarRevision,state});
       applyDeferredRefresh();
     } catch(error) {
       setSaveStatus('تعذر الحفظ؛ التعديلات لا تزال مفتوحة');
@@ -2423,7 +2441,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       return;
     }
     if(message.type==='pscm:gantt:refresh') {
-      if(!deferredRefresh||message.version>=deferredRefresh.version)deferredRefresh=message;
+      if(!deferredRefresh||(message.version>=deferredRefresh.version&&calendarVersionOf(message)>=calendarVersionOf(deferredRefresh)))deferredRefresh=message;
       applyDeferredRefresh();
       return;
     }
@@ -2543,7 +2561,11 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   $('taskDialog').addEventListener('cancel',event=>{if(!canLeaveTask())event.preventDefault();});
   $('addTaskBtn').onclick=()=>openTask();$('addPredecessorBtn').onclick=()=>dependencyRow();$('deleteTaskBtn').onclick=deleteTask;
   $('linkBtn').onclick=()=>openLink();$('deleteLinkBtn').onclick=()=>{if(!confirm(I.t("حذف هذه العلاقة؟")))return;const id=editingLink;if(commit(I.t("تم حذف العلاقة."),next=>{next.links=next.links.filter(l=>l.id!==id);}))closeDialog('linkDialog');};
-  $('calendarBtn').onclick=openCalendar;$('addHolidayBtn').onclick=()=>holidayRow();$('projectBtn').onclick=openProject;
+  const managedCalendarHint=document.createElement('p');
+  managedCalendarHint.className='small-note';
+  managedCalendarHint.hidden=true;
+  $('workingDayOptions').before(managedCalendarHint);
+  $('calendarBtn').onclick=openCalendar;$('addHolidayBtn').onclick=()=>{if(!calendarManaged)holidayRow();};$('projectBtn').onclick=openProject;
   $('autoScheduleToggle').onchange=e=>setMode(e.target.checked?'smart':'free');
   $('multiSelectBtn').onclick=()=>{multiSelectMode=!multiSelectMode;updateSelection();};
   $('undoBtn').onclick=undo;$('redoBtn').onclick=redo;$('labUndoBtn').onclick=undo;

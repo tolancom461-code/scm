@@ -27,6 +27,7 @@ export type GanttCalendarSettings = {
   hoursPerDay: number;
   holidays: GanttHoliday[];
 };
+export const maxGlobalHolidayDays = 3660;
 type ActualTaskDates = {
   actualStartDate: string | null;
   actualEndDate: string | null;
@@ -106,9 +107,10 @@ export class GanttCalendar {
   }
   snap(day: number, direction: 1 | -1) {
     let guard = 0;
+    const limit = (this.holidays.size + 1) * 7;
     while (!this.isWorkday(day)) {
       day += direction;
-      if (++guard > 3660) throw new Error("No workday in calendar range");
+      if (++guard > limit) throw new Error("No workday in calendar range");
     }
     if (day < firstCalendarDay || day > lastCalendarDay)
       throw new Error("Date outside the supported calendar range");
@@ -539,6 +541,7 @@ export const ganttStudioStateInput = z.object({
   key,
   projectId: z.number().int().positive(),
   version: z.number().int().nonnegative(),
+  calendarRevision: z.number().int().nonnegative().optional(),
   state: z
     .object({
       schemaVersion: z.literal(2),
@@ -571,7 +574,7 @@ export const ganttStudioStateInput = z.object({
                 .object({ date: dateField, name: z.string().max(150) })
                 .passthrough()
             )
-            .max(366)
+            .max(maxGlobalHolidayDays)
             .refine(distinctHolidayDates, "Duplicate holiday date"),
         })
         .passthrough(),

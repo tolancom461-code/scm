@@ -10,7 +10,9 @@ import {
   statusInput,
   projectStates,
 } from "../../../shared/construction";
+import { saveHolidayCalendarInput } from "../../../shared/work-calendar";
 import * as service from "./service";
+import { holidayCalendar, saveHolidayCalendar } from "./work-calendar";
 import {
   taskMaterialCosts,
   taskMaterialProgress,
@@ -41,6 +43,12 @@ export const projectManagementRouter = router({
   detail: requiring("pm.view")
     .input(z.object({ id: z.number().int().positive() }))
     .query(({ input, ctx }) => service.detail(input.id, ctx.access!)),
+  holidayCalendar: requiring("pm.view").query(({ ctx }) =>
+    holidayCalendar(ctx.access!)
+  ),
+  saveHolidayCalendar: requiring("pm.tasks.manage")
+    .input(saveHolidayCalendarInput)
+    .mutation(({ input, ctx }) => saveHolidayCalendar(input, ctx.access!)),
   taskMaterialSummary: requiring("pm.view")
     .input(
       z.object({

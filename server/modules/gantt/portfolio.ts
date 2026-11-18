@@ -30,6 +30,7 @@ import {
   type AccessContext,
 } from "../../core/policy";
 import { lockRequisitionSourceProjects } from "../material-requisitions/schedule-guards";
+import { readGlobalWorkCalendar } from "../project-management/work-calendar";
 import { readGanttCalendarSettings } from "./calendar";
 import { touchGanttStudioStates } from "./studio-state";
 
@@ -159,7 +160,7 @@ export async function portfolio(
       const link = s.ganttTaskLinks;
       const source = alias(task, "portfolio_source");
       const target = alias(task, "portfolio_target");
-      const [tasks, owners, calendars, links] = await Promise.all([
+      const scheduleData = await Promise.all([
         tx
           .select({
             id: task.id,
@@ -216,7 +217,9 @@ export async function portfolio(
             )
           )
           .orderBy(link.id),
+        readGlobalWorkCalendar(tx),
       ]);
+      const [tasks, owners, calendars, links, globalCalendar] = scheduleData;
       const calendarByProject = new Map(
         calendars.map(row => [row.projectId, row])
       );
@@ -229,7 +232,10 @@ export async function portfolio(
       return {
         projects: projects.map(row => ({
           ...row,
-          settings: readGanttCalendarSettings(calendarByProject.get(row.id)),
+          settings: readGanttCalendarSettings(
+            calendarByProject.get(row.id),
+            globalCalendar
+          ),
         })),
         tasks: tasks.map(row => ({
           ...row,

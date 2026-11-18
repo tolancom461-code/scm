@@ -134,7 +134,7 @@ describe("Gantt portfolio", () => {
       projects: [{ id: 10 }, { id: 20 }],
       links: [{ id: 5, fromTaskId: 1, toTaskId: 3, type: "FS", lagDays: 0 }],
     });
-    expect(fixture.query).toHaveBeenCalledTimes(5);
+    expect(fixture.query).toHaveBeenCalledTimes(6);
     const [projects, ...rest] = fixture.query.mock.calls;
     expect(projects[1]).toEqual([
       10,
@@ -156,6 +156,65 @@ describe("Gantt portfolio", () => {
     expect(linkLookup?.[0]).toContain(
       "`portfolio_target`.`project_id` in (?, ?)"
     );
+  });
+
+  it("uses one central calendar while retaining the working hours of each project", async () => {
+    fixture.query.mockImplementation(async (statement: string) => {
+      if (statement.includes("from `pm_projects`"))
+        return { rows: projectRows };
+      if (statement.includes("from `pm_work_calendar`"))
+        return {
+          rows: [
+            [
+              [0, 6],
+              [
+                {
+                  name: "Annual holiday",
+                  startDate: "2026-11-18",
+                  endDate: "2026-11-19",
+                },
+              ],
+              3,
+            ],
+          ],
+        };
+      if (statement.includes("from `pm_gantt_project_settings`"))
+        return {
+          rows: [
+            [
+              10,
+              "[0,1,2]",
+              6,
+              '[{"date":"2026-11-20","name":"Previous project holiday"}]',
+              "smart",
+              null,
+              null,
+              2,
+              "2026-11-17 08:00:00",
+            ],
+          ],
+        };
+      return { rows: [] };
+    });
+    const result = await portfolio({ projectIds: [10, 20] }, actor([10, 20]));
+    const calendar = {
+      workingDays: [1, 2, 3, 4, 5],
+      holidays: [
+        { date: "2026-11-18", name: "Annual holiday" },
+        { date: "2026-11-19", name: "Annual holiday" },
+      ],
+      calendarManaged: true,
+      calendarRevision: 3,
+    };
+    expect(result.projects).toMatchObject([
+      { id: 10, settings: { ...calendar, hoursPerDay: 6 } },
+      { id: 20, settings: { ...calendar, hoursPerDay: 8 } },
+    ]);
+    expect(
+      fixture.query.mock.calls.filter(([sql]) =>
+        sql.includes("from `pm_work_calendar`")
+      )
+    ).toHaveLength(1);
   });
 
   it("rechecks project eligibility when a direct relationship is saved", async () => {
