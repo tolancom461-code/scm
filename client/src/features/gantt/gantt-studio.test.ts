@@ -33,7 +33,270 @@ class ElementStub {
   }
 }
 
+const portfolioProjects = [
+  {
+    id: 101,
+    number: "PRJ-101",
+    name: "First project",
+    startDate: "2026-11-16",
+    endDate: "2026-11-20",
+    color: "#087f7b",
+    tasks: [
+      {
+        id: 1001,
+        parentId: null,
+        name: "Task in first project",
+        startDate: "2026-11-16",
+        endDate: "2026-11-17",
+      },
+    ],
+  },
+  {
+    id: 202,
+    number: "PRJ-202",
+    name: "Second project",
+    startDate: "2026-11-18",
+    endDate: "2026-11-24",
+    color: "#a63468",
+    tasks: [
+      {
+        id: 2001,
+        parentId: null,
+        name: "Task in second project",
+        startDate: "2026-11-18",
+        endDate: "2026-11-19",
+      },
+    ],
+  },
+];
+
+function createEmbeddedStudio(projectId: number) {
+  const messages: Record<string, unknown>[] = [];
+  let handleMessage: ((event: unknown) => void) | undefined;
+  const scroll = { scrollLeft: 0, scrollTop: 0 };
+  const elements = {
+    ganttScroll: scroll,
+    scaleSelect: { value: "32" },
+    searchInput: { value: "" },
+    phaseFilter: { value: "" },
+    statusFilter: { value: "" },
+    taskDialog: { open: false },
+  };
+  const context = vm.createContext({
+    projectId,
+    $: (id: keyof typeof elements) => elements[id],
+    showHostNotice: (message?: string) => {
+      if (message) throw Error(message);
+    },
+    setSaveStatus: () => {},
+    render: () => {},
+    renderChart: () => {},
+    updateSelection: () => {},
+    canLeaveTask: () => true,
+    document: { querySelector: () => null, addEventListener: () => {} },
+  });
+  const origin = "https://pscm.example.test";
+  const parent = {
+    postMessage: (message: Record<string, unknown>) =>
+      messages.push(structuredClone(message)),
+  };
+  vm.runInContext(engine, context);
+  context.window = {
+    parent,
+    location: { origin },
+    addEventListener(type: string, listener: (event: unknown) => void) {
+      if (type === "message") handleMessage = listener;
+    },
+  };
+  vm.runInContext(
+    `const E = GanttEngine, P = GanttProgress;
+     const I = {t: value => value, language: 'en', setLanguage() {}, applyStatic() {}};
+     const embedded = true, channel = 'test-channel';
+     let state, view = 'gantt', dayWidth = 32, viewStart = null, lastRange = null;
+     let drag = null, linkDrag = null, history = [], future = [], selected = new Set();
+     let revision = 0, savedRevision = 0, serverVersion = 0;
+     let calendarManaged = false, calendarRevision = 0, readOnly = false;
+     const calendarVersionOf = message => message.calendarRevision ?? 0;
+     let paletteLevels = [], paletteOverrides = new Map(), paletteSnapshot = '';
+     const visibleTasks = project => project.tasks;
+     ${sourceBetween("  let portfolio=null", "  let showCritical")}
+     ${sourceBetween("  function sendToHost(", "  function setSaveStatus(")}
+     ${sourceBetween("  function save()", "  function record(")}
+     ${sourceBetween("  function visiblePeerTasks(", "  function range(")}
+     ${sourceBetween("  let deferredReceipt=", "  // Delegated handlers")}`,
+    context
+  );
+  const execute = <T>(code: string) => vm.runInContext(code, context) as T;
+  return {
+    scroll,
+    messages,
+    execute,
+    receive(data: Record<string, unknown>) {
+      if (!handleMessage)
+        throw Error("Gantt Studio did not register its bridge");
+      handleMessage({
+        origin,
+        source: parent,
+        data: { channel: "test-channel", projectId, ...data },
+      });
+    },
+  };
+}
+
+function studioProjectState(projectId: number, taskId: number) {
+  return {
+    schemaVersion: 2,
+    completionModel: "leaf-count-v1",
+    project: {
+      id: `PRJ-${projectId}`,
+      name: `Project ${projectId}`,
+      description: "",
+      start: "2026-11-16",
+      statusDate: "2026-11-16",
+      deadline: null,
+      mode: "free",
+    },
+    calendar: { workingDays: [0, 1, 2, 3, 4], hoursPerDay: 8, holidays: [] },
+    tasks: [
+      {
+        id: `T${taskId}`,
+        pmTaskId: taskId,
+        name: "Current project edit",
+        duration: 1,
+        phase: "Plan",
+        owner: "Engineer",
+        progress: 0,
+        start: "2026-11-18",
+        notBefore: null,
+        notes: "",
+        parentId: null,
+        executionStatus: "not_started",
+      },
+    ],
+    baseline: null,
+    links: [],
+    activity: [],
+  };
+}
+
 describe("embedded Gantt Studio", () => {
+  it("displays two projects while saving only the active project's tasks and links", () => {
+    const studio = createEmbeddedStudio(101);
+    studio.receive({
+      type: "pscm:gantt:load",
+      state: studioProjectState(101, 1001),
+      version: 5,
+      sequence: 0,
+    });
+    studio.receive({
+      type: "pscm:gantt:portfolio",
+      portfolio: {
+        projects: portfolioProjects,
+        links: [
+          { id: 1, fromTaskId: 1001, toTaskId: 2001, type: "FS", lagDays: 0 },
+        ],
+      },
+    });
+    expect(
+      studio.execute(
+        "portfolioRows(state, {}).map(row => [row.kind, row.task?.name ?? row.project.name])"
+      )
+    ).toEqual([
+      ["project", "First project"],
+      ["active", "Current project edit"],
+      ["project", "Second project"],
+      ["peer", "Task in second project"],
+    ]);
+
+    studio.execute("save()");
+    expect(studio.messages).toMatchObject([
+      {
+        type: "pscm:gantt:edit",
+        projectId: 101,
+        version: 5,
+        sequence: 1,
+        state: {
+          project: { id: "PRJ-101" },
+          tasks: [{ id: "T1001", name: "Current project edit" }],
+          links: [],
+        },
+      },
+    ]);
+    expect(studio.messages[0].state).not.toHaveProperty("portfolio");
+  });
+
+  it("opens a peer task in its own project's editor and carries the chart position", () => {
+    const first = createEmbeddedStudio(101);
+    first.receive({
+      type: "pscm:gantt:load",
+      state: studioProjectState(101, 1001),
+      portfolio: { projects: portfolioProjects, links: [] },
+      version: 5,
+      sequence: 0,
+    });
+    first.scroll.scrollLeft = 280;
+    first.scroll.scrollTop = 112;
+    first.execute("drag = {};");
+    first.receive({
+      type: "pscm:gantt:board-action-request",
+      requestId: "switch",
+    });
+    expect(first.messages.shift()).toMatchObject({
+      type: "pscm:gantt:board-action-response",
+      requestId: "switch",
+      allowed: false,
+    });
+    first.execute(
+      "drag = null; viewStart = 20773; dayWidth = 18; openPortfolioTask(202, 2001)"
+    );
+    expect(first.messages).toMatchObject([
+      {
+        type: "pscm:gantt:focus-project",
+        projectId: 101,
+        targetProjectId: 202,
+        taskId: 2001,
+        viewport: {
+          start: 20773,
+          dayWidth: 18,
+          scrollLeft: 280,
+          scrollTop: 112,
+        },
+      },
+    ]);
+
+    const second = createEmbeddedStudio(202);
+    second.receive({
+      type: "pscm:gantt:load",
+      projectId: 101,
+      state: studioProjectState(101, 1001),
+      version: 5,
+      sequence: 0,
+    });
+    second.receive({
+      type: "pscm:gantt:load",
+      state: studioProjectState(202, 2001),
+      portfolio: { projects: portfolioProjects, links: [] },
+      viewport: first.messages[0].viewport,
+      version: 7,
+      sequence: 0,
+    });
+    expect(second.scroll).toEqual({ scrollLeft: 280, scrollTop: 112 });
+    expect(second.execute("[viewStart, dayWidth]")).toEqual([20773, 18]);
+    second.execute("save()");
+    expect(second.messages).toMatchObject([
+      {
+        type: "pscm:gantt:edit",
+        projectId: 202,
+        version: 7,
+        state: {
+          project: { id: "PRJ-202" },
+          tasks: [{ id: "T2001" }],
+          links: [],
+        },
+      },
+    ]);
+  });
+
   it("assigns a localized holiday name as a literal input value", () => {
     const rows = new ElementStub();
     const context = vm.createContext({

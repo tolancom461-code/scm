@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -16,8 +24,19 @@ import { MaterialRequisitionForm } from "../material-requisitions/MaterialRequis
 import { mrText } from "../material-requisitions/copy";
 import { TaskMaterialPanel } from "../project-management/TaskMaterialProgress";
 import { TaskDependencyPanel } from "./TaskDependencyPanel";
-import { GanttPortfolio } from "./GanttPortfolio";
+import {
+  PortfolioSummary,
+  ProjectColor,
+  ProjectPicker,
+  TaskColor,
+} from "./GanttPortfolio";
 import "./gantt.css";
+
+const ProjectForm = lazy(() =>
+  import("../project-management/ProjectModule").then(module => ({
+    default: module.ProjectForm,
+  }))
+);
 
 type User = { id: number; permissions: string[] };
 type Task = {
@@ -79,8 +98,103 @@ type State = {
   baseline: StudioInput["baseline"];
   activity: StudioInput["activity"];
 };
-type Detail = inferRouterOutputs<AppRouter>["gantt"]["detail"];
-type Shared = inferRouterOutputs<AppRouter>["gantt"]["sharedDirectory"];
+type GanttOutputs = inferRouterOutputs<AppRouter>["gantt"];
+type Detail = GanttOutputs["detail"];
+type Shared = GanttOutputs["sharedDirectory"];
+type Portfolio = GanttOutputs["portfolio"];
+type PortfolioTask = Portfolio["tasks"][number];
+type BoardViewport = {
+  start: number | null;
+  dayWidth: number;
+  scrollLeft: number;
+  scrollTop: number;
+  collapsedProjects?: number[];
+  collapsedPeerTasks?: number[];
+};
+type Editor = { projectId: number; taskId?: number; viewport?: BoardViewport };
+type RunBoardAction = (action: (viewport?: BoardViewport) => void) => void;
+const emptyDirectory: GanttOutputs["portfolioDirectory"] = [];
+
+// Presentation only. The editor still sends a complete snapshot of its own project.
+function projectRows(data?: Portfolio) {
+  const tasksByProject = new Map<number, PortfolioTask[]>();
+  for (const task of data?.tasks ?? []) {
+    const tasks = tasksByProject.get(task.projectId);
+    if (tasks) tasks.push(task);
+    else tasksByProject.set(task.projectId, [task]);
+  }
+  return (data?.projects ?? []).map(project => {
+    const colors = ganttProjectColors(project);
+    return {
+      id: project.id,
+      number: project.number,
+      name: project.name,
+      startDate: project.actualStartDate ?? project.plannedStartDate,
+      endDate: project.forecastEndDate ?? project.plannedEndDate,
+      color: colors.base,
+      ink: ganttColorText(colors.base),
+      tasks: (tasksByProject.get(project.id) ?? []).map(task => {
+        const color =
+          ganttColorInput.safeParse(task.color).data ??
+          colors.levels[Math.max(0, Math.min(4, task.level - 1))];
+        return {
+          id: task.id,
+          parentId: task.parentId,
+          name: task.name,
+          startDate: task.startDate,
+          endDate: task.endDate,
+          color,
+          ink: ganttColorText(color),
+          statusCode: task.statusCode,
+          owner: task.assignees.join("، "),
+          isMilestone: task.isMilestone,
+        };
+      }),
+    };
+  });
+}
+
+type BoardPortfolio = {
+  projects: ReturnType<typeof projectRows>;
+  links: Portfolio["links"];
+  linkMode: boolean;
+  predecessorTaskId: number | null;
+};
+
+function readBoardViewport(value: unknown): BoardViewport | undefined {
+  if (!value || typeof value !== "object") return;
+  const {
+    start,
+    dayWidth,
+    scrollLeft,
+    scrollTop,
+    collapsedProjects,
+    collapsedPeerTasks,
+  } = value as BoardViewport;
+  const ids = (items: unknown) =>
+    Array.isArray(items)
+      ? items.filter(id => Number.isSafeInteger(id) && id > 0)
+      : undefined;
+  if (
+    (start === null ||
+      (Number.isSafeInteger(start) && Math.abs(start) < 100_000)) &&
+    Number.isFinite(dayWidth) &&
+    dayWidth > 0 &&
+    dayWidth <= 100 &&
+    Number.isFinite(scrollLeft) &&
+    scrollLeft >= 0 &&
+    Number.isFinite(scrollTop) &&
+    scrollTop >= 0
+  )
+    return {
+      start,
+      dayWidth,
+      scrollLeft,
+      scrollTop,
+      collapsedProjects: ids(collapsedProjects),
+      collapsedPeerTasks: ids(collapsedPeerTasks),
+    };
+}
 type ScheduleAction = "configure" | "start" | "extend" | "lock";
 type StudioEdit = {
   sequence: number;
@@ -250,27 +364,302 @@ export function GanttModule({ locale, user }: { locale: Locale; user: User }) {
 }
 
 function GanttWorkspace({ locale, user }: { locale: Locale; user: User }) {
-  const [editor, setEditor] = useState<{
-    projectId: number;
-    taskId?: number;
-  } | null>(null);
+  const t = (ar: string, en: string, ur: string) =>
+    locale === "ar" ? ar : locale === "en" ? en : ur;
   const utils = trpc.useUtils();
+  const canEdit = user.permissions.includes("pm.tasks.manage");
+  const directory = trpc.gantt.portfolioDirectory.useQuery();
+  const candidates = directory.data ?? emptyDirectory;
+  const [selected, setSelected] = useState<number[] | null>(null);
+  const projectIds = useMemo(
+    () =>
+      candidates
+        .filter(project => selected === null || selected.includes(project.id))
+        .map(project => project.id),
+    [candidates, selected]
+  );
+  const chart = trpc.gantt.portfolio.useQuery(
+    { projectIds },
+    { enabled: projectIds.length > 0 }
+  );
+  const projects = useMemo(() => projectRows(chart.data), [chart.data]);
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [picker, setPicker] = useState<{ viewport?: BoardViewport } | null>(
+    null
+  );
+  const [summary, setSummary] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [colors, setColors] = useState<Editor | null>(null);
+  const [linkMode, setLinkMode] = useState(false);
+  const [predecessorTaskId, setPredecessorTaskId] = useState<number | null>(
+    null
+  );
+  const [pair, setPair] = useState<{
+    from: PortfolioTask;
+    to: PortfolioTask;
+  } | null>(null);
+  const portfolio = useMemo<BoardPortfolio>(
+    () => ({
+      projects,
+      links: chart.data?.links ?? [],
+      linkMode,
+      predecessorTaskId,
+    }),
+    [projects, chart.data?.links, linkMode, predecessorTaskId]
+  );
+
+  useEffect(() => {
+    if (editor || !projectIds.length) return;
+    setEditor({ projectId: projectIds[0] });
+  }, [editor, projectIds]);
+
+  function clearLinkSelection() {
+    setLinkMode(false);
+    setPredecessorTaskId(null);
+  }
+
+  function applyProjects(ids: number[] | null) {
+    const next = candidates.filter(
+      project => ids === null || ids.includes(project.id)
+    );
+    setSelected(ids);
+    if (!next.some(project => project.id === editor?.projectId))
+      setEditor(
+        next[0] ? { projectId: next[0].id, viewport: picker?.viewport } : null
+      );
+    setPicker(null);
+    clearLinkSelection();
+  }
+
+  function visibleProject(projectId: number, taskId?: number) {
+    return (
+      chart.data?.projects.some(project => project.id === projectId) &&
+      (taskId === undefined ||
+        chart.data.tasks.some(
+          task => task.id === taskId && task.projectId === projectId
+        ))
+    );
+  }
+
+  function chooseLinkTask(taskId: number) {
+    if (!canEdit || !linkMode || pair) return;
+    const task = chart.data?.tasks.find(row => row.id === taskId);
+    if (!task) return;
+    const predecessor = chart.data?.tasks.find(
+      row => row.id === predecessorTaskId
+    );
+    if (!predecessor) {
+      setPredecessorTaskId(task.id);
+      return;
+    }
+    if (predecessor.projectId === task.projectId) {
+      toast.error(
+        t(
+          "اختر المهمة التابعة من مشروع آخر.",
+          "Choose a successor in another project.",
+          "دوسرے منصوبے سے اگلا کام منتخب کریں۔"
+        )
+      );
+      return;
+    }
+    setPair({ from: predecessor, to: task });
+  }
+
+  const renderActions = (run: RunBoardAction, blocked = false) => (
+    <div className="gantt-schedule-actions gantt-board-actions">
+      <button
+        type="button"
+        disabled={blocked || !directory.data}
+        onClick={() => run(viewport => setPicker({ viewport }))}
+      >
+        {t("عرض المشاريع", "Show projects", "منصوبے دکھائیں")} ▾
+        {directory.data && (
+          <small>
+            {" "}
+            {projectIds.length}/{candidates.length}
+          </small>
+        )}
+      </button>
+      {chart.isError && (
+        <button type="button" onClick={() => void chart.refetch()}>
+          {t(
+            "تعذّر تحميل عرض المشاريع. إعادة المحاولة",
+            "Could not load projects. Retry",
+            "منصوبے لوڈ نہیں ہو سکے۔ دوبارہ کوشش"
+          )}
+        </button>
+      )}
+      {chart.data && (
+        <button
+          type="button"
+          disabled={blocked}
+          onClick={() => run(() => setSummary(true))}
+        >
+          {t("الملخص", "Summary", "خلاصہ")}
+        </button>
+      )}
+      {canEdit && projects.length > 1 && (
+        <button
+          type="button"
+          aria-pressed={linkMode}
+          disabled={blocked && !linkMode}
+          onClick={() => {
+            if (linkMode) clearLinkSelection();
+            else run(() => setLinkMode(true));
+          }}
+        >
+          {linkMode
+            ? t("إلغاء الربط", "Cancel linking", "ربط منسوخ کریں")
+            : t(
+                "ربط مباشر بين المهام",
+                "Link tasks across projects",
+                "منصوبوں کے کام جوڑیں"
+              )}
+        </button>
+      )}
+      {user.permissions.includes("pm.create") && (
+        <button
+          type="button"
+          disabled={blocked}
+          onClick={() => run(() => setCreating(true))}
+        >
+          + {t("إنشاء مشروع", "Create project", "منصوبہ بنائیں")}
+        </button>
+      )}
+    </div>
+  );
+  const colorProject = chart.data?.projects.find(
+    project => project.id === colors?.projectId
+  );
+  const colorTask = chart.data?.tasks.find(task => task.id === colors?.taskId);
+  const predecessorProject = chart.data?.projects.find(
+    project => project.id === pair?.from.projectId
+  );
   return (
     <>
-      <div hidden={Boolean(editor)}>
-        <GanttPortfolio locale={locale} user={user} openEditor={setEditor} />
-      </div>
-      {editor && (
+      {editor ? (
         <ScopedGanttModule
           key={editor.projectId}
           locale={locale}
           user={user}
           projectId={editor.projectId}
           initialTaskId={editor.taskId}
-          onBack={() => {
-            setEditor(null);
-            void utils.gantt.portfolioDirectory.invalidate();
-            void utils.gantt.portfolio.invalidate();
+          initialViewport={editor.viewport}
+          portfolio={portfolio}
+          renderBoardActions={renderActions}
+          onFocusProject={(target, taskId, viewport) => {
+            if (visibleProject(target, taskId))
+              setEditor({ projectId: target, taskId, viewport });
+          }}
+          onPortfolioColor={(target, taskId) => {
+            if (canEdit && visibleProject(target, taskId))
+              setColors({ projectId: target, taskId });
+          }}
+          onLinkTask={chooseLinkTask}
+        />
+      ) : (
+        <section
+          className="gantt-studio-shell"
+          dir={locale === "en" ? "ltr" : "rtl"}
+        >
+          <div className="gantt-project-switcher">
+            {renderActions(action => action())}
+          </div>
+          <div
+            className={
+              directory.isError ? "gantt-frame-error" : "gantt-frame-loading"
+            }
+          >
+            {directory.isError
+              ? directory.error.message
+              : directory.isPending || projectIds.length
+                ? "…"
+                : t(
+                    "اختر المشاريع لعرضها في المخطط.",
+                    "Choose projects to show on the chart.",
+                    "چارٹ میں دکھانے کے لیے منصوبے منتخب کریں۔"
+                  )}
+          </div>
+        </section>
+      )}
+      {picker && (
+        <ProjectPicker
+          locale={locale}
+          directory={candidates}
+          selected={selected}
+          close={() => setPicker(null)}
+          apply={applyProjects}
+        />
+      )}
+      {summary && (
+        <PortfolioSummary
+          locale={locale}
+          projects={chart.data?.projects ?? []}
+          tasks={chart.data?.tasks ?? []}
+          close={() => setSummary(false)}
+        />
+      )}
+      {creating && (
+        <Suspense fallback={<p role="status">…</p>}>
+          <ProjectForm
+            locale={locale}
+            user={user}
+            close={() => setCreating(false)}
+            saved={() => {
+              setCreating(false);
+              void utils.projectManagement.invalidate();
+              void utils.gantt.portfolioDirectory.invalidate();
+              toast.success(
+                t(
+                  "تم حفظ المشروع كمسودة.",
+                  "Project saved as a draft.",
+                  "منصوبہ مسودے کے طور پر محفوظ ہو گیا۔"
+                )
+              );
+            }}
+          />
+        </Suspense>
+      )}
+      {colorProject &&
+        colors &&
+        (colorTask ? (
+          <TaskColor
+            key={colorTask.id}
+            task={colorTask}
+            project={colorProject}
+            locale={locale}
+            canEdit={canEdit}
+            close={() => setColors(null)}
+          />
+        ) : (
+          colors.taskId === undefined && (
+            <ProjectColor
+              key={colorProject.id}
+              project={colorProject}
+              locale={locale}
+              close={() => setColors(null)}
+            />
+          )
+        ))}
+      {pair && predecessorProject && (
+        <TaskDependencyPanel
+          locale={locale}
+          projectId={pair.to.projectId}
+          taskId={pair.to.id}
+          taskName={pair.to.name}
+          fixedPredecessor={{
+            id: pair.from.id,
+            name: pair.from.name,
+            projectName: predecessorProject.name,
+            projectNumber: predecessorProject.number,
+          }}
+          canEdit={canEdit}
+          onClose={() => setPair(null)}
+          onSaved={() => {
+            clearLinkSelection();
+            toast.success(
+              t("تم حفظ العلاقة", "Dependency saved", "ربط محفوظ ہو گیا")
+            );
           }}
         />
       )}
@@ -283,13 +672,27 @@ function ScopedGanttModule({
   user,
   projectId,
   initialTaskId,
-  onBack,
+  initialViewport,
+  portfolio,
+  renderBoardActions,
+  onFocusProject,
+  onPortfolioColor,
+  onLinkTask,
 }: {
   locale: Locale;
   user: User;
   projectId: number;
   initialTaskId?: number;
-  onBack: () => void;
+  initialViewport?: BoardViewport;
+  portfolio: BoardPortfolio;
+  renderBoardActions: (run: RunBoardAction, blocked: boolean) => ReactNode;
+  onFocusProject: (
+    projectId: number,
+    taskId?: number,
+    viewport?: BoardViewport
+  ) => void;
+  onPortfolioColor: (projectId: number, taskId?: number) => void;
+  onLinkTask: (taskId: number) => void;
 }) {
   const t = (a: string, e: string, u: string) =>
       locale === "ar" ? a : locale === "ur" ? u : e,
@@ -336,6 +739,10 @@ function ScopedGanttModule({
     utils = trpc.useUtils(),
     frame = useRef<HTMLIFrameElement>(null),
     entryTask = useRef(initialTaskId),
+    boardAction = useRef<{
+      requestId: string;
+      action: (viewport?: BoardViewport) => void;
+    } | null>(null),
     executionTaskId = useRef<number | null>(null),
     saving = useRef(false),
     afterStudioSave = useRef<(() => void) | null>(null),
@@ -417,6 +824,8 @@ function ScopedGanttModule({
       receipt.current = accepted;
       post("pscm:gantt:saved", accepted);
       void utils.gantt.detail.invalidate({ projectId: input.projectId });
+      void utils.gantt.portfolioDirectory.invalidate();
+      void utils.gantt.portfolio.invalidate();
       void utils.projectManagement.detail.invalidate({ id: input.projectId });
       void utils.materialRequisitions.invalidate();
     },
@@ -532,6 +941,23 @@ function ScopedGanttModule({
     () => (detail.data ? reconcile(detail.data) : null),
     [detail.data]
   );
+  const runBoardAction: RunBoardAction = action => {
+    if (
+      saveFailed ||
+      afterStudioSave.current ||
+      openingRequisition ||
+      schedule.isPending ||
+      shared.isPending
+    )
+      return;
+    if (readyProject.current !== projectId || !frame.current?.contentWindow) {
+      runAfterStudioSave(action);
+      return;
+    }
+    const requestId = uid();
+    boardAction.current = { requestId, action };
+    post("pscm:gantt:board-action-request", { requestId });
+  };
   const dataVersion = detail.data?.studio?.version ?? 0;
   const calendarRevision = detail.data?.settings.calendarRevision ?? 0;
   const calendarManaged = detail.data?.settings.calendarManaged ?? false;
@@ -545,6 +971,50 @@ function ScopedGanttModule({
       message.projectId !== projectId
     )
       return;
+    if (message.type === "pscm:gantt:board-action-response") {
+      const pending = boardAction.current;
+      if (!pending || pending.requestId !== message.requestId) return;
+      boardAction.current = null;
+      if (message.allowed === true)
+        runAfterStudioSave(() =>
+          pending.action(readBoardViewport(message.viewport))
+        );
+      return;
+    }
+    if (
+      message.type === "pscm:gantt:focus-project" ||
+      message.type === "pscm:gantt:portfolio-color"
+    ) {
+      const target = message.targetProjectId;
+      const taskId = message.taskId;
+      if (
+        !Number.isSafeInteger(target) ||
+        target <= 0 ||
+        (taskId !== undefined &&
+          (!Number.isSafeInteger(taskId) || taskId <= 0)) ||
+        schedule.isPending ||
+        shared.isPending ||
+        openingRequisition
+      )
+        return;
+      if (message.type === "pscm:gantt:portfolio-color") {
+        if (canEdit) runAfterStudioSave(() => onPortfolioColor(target, taskId));
+      } else if (target !== projectId) {
+        const viewport = readBoardViewport(message.viewport);
+        runAfterStudioSave(() => onFocusProject(target, taskId, viewport));
+      }
+      return;
+    }
+    if (message.type === "pscm:gantt:portfolio-link-task") {
+      if (
+        canEdit &&
+        portfolio.linkMode &&
+        Number.isSafeInteger(message.taskId) &&
+        message.taskId > 0
+      )
+        runAfterStudioSave(() => onLinkTask(message.taskId));
+      return;
+    }
     if (message.type === "pscm:gantt:ready" && state) {
       readyProject.current = projectId;
       let recovered = false;
@@ -586,6 +1056,8 @@ function ScopedGanttModule({
         readOnly: !canEdit,
         failed: saveFailed || recovered,
         palette,
+        portfolio,
+        viewport: initialViewport,
       });
       const taskId = entryTask.current;
       if (
@@ -718,6 +1190,10 @@ function ScopedGanttModule({
       post("pscm:gantt:palette", { palette });
   }, [palette, projectId]);
   useEffect(() => {
+    if (readyProject.current === projectId)
+      post("pscm:gantt:portfolio", { portfolio });
+  }, [portfolio, projectId]);
+  useEffect(() => {
     if (readyProject.current === projectId && executionTaskId.current !== null)
       postTaskExecution(executionTaskId.current);
   }, [detail.data, projectId]);
@@ -771,6 +1247,7 @@ function ScopedGanttModule({
     queued.current = null;
     submitted.current = null;
     receipt.current = null;
+    boardAction.current = null;
     storeDraft();
     readyProject.current = 0;
     setHasQueuedEdits(false);
@@ -792,24 +1269,14 @@ function ScopedGanttModule({
       dir={locale === "en" ? "ltr" : "rtl"}
     >
       <div className="gantt-project-switcher">
-        <div className="gantt-schedule-actions">
-          <button
-            type="button"
-            onClick={onBack}
-            disabled={
-              save.isPending ||
-              hasQueuedEdits ||
-              waitingForStudioSave ||
-              openingRequisition
-            }
-          >
-            {t(
-              "العودة إلى عرض المشاريع",
-              "Back to projects",
-              "منصوبوں پر واپس جائیں"
-            )}
-          </button>
-        </div>
+        {renderBoardActions(
+          runBoardAction,
+          saveFailed ||
+            waitingForStudioSave ||
+            openingRequisition ||
+            schedule.isPending ||
+            shared.isPending
+        )}
         {project && (
           <label>
             <bdi>{project.number}</bdi> · {project.name}
@@ -901,6 +1368,21 @@ function ScopedGanttModule({
           </div>
         )}
       </div>
+      {portfolio.linkMode && (
+        <p className="gantt-board-link-hint" role="status">
+          {portfolio.predecessorTaskId === null
+            ? t(
+                "اختر المهمة السابقة، ثم المهمة التي تعتمد عليها.",
+                "Choose the predecessor, then the task that depends on it.",
+                "پہلے سابقہ کام پھر اس پر منحصر کام منتخب کریں۔"
+              )
+            : t(
+                "اختر المهمة التابعة من مشروع آخر.",
+                "Choose a successor in another project.",
+                "دوسرے منصوبے سے اگلا کام منتخب کریں۔"
+              )}
+        </p>
+      )}
       {detail.isError && !state ? (
         <div className="gantt-frame-error">{detail.error.message}</div>
       ) : !state ? (
@@ -915,7 +1397,7 @@ function ScopedGanttModule({
             "Approved Gantt chart",
             "منظور شدہ گانٹ چارٹ"
           )}
-          src={`/gantt-studio/index.html?v=pscm-bridge-6&project=${projectId}&channel=${channel}&requisitions=${canCreateRequisition ? "1" : "0"}`}
+          src={`/gantt-studio/index.html?v=pscm-bridge-7&project=${projectId}&channel=${channel}&requisitions=${canCreateRequisition ? "1" : "0"}`}
           className="gantt-studio-frame"
         />
       )}

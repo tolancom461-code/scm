@@ -135,6 +135,25 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
 .task-materials-short{display:none}
 @container (max-width:125px){.task-materials-long{display:none}.task-materials-short{display:inline}}
 @container (max-width:76px){.task-materials-short{display:none}}
+
+.task-row.portfolio-group,.time-lane.portfolio-group{background:#edf3f5;border-bottom:1px solid #d9e4e8}
+.task-row.portfolio-group{padding-inline:10px;gap:8px}
+.task-row.portfolio-group.is-current,.time-lane.portfolio-group.is-current{background:#e0f2ee}
+.portfolio-project-name{display:grid;gap:3px;text-align:start;min-width:0;flex:1;padding:4px 0}
+.portfolio-project-name b,.portfolio-project-name small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.portfolio-project-name small{color:#536e7b;font-size:9px}
+.portfolio-swatch{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;width:22px;height:22px;padding:3px;border:1px solid #cbd9dd;border-radius:5px;background:#fff}
+.portfolio-swatch:hover{border-color:#7ba7aa;background:#f3faf9}
+.portfolio-swatch i{display:block;width:100%;height:100%;border:1px solid #132f4222;border-radius:3px;background:var(--portfolio-color)}
+.portfolio-project-mark{flex:0 0 auto;width:10px;height:10px;border-radius:3px;background:var(--portfolio-color)}
+.portfolio-group-track{position:absolute;top:22px;height:12px;border-radius:3px;background:var(--portfolio-color);opacity:.78}
+.portfolio-peer-bar{cursor:pointer;touch-action:manipulation;padding:0 5px;font-weight:600}
+.portfolio-peer-row{gap:6px}
+.portfolio-predecessor{outline:2px solid #178e85;outline-offset:2px}
+.portfolio-linking .port{display:none}
+.portfolio-linking .gantt-bar{cursor:pointer}
+.portfolio-dependency-svg{position:absolute;inset:0;z-index:3;pointer-events:none;overflow:hidden}
+.portfolio-dependency-svg path[data-portfolio-edge]{fill:none;stroke:#147870;stroke-width:1.6;stroke-dasharray:6 3}
 </style>
 </head>
 <body>
@@ -1315,6 +1334,49 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   let calendarManaged=false, calendarRevision=0;
   const calendarVersionOf=message=>Number.isSafeInteger(message?.calendarRevision)&&message.calendarRevision>=0?message.calendarRevision:0;
   let paletteLevels=[], paletteOverrides=new Map(), paletteSnapshot='';
+  let portfolio=null, deferredPortfolio=null;
+  const collapsedProjects=new Set(), collapsedPeerTasks=new Set();
+  const portfolioCopy=(ar,en,ur)=>I.language==='en'?en:I.language==='ur'?ur:ar;
+  const positiveId=value=>Number.isSafeInteger(value)&&value>0;
+  const validColor=value=>typeof value==='string'&&/^#[\da-f]{6}$/i.test(value);
+  function portfolioDay(value) {
+    if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))return null;
+    const date=new Date(value+'T00:00:00Z'), timestamp=date.getTime();
+    return Number.isFinite(timestamp)&&date.toISOString().slice(0,10)===value?timestamp/E.DAY:null;
+  }
+  function acceptPortfolio(value) {
+    if(!Array.isArray(value?.projects)||!Array.isArray(value?.links))return;
+    portfolio={
+      projects:value.projects.filter(project=>positiveId(project?.id)&&Array.isArray(project.tasks)).map(project=>({
+        id:project.id, number:project.number, name:project.name,
+        startDay:portfolioDay(project.startDate), endDay:portfolioDay(project.endDate),
+        color:validColor(project.color)?project.color:'#087f7b',
+        tasks:project.tasks.flatMap(task=>{
+          if(!positiveId(task?.id))return [];
+          const startDay=portfolioDay(task.startDate),endDay=portfolioDay(task.endDate);
+          if(startDay===null||endDay===null||startDay>endDay)return [];
+          return [{id:task.id,parentId:task.parentId,name:task.name,owner:task.owner,statusCode:task.statusCode,isMilestone:Boolean(task.isMilestone),
+            startDay,endDay,color:validColor(task.color)?task.color:'#087f7b',ink:validColor(task.ink)?task.ink:'#ffffff'}];
+        })
+      })),
+      links:value.links.filter(link=>positiveId(link?.fromTaskId)&&positiveId(link?.toTaskId)&&E.TYPES.includes(link.type)),
+      linkMode:Boolean(value.linkMode),
+      predecessorTaskId:positiveId(value.predecessorTaskId)?value.predecessorTaskId:null
+    };
+  }
+  function portfolioViewport() {
+    const scroll=$('ganttScroll');
+    return {start:lastRange?.start??viewStart,dayWidth,scrollLeft:scroll.scrollLeft,scrollTop:scroll.scrollTop,
+      collapsedProjects:[...collapsedProjects],collapsedPeerTasks:[...collapsedPeerTasks]};
+  }
+  function restorePortfolioViewport(viewport) {
+    if(!viewport)return;
+    if(Number.isSafeInteger(viewport.start)&&viewport.start>=-719162&&viewport.start<=2932896)viewStart=viewport.start;
+    if(Number.isFinite(viewport.dayWidth))dayWidth=Math.max(8,Math.min(72,viewport.dayWidth));
+    if(Array.isArray(viewport.collapsedProjects))for(const id of viewport.collapsedProjects)if(positiveId(id))collapsedProjects.add(id);
+    if(Array.isArray(viewport.collapsedPeerTasks))for(const id of viewport.collapsedPeerTasks)if(positiveId(id))collapsedPeerTasks.add(id);
+    $('scaleSelect').value=dayWidth>=26?'32':dayWidth>=14?'18':'8';
+  }
   function acceptPalette(palette) {
     const valid=entry=>/^#[0-9a-f]{6}$/i.test(entry?.color)&&/^#[0-9a-f]{6}$/i.test(entry?.ink);
     if(!Array.isArray(palette?.levels)||palette.levels.length!==5||!palette.levels.every(valid)||!Array.isArray(palette.overrides))return false;
@@ -1500,10 +1562,63 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     };
     return ordered.filter(t=>allowed.has(t.id)&&!hiddenByCollapsed(t));
   }
+  function visiblePeerTasks(project,s) {
+    const q=$('searchInput').value.trim().toLowerCase(),phase=$('phaseFilter').value,status=$('statusFilter').value;
+    const filter=Boolean(q||phase||status),statusDay=portfolioDay(s.project.statusDate);
+    const byId=new Map(project.tasks.map(task=>[task.id,task])),children=new Map();
+    for(const task of project.tasks) {
+      const parent=byId.has(task.parentId)?task.parentId:null;
+      if(!children.has(parent))children.set(parent,[]);
+      children.get(parent).push(task);
+    }
+    const ordered=[],visited=new Set(),allowed=new Set();
+    function walk(task,depth) {
+      if(visited.has(task.id))return;
+      visited.add(task.id);
+      const childTasks=children.get(task.id)??[];
+      ordered.push({task,depth,hasChildren:childTasks.length>0});
+      if(filter||!collapsedPeerTasks.has(task.id))for(const child of childTasks)walk(child,depth+1);
+    }
+    for(const task of children.get(null)??[])walk(task,0);
+    if(!filter)return ordered;
+    for(const {task,depth} of ordered) {
+      const taskPhase=depth===0?'مهمة رئيسية':'مستوى فرعي '+depth;
+      const done=['done','completed'].includes(task.statusCode),active=['working','in_progress'].includes(task.statusCode);
+      const matchesStatus=!status||(status==='done'&&done)||(status==='active'&&active)||
+        (status==='todo'&&!done&&!active)||(status==='late'&&!done&&statusDay!==null&&task.endDay<statusDay);
+      if((q&&![task.name,task.owner,task.id,taskPhase].some(value=>String(value??'').toLowerCase().includes(q)))||
+        (phase&&phase!==taskPhase)||!matchesStatus)continue;
+      let current=task;
+      while(current&&!allowed.has(current.id)) {
+        allowed.add(current.id);
+        current=byId.get(current.parentId);
+      }
+    }
+    return ordered.filter(({task})=>allowed.has(task.id));
+  }
+  function portfolioRows(s,a) {
+    const activeRows=visibleTasks(s,a).map(task=>({kind:'active',task}));
+    if(!portfolio?.projects.length||portfolio.projects.length===1&&portfolio.projects[0].id===projectId)return activeRows;
+    const rows=portfolio.projects.flatMap(project=>[
+      {kind:'project',project},
+      ...(collapsedProjects.has(project.id)?[]:project.id===projectId?activeRows:
+        visiblePeerTasks(project,s).map(row=>({kind:'peer',project,...row})))
+    ]);
+    return portfolio.projects.some(project=>project.id===projectId)?rows:[...activeRows,...rows];
+  }
   function range(s, a) {
     const allDates = [s.project.start, ...s.tasks.map(t=>t.start), ...(s.baseline?.tasks||[]).map(t=>t.start)];
-    const earliest = Math.min(...allDates.map(E.epoch));
-    const finish = Math.max(E.epoch(a.finish), ...(s.baseline?.tasks||[]).map(t=>E.epoch(t.finish)));
+    let earliest = Math.min(...allDates.map(E.epoch));
+    let finish = Math.max(E.epoch(a.finish), ...(s.baseline?.tasks||[]).map(t=>E.epoch(t.finish)));
+    for(const project of portfolio?.projects??[]) {
+      if(project.id===projectId)continue;
+      if(project.startDay!==null)earliest=Math.min(earliest,project.startDay);
+      if(project.endDay!==null)finish=Math.max(finish,project.endDay);
+      for(const task of project.tasks) {
+        earliest=Math.min(earliest,task.startDay);
+        finish=Math.max(finish,task.endDay);
+      }
+    }
     const length = Math.max(60, Math.min(180, finish - earliest + 17));
     const start = viewStart ?? earliest - 2;
     rangeDays = length;
@@ -1525,6 +1640,21 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const sign2 = point2 === 'F' ? 1 : -1;
     const mid = y1 + (y2 > y1 ? 28 : -28);
     return `M${x1},${y1} H${x1+sign1*22} V${mid} H${x2+sign2*22} V${y2} H${x2+sign2*8}`;
+  }
+  function portfolioEdgesHTML(positions,r,height) {
+    if(!showLinks||!portfolio?.links.length)return '';
+    let edges='';
+    for(const link of portfolio.links) {
+      const from=positions.get(link.fromTaskId),to=positions.get(link.toTaskId);
+      if(!from||!to||from.projectId===to.projectId)continue;
+      const [first,last]=link.type,x1=portX(from,first),x2=portX(to,last);
+      if((x1<0&&x2<0)||(x1>r.width&&x2>r.width))continue;
+      const path=connectionPath(x1,from.y,first,x2,to.y,last);
+      const title=esc(portfolioCopy('علاقة بين مشروعين','Cross-project dependency','منصوبوں کے درمیان ربط')+' · '+link.type);
+      edges+='<path data-portfolio-edge d="'+path+'" marker-end="url(#arrowPortfolio)"><title>'+title+'</title></path>';
+    }
+    return edges?'<svg class="portfolio-dependency-svg" width="'+r.width+'" height="'+height+'" aria-hidden="true">'+
+      '<defs><marker id="arrowPortfolio" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="#147870"/></marker></defs>'+edges+'</svg>':'';
   }
   function edgesHTML(s,a,geometryMap,r,height) {
     let html = I.markup("<svg class=\"dependency-svg\" width=\"{0}\" height=\"{1}\" aria-label=\"علاقات المهام\"><defs><marker id=\"arrowNormal\" markerWidth=\"6\" markerHeight=\"6\" refX=\"5\" refY=\"3\" orient=\"auto\"><path d=\"M0,0 L6,3 L0,6\" fill=\"#bac8d1\"/></marker><marker id=\"arrowCritical\" markerWidth=\"6\" markerHeight=\"6\" refX=\"5\" refY=\"3\" orient=\"auto\"><path d=\"M0,0 L6,3 L0,6\" fill=\"#d9888d\"/></marker><marker id=\"arrowInvalid\" markerWidth=\"6\" markerHeight=\"6\" refX=\"5\" refY=\"3\" orient=\"auto\"><path d=\"M0,0 L6,3 L0,6\" fill=\"#d5a044\"/></marker></defs>", [r.width, height]);
@@ -1548,7 +1678,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     if(!body||!svg)return;
     const bodyRect=body.getBoundingClientRect(),width=body.clientWidth,height=body.scrollHeight;
     svg.setAttribute('viewBox',`0 0 ${width} ${height}`);svg.setAttribute('width',width);svg.setAttribute('height',height);
-    const rows=new Map([...body.querySelectorAll('.task-row')].map(row=>[row.dataset.row,row]));
+    const rows=new Map([...body.querySelectorAll('[data-row]')].map(row=>[row.dataset.row,row]));
     const rtl=getComputedStyle(body).direction==='rtl';
     let paths='',dots='';
     for(const row of rows.values()) {
@@ -1595,13 +1725,64 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     taskMaterialSummaries=summaries;
     renderTaskMaterialBadges();
   }
+  function portfolioColorButton(project,taskId,color) {
+    if(readOnly||!project)return '';
+    const title=esc(taskId?portfolioCopy('لون المهمة','Task color','کام کا رنگ'):portfolioCopy('ألوان المشروع','Project colors','منصوبے کے رنگ'));
+    return '<button type="button" class="portfolio-swatch" data-portfolio-color="'+project.id+'"'+
+      (taskId?' data-portfolio-task="'+taskId+'"':'')+' style="--portfolio-color:'+color+'" title="'+title+'" aria-label="'+title+'"><i aria-hidden="true"></i></button>';
+  }
+  function portfolioGroupMarkup(project,r) {
+    const open=!collapsedProjects.has(project.id),current=project.id===projectId;
+    const label=esc(open?portfolioCopy('طي المشروع','Collapse project','منصوبہ سمیٹیں'):portfolioCopy('توسيع المشروع','Expand project','منصوبہ پھیلائیں'));
+    const openLabel=esc(portfolioCopy('العمل على المشروع','Work on project','منصوبے پر کام کریں'));
+    const name='<b>'+esc(project.name)+'</b><small><bdi>'+esc(project.number)+'</bdi></small>';
+    const title=current?'<span class="portfolio-project-name" aria-current="true">'+name+'</span>':
+      '<button type="button" class="portfolio-project-name" data-portfolio-focus="'+project.id+'" title="'+openLabel+'">'+name+'</button>';
+    const marker='<span class="portfolio-project-mark" style="--portfolio-color:'+project.color+'" aria-hidden="true"></span>';
+    const names='<div class="task-row portfolio-group'+(current?' is-current':'')+'"><button type="button" class="tree-toggle" data-portfolio-collapse="'+project.id+
+      '" aria-expanded="'+open+'" aria-label="'+label+'">'+(open?'−':'+')+'</button>'+marker+title+portfolioColorButton(project,null,project.color)+'</div>';
+    let timeline='<div class="time-lane portfolio-group'+(current?' is-current':'')+'">';
+    if(project.startDay!==null&&project.endDay!==null&&project.endDay>=project.startDay) {
+      const left=(project.startDay-r.start)*dayWidth,width=(project.endDay-project.startDay+1)*dayWidth;
+      if(left<r.width&&left+width>0)timeline+='<span class="portfolio-group-track" style="--portfolio-color:'+project.color+';left:'+left+'px;width:'+width+'px"></span>';
+    }
+    return {names,timeline:timeline+'</div>'};
+  }
+  function portfolioPeerMarkup(row,index,r,positions) {
+    const {project,task,depth,hasChildren}=row,open=!collapsedPeerTasks.has(task.id);
+    const left=(task.startDay-r.start)*dayWidth,right=task.isMilestone?left:(task.endDay-r.start+1)*dayWidth;
+    const status=task.statusCode==='done'||task.statusCode==='completed'?'done':task.statusCode==='working'||task.statusCode==='in_progress'?'active-task':'';
+    const predecessor=portfolio?.predecessorTaskId===task.id?' portfolio-predecessor':'';
+    const taskAttrs=' data-portfolio-focus="'+project.id+'" data-portfolio-task="'+task.id+'"';
+    positions.set(task.id,{left,right,y:index*56+26,duration:task.isMilestone?0:1,projectId:project.id});
+    const toggle=hasChildren?'<button type="button" class="tree-toggle" data-portfolio-tree="'+task.id+
+      '" aria-expanded="'+open+'" aria-label="'+esc(portfolioCopy('تفرعات المهمة','Task subtasks','ذیلی کام'))+'">'+(open?'−':'+')+'</button>':'<span class="tree-toggle-spacer" aria-hidden="true"></span>';
+    const title=esc(task.name)+' · '+esc(fmt(E.iso(task.startDay)))+' — '+esc(fmt(E.iso(task.endDay)));
+    const names='<div class="task-row portfolio-peer-row'+(hasChildren?' is-parent':'')+'" data-depth="'+depth+'"><span class="tree-indent" style="width:'+
+      Math.min(depth,5)*18+'px" aria-hidden="true"></span>'+toggle+'<div class="task-info"><button type="button" class="task-details"'+taskAttrs+
+      ' title="'+title+'"><b>'+esc(task.name)+'</b>'+(task.owner?'<small>'+esc(task.owner)+'</small>':'')+'</button></div>'+
+      portfolioColorButton(project,task.id,task.color)+'</div>';
+    let timeline='<div class="time-lane">';
+    if(right>=0&&left<=r.width) {
+      timeline+='<button type="button" class="gantt-bar portfolio-peer-bar palette-bar '+status+predecessor+(task.isMilestone?' milestone':'')+'"'+taskAttrs+
+        ' style="left:'+left+'px;width:'+Math.max(4,right-left-3)+'px;background:'+task.color+';color:'+task.ink+
+        '" title="'+title+'" aria-label="'+title+'">'+(task.isMilestone?'':'<span class="bar-label">'+esc(task.name)+'</span>')+'</button>';
+      if(task.isMilestone)timeline+='<span class="milestone-caption" style="left:'+(left+38)+'px">'+esc(task.name)+'</span>';
+    }
+    return {names,timeline:timeline+'</div>'};
+  }
   function renderChart(s=state,a=analysis) {
     if(linkDrag)cancelLinkDrag();
     const scroll=$('ganttScroll'), oldTop=scroll.scrollTop, oldLeft=scroll.scrollLeft;
-    const visible=visibleTasks(s,a), r=range(s,a), tree=P.hierarchy(s.tasks); lastRange=r; lastGeometry=new Map();
+    const rows=portfolioRows(s,a), visible=rows.filter(row=>row.kind==='active'), visibleCount=rows.filter(row=>row.kind!=='project').length;
+    const r=range(s,a), tree=P.hierarchy(s.tasks), positions=new Map();
+    const activeProject=portfolio?.projects.find(project=>project.id===projectId);
+    lastRange=r;lastGeometry=new Map();
+    $('ganttGrid').classList.toggle('portfolio-linking',Boolean(portfolio?.linkMode));
     const depthOf=task=>{let depth=0,current=task;while(current.parentId&&tree.byId.has(current.parentId)&&depth<20){depth++;current=tree.byId.get(current.parentId);}return depth;};
     $('rangeLabel').textContent=fmt(E.iso(r.start))+' — '+fmt(E.iso(r.start+r.count-1));
-    $('visibleCount').textContent=I.t("{0} من {1} مهمة · نافذة حتى 180 يومًا", [visible.length, s.tasks.length]);
+    const totalCount=(portfolio?.projects??[]).filter(project=>project.id!==projectId).reduce((count,project)=>count+project.tasks.length,s.tasks.length);
+    $('visibleCount').textContent=I.t("{0} من {1} مهمة · نافذة حتى 180 يومًا", [visibleCount,totalCount]);
     const monthGroups=[];
     for(let i=0;i<r.count;i++) {
       const date=E.iso(r.start+i), key=date.slice(0,7);
@@ -1614,14 +1795,24 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       const n=r.start+i,date=E.iso(n),holiday=s.calendar.holidays.find(h=>h.date===date),off=!a.cal.isWorkday(n);
       timeline+=`<div class="day-cell ${off?'off':''} ${holiday?'holiday':''}" style="width:${dayWidth}px" title="${esc(fmt(date)+(holiday?' · '+I.field(holiday,'name'):''))}">${dayWidth>=15||i%7===0?date.slice(8).replace(/^0/,''):''}${dayWidth>=26?`<small>${I.weekdays(true)[E.weekday(n)]}</small>`:''}</div>`;
     }
-    const height=Math.max(visible.length*56,visible.length?0:180);
+    const height=Math.max(rows.length*56,rows.length?0:180);
     timeline+=`</div></div><div class="time-body" style="height:${height}px;overflow:hidden"><div class="grid-lines"></div>`;
     for(let i=0;i<r.count;i++) {
       const n=r.start+i;if(!a.cal.isWorkday(n)) timeline+=`<div class="off-stripe ${s.calendar.holidays.some(h=>h.date===E.iso(n))?'holiday':''}" style="left:${i*dayWidth}px;width:${dayWidth}px"></div>`;
     }
-    let names=I.markup("<div class=\"task-sidebar\"><div class=\"task-side-header\"><input type=\"checkbox\" id=\"selectAllVisible\" title=\"تحديد المهام الظاهرة\" aria-label=\"تحديد المهام الظاهرة\" {0}><span class=\"title-flex\">المهمة / المسؤول<br><small>الأعمدة مثبتة أثناء التمرير</small></span><span>المدة</span></div>", [visible.length&&visible.every(t=>selected.has(t.id))?'checked':''])+'<div class="task-tree-body"><svg class="task-tree-svg" aria-hidden="true"></svg>';
-    visible.forEach((t,index)=>{
+    const namesHeader=I.markup("<div class=\"task-sidebar\"><div class=\"task-side-header\"><input type=\"checkbox\" id=\"selectAllVisible\" title=\"تحديد المهام الظاهرة\" aria-label=\"تحديد المهام الظاهرة\" {0}><span class=\"title-flex\">المهمة / المسؤول<br><small>الأعمدة مثبتة أثناء التمرير</small></span><span>المدة</span></div>", [visible.length&&visible.every(({task})=>selected.has(task.id))?'checked':'']);
+    const headerColor=rows.some(row=>row.kind==='project')?'':portfolioColorButton(activeProject,null,activeProject?.color);
+    let names=namesHeader.slice(0,-6)+headerColor+'</div><div class="task-tree-body"><svg class="task-tree-svg" aria-hidden="true"></svg>';
+    rows.forEach((row,index)=>{
+      if(row.kind!=='active') {
+        const markup=row.kind==='project'?portfolioGroupMarkup(row.project,r):portfolioPeerMarkup(row,index,r,positions);
+        names+=markup.names;timeline+=markup.timeline;
+        return;
+      }
+      const t=row.task;
       const m=a.metrics.get(t.id), g=geometry(t,index,a.cal,r); lastGeometry.set(t.id,g);
+      const persistedId=persistedTaskId(t);
+      if(persistedId)positions.set(persistedId,{...g,projectId});
       const critical=showCritical&&m.critical, status=t.status==='completed'?'done':t.status==='in_progress'?'active-task':'',sel=selected.has(t.id);
       const title=I.t("{0} · {1}\n{2} ← {3}\n{4} يوم عمل · إنجاز {5}% · سماح {6} يوم", [t.id, I.field(t,'name'), fmt(t.start), fmt(a.cal.finish(t.start,t.duration)), t.duration, t.progress, m.totalFloat]);
       const depth=depthOf(t), hasChildren=(tree.children.get(t.id)||[]).length>0, expanded=!collapsed.has(t.id);
@@ -1629,9 +1820,12 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       const treeControl=hasChildren?`<button type="button" class="tree-toggle tree-node-anchor" data-tree-toggle="${t.id}" aria-expanded="${expanded}" aria-label="${esc(toggleLabel+I.field(t,'name'))}" title="${esc(toggleLabel+I.field(t,'name'))}">${expanded?'−':'+'}</button>`:'<span class="tree-toggle-spacer tree-node-anchor" aria-hidden="true"></span>';
       const requisitionLabel=I.t('طلب احتياج');
       const requisitionButton=allowMaterialRequisitions&&Number.isSafeInteger(t.pmTaskId)&&t.pmTaskId>0?`<button type="button" class="requisition-add" data-requisition="${t.pmTaskId}" title="${esc(requisitionLabel)}" aria-label="${esc(requisitionLabel+' — '+I.field(t,'name'))}">+</button>`:'';
+      const palette=paletteOverrides.get(t.pmTaskId)??paletteLevels[Math.min(4,depth)];
+      const colorButton=persistedId?portfolioColorButton(activeProject,persistedId,palette?.color??activeProject?.color):'';
+      const predecessor=persistedId&&portfolio?.predecessorTaskId===persistedId?' portfolio-predecessor':'';
       const materialsBadge=embedded&&Number.isSafeInteger(t.pmTaskId)&&t.pmTaskId>0
         ?`<button type="button" class="task-materials-badge" data-task-materials="${t.pmTaskId}" data-task-name="${esc(I.field(t,'name'))}" aria-haspopup="dialog" hidden><bdi></bdi><span class="task-materials-long"></span><span class="task-materials-short"></span></button>`:'';
-      names+=`<div class="task-row ${sel?'selected':''} ${critical?'critical-row':''} ${hasChildren?'is-parent':''} ${hasChildren&&expanded?'tree-open':''}" data-row="${t.id}" data-parent-id="${t.parentId||''}" data-depth="${depth}"><input type="checkbox" data-select="${t.id}" ${sel?'checked':''} aria-label="${esc(I.t('تحديد ')+I.field(t,'name'))}"><span class="task-code">${esc(t.id)}</span><span class="tree-indent" style="width:${depth*18}px" aria-hidden="true"></span>${treeControl}<div class="task-info"><button class="task-details" data-edit="${t.id}" title="${esc(I.field(t,'name')+' · '+I.field(t,'phase'))}"><b>${esc(I.field(t,'name'))}</b><small>${esc(I.field(t,'owner')||I.t("بلا مسؤول"))} · ${t.progress}%</small></button>${materialsBadge}</div><span class="task-duration">${t.duration||'◆'}<small>${t.duration?I.t("يوم"):I.t("معلم")}</small></span>${requisitionButton}<button class="row-more" data-edit="${t.id}" aria-label="${esc(I.t('تعديل ')+I.field(t,'name'))}">⋮</button></div>`;
+      names+=`<div class="task-row ${sel?'selected':''} ${critical?'critical-row':''} ${hasChildren?'is-parent':''} ${hasChildren&&expanded?'tree-open':''}" data-row="${t.id}" data-parent-id="${t.parentId||''}" data-depth="${depth}"><input type="checkbox" data-select="${t.id}" ${sel?'checked':''} aria-label="${esc(I.t('تحديد ')+I.field(t,'name'))}"><span class="task-code">${esc(t.id)}</span><span class="tree-indent" style="width:${depth*18}px" aria-hidden="true"></span>${treeControl}<div class="task-info"><button class="task-details" data-edit="${t.id}" title="${esc(I.field(t,'name')+' · '+I.field(t,'phase'))}"><b>${esc(I.field(t,'name'))}</b><small>${esc(I.field(t,'owner')||I.t("بلا مسؤول"))} · ${t.progress}%</small></button>${materialsBadge}</div><span class="task-duration">${t.duration||'◆'}<small>${t.duration?I.t("يوم"):I.t("معلم")}</small></span>${requisitionButton}${colorButton}<button class="row-more" data-edit="${t.id}" aria-label="${esc(I.t('تعديل ')+I.field(t,'name'))}">⋮</button></div>`;
       timeline+=`<div class="time-lane ${sel?'selected':''}" data-lane="${t.id}">`;
       const base=showBaseline?s.baseline?.tasks.find(b=>b.id===t.id):null;
       if(base) {
@@ -1640,9 +1834,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       }
       if(g.right>=0&&g.left<=r.width) {
         const width=Math.max(4,g.right-g.left-3);
-        const palette=paletteOverrides.get(t.pmTaskId)??paletteLevels[Math.min(4,depthOf(t))];
         const paletteStyle=palette?`;background:${palette.color};color:${palette.ink}`:'';
-        timeline+=`<div class="gantt-bar ${status} ${critical?'critical-bar':''} ${sel?'selected':''} ${!t.duration?'milestone':''} ${palette?'palette-bar':''}" data-task="${t.id}" role="button" tabindex="0" aria-label="${esc(title)}" style="left:${g.left}px;width:${width}px${paletteStyle}" title="${esc(title)}">`;
+        timeline+=`<div class="gantt-bar ${status} ${critical?'critical-bar':''} ${sel?'selected':''} ${!t.duration?'milestone':''} ${palette?'palette-bar':''}${predecessor}" data-task="${t.id}" role="button" tabindex="0" aria-label="${esc(title)}" style="left:${g.left}px;width:${width}px${paletteStyle}" title="${esc(title)}">`;
         if(t.duration) timeline+=`<span class="resize-handle start" data-edge="start"></span><span class="bar-label">${esc(I.field(t,'name'))}</span><span class="bar-progress" style="width:${t.progress}%"></span><span class="resize-handle end" data-edge="end"></span>`;
         timeline+='</div>';
         for (const point of ['S','F']) {
@@ -1653,10 +1846,10 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       }
       timeline+='</div>';
     });
-    if(!visible.length) timeline+=I.markup("<div class=\"empty-chart\">لا توجد مهام تطابق التصفية.</div>");
+    if(!rows.length) timeline+=I.markup("<div class=\"empty-chart\">لا توجد مهام تطابق التصفية.</div>");
     const statusX=(E.epoch(s.project.statusDate)-r.start+.5)*dayWidth;
     if(statusX>=0&&statusX<r.width) timeline+=I.markup("<div class=\"tracking-line\" style=\"left:{0}px\"><span class=\"tracking-label\">متابعة {1}</span></div>", [statusX, compactDate(s.project.statusDate)]);
-    timeline+=edgesHTML(s,a,lastGeometry,r,height)+'</div></div>'; names+='</div></div>';
+    timeline+=edgesHTML(s,a,lastGeometry,r,height)+portfolioEdgesHTML(positions,r,height)+'</div></div>'; names+='</div></div>';
     $('ganttGrid').innerHTML=timeline+names;
     renderTaskMaterialBadges();
     renderTaskTreeConnectors();
@@ -1672,11 +1865,12 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     for(const id of ['earlierBtn','laterBtn','clearSelectionBtn'])$(id).disabled=!selected.size;
     $('selectionHelp').textContent=selected.size>1 ? I.t("اسحب جسم أي شريط محدد لنقل المجموعة؛ الفواصل محفوظة بأيام العمل.") : I.t("حدّد بمربعات الاختيار أو Ctrl + نقر على الأشرطة أو أسماء المهام.");
     document.querySelectorAll('[data-lane]').forEach(n=>n.classList.toggle('selected',selected.has(n.dataset.lane)));
-    document.querySelectorAll('.gantt-bar').forEach(n=>n.setAttribute('aria-pressed',String(selected.has(n.dataset.task))));
+    document.querySelectorAll('.gantt-bar[data-task]').forEach(n=>n.setAttribute('aria-pressed',String(selected.has(n.dataset.task))));
     document.querySelectorAll('[data-row]').forEach(n=>n.classList.toggle('selected',selected.has(n.dataset.row)));
-    document.querySelectorAll('.gantt-bar').forEach(n=>n.classList.toggle('selected',selected.has(n.dataset.task)));
+    document.querySelectorAll('.gantt-bar[data-task]').forEach(n=>n.classList.toggle('selected',selected.has(n.dataset.task)));
     document.querySelectorAll('[data-select]').forEach(n=>n.checked=selected.has(n.dataset.select));
-    const visible=visibleTasks(state,analysis); if($('selectAllVisible')) {
+    const visible=collapsedProjects.has(projectId)&&portfolio?.projects.length>1?[]:visibleTasks(state,analysis);
+    if($('selectAllVisible')) {
       const count=visible.filter(t=>selected.has(t.id)).length;
       $('selectAllVisible').checked=visible.length>0&&count===visible.length;
       $('selectAllVisible').indeterminate=count>0&&count<visible.length;
@@ -1930,10 +2124,10 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     commit(I.t("تمت إعادة الجدولة من أقرب بداية وإزالة القيود اليدوية."),next=>{next.project.mode='smart';for(const t of next.tasks)t.notBefore=null;});
   }
   function startDrag(event) {
-    if(event.button!==0||event.isPrimary===false||drag||linkDrag)return;
+    if(event.button!==0||event.isPrimary===false||drag||linkDrag||portfolio?.linkMode)return;
     const port=event.target.closest('[data-port]');
     if(port){startLinkDrag(event,port);return;}
-    const bar=event.target.closest('.gantt-bar');if(!bar)return;
+    const bar=event.target.closest('.gantt-bar[data-task]');if(!bar)return;
     event.preventDefault();
     const id=bar.dataset.task, additive=event.ctrlKey||event.metaKey||multiSelectMode;
     const wasSelected=selected.has(id), selectedBefore=[...selected];
@@ -2341,13 +2535,42 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   }
 
   let deferredReceipt=null,deferredRefresh=null;
+  function mayLeaveActiveInteraction() {
+    if(drag||linkDrag||document.querySelector('dialog[open]:not(#taskDialog)')||!canLeaveTask())return false;
+    if($('taskDialog').open)closeDialog('taskDialog');
+    return true;
+  }
+  function openPortfolioTask(targetProjectId,taskId) {
+    const project=portfolio?.projects.find(item=>item.id===targetProjectId);
+    if(!project||!mayLeaveActiveInteraction())return;
+    if(portfolio.linkMode) {
+      if(positiveId(taskId))sendToHost('pscm:gantt:portfolio-link-task',{taskId});
+      return;
+    }
+    if(targetProjectId!==projectId) {
+      collapsedProjects.delete(targetProjectId);
+      sendToHost('pscm:gantt:focus-project',{targetProjectId,taskId,viewport:portfolioViewport()});
+    }
+  }
+  function openChartTask(taskId) {
+    if(!portfolio?.linkMode) {
+      openTask(taskId);
+      return;
+    }
+    const id=persistedTaskId(state.tasks.find(task=>task.id===taskId));
+    if(id)openPortfolioTask(projectId,id);
+  }
   function hostInteractionInProgress() {
     return drag||linkDrag||
       document.querySelector('#taskDialog[open],#projectDialog[open],#calendarDialog[open],#linkDialog[open]');
   }
   function applyHostState(message,initial) {
     try {
-      if(initial){I.setLanguage(message.locale,false);I.applyStatic();acceptPalette(message.palette);}
+      if(initial){
+        I.setLanguage(message.locale,false);I.applyStatic();acceptPalette(message.palette);
+        if(message.portfolio)acceptPortfolio(message.portfolio);
+        restorePortfolioViewport(message.viewport);
+      }
       const next=P.prepare(message.state);
       E.analyze(next);
       state=next;
@@ -2363,6 +2586,11 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
         selected=new Set([...selected].filter(id=>next.tasks.some(task=>task.id===id)));
       }
       showHostNotice();render();
+      if(initial&&message.viewport) {
+        const scroll=$('ganttScroll');
+        if(Number.isFinite(message.viewport.scrollLeft))scroll.scrollLeft=Math.max(0,message.viewport.scrollLeft);
+        if(Number.isFinite(message.viewport.scrollTop))scroll.scrollTop=Math.max(0,message.viewport.scrollTop);
+      }
       setSaveStatus(message.failed?'تعذر الحفظ؛ التعديلات لا تزال مفتوحة':revision===savedRevision?'محفوظ في قاعدة PSCM':'تعديلات بانتظار الحفظ');
     } catch(error) {
       showHostNotice(I.t('تعذر تحميل مخطط المشروع: ')+error.message);
@@ -2373,6 +2601,14 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const message=deferredRefresh;
     deferredRefresh=null;
     if(message.version>=serverVersion&&calendarVersionOf(message)>=calendarRevision)applyHostState(message,false);
+  }
+  function applyDeferredPortfolio() {
+    if(!deferredPortfolio||hostInteractionInProgress())return;
+    acceptPortfolio(deferredPortfolio);
+    deferredPortfolio=null;
+    if(!state)return;
+    if(portfolio?.linkMode&&view!=='gantt')setView('gantt');
+    else if(view==='gantt'){renderChart();updateSelection();}
   }
   function applySaveReceipt() {
     if(!deferredReceipt||!state||hostInteractionInProgress())return;
@@ -2417,6 +2653,16 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       if(acceptPalette(message.palette)&&state&&!hostInteractionInProgress())render();
       return;
     }
+    if(message.type==='pscm:gantt:portfolio') {
+      deferredPortfolio=message.portfolio;
+      applyDeferredPortfolio();
+      return;
+    }
+    if(message.type==='pscm:gantt:board-action-request'&&typeof message.requestId==='string') {
+      const allowed=mayLeaveActiveInteraction();
+      sendToHost('pscm:gantt:board-action-response',{requestId:message.requestId,allowed,viewport:allowed?portfolioViewport():undefined});
+      return;
+    }
     if(message.type==='pscm:open-task') {
       const task=state?.tasks.find(task=>persistedTaskId(task)===message.taskId);
       if(task)openTask(task.id);
@@ -2450,14 +2696,41 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     applySaveReceipt();
   });
   if(embedded) {
-    const settleDeferred=()=>{applySaveReceipt();applyDeferredRefresh();};
+    const settleDeferred=()=>{applySaveReceipt();applyDeferredRefresh();applyDeferredPortfolio();};
     document.addEventListener('close',settleDeferred,true);
     for(const event of ['pointerup','pointercancel','keydown','blur'])
-      window.addEventListener(event,()=>{if(deferredReceipt||deferredRefresh)queueMicrotask(settleDeferred);});
+      window.addEventListener(event,()=>{if(deferredReceipt||deferredRefresh||deferredPortfolio)queueMicrotask(settleDeferred);});
   }
 
   // Delegated handlers keep chart interactions live after re-rendering.
   document.addEventListener('click',event=>{
+    const color=event.target.closest('[data-portfolio-color]');
+    if(color) {
+      const targetProjectId=Number(color.dataset.portfolioColor),taskId=Number(color.dataset.portfolioTask);
+      if(!readOnly&&portfolio?.projects.some(project=>project.id===targetProjectId)&&mayLeaveActiveInteraction())
+        sendToHost('pscm:gantt:portfolio-color',{targetProjectId,taskId:positiveId(taskId)?taskId:undefined});
+      return;
+    }
+    const projectToggle=event.target.closest('[data-portfolio-collapse]');
+    if(projectToggle) {
+      const id=Number(projectToggle.dataset.portfolioCollapse);
+      collapsedProjects.has(id)?collapsedProjects.delete(id):collapsedProjects.add(id);
+      renderChart();updateSelection();return;
+    }
+    const peerToggle=event.target.closest('[data-portfolio-tree]');
+    if(peerToggle) {
+      const id=Number(peerToggle.dataset.portfolioTree);
+      collapsedPeerTasks.has(id)?collapsedPeerTasks.delete(id):collapsedPeerTasks.add(id);
+      renderChart();updateSelection();return;
+    }
+    const peer=event.target.closest('[data-portfolio-focus]');
+    if(peer) {
+      const taskId=Number(peer.dataset.portfolioTask);
+      openPortfolioTask(Number(peer.dataset.portfolioFocus),positiveId(taskId)?taskId:undefined);
+      return;
+    }
+    const linkTask=portfolio?.linkMode&&event.target.closest('.gantt-bar[data-task]');
+    if(linkTask) {openChartTask(linkTask.dataset.task);return;}
     const materials=event.target.closest('[data-task-materials]');
     if(materials) {
       const taskId=Number(materials.dataset.taskMaterials);
@@ -2472,7 +2745,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     if(treeToggle){const id=treeToggle.dataset.treeToggle;collapsed.has(id)?collapsed.delete(id):collapsed.add(id);renderChart();updateSelection();return;}
     const row=event.target.closest('[data-row]');
     if(row&&(event.ctrlKey||event.metaKey||multiSelectMode)&&!event.target.closest('input,select')){toggleSelection(row.dataset.row);return;}
-    const edit=event.target.closest('[data-edit]');if(edit){openTask(edit.dataset.edit);return;}
+    const edit=event.target.closest('[data-edit]');if(edit){openChartTask(edit.dataset.edit);return;}
     const port=event.target.closest('.port');
     if(port){
       if(event.detail===0&&!linkDrag&&performance.now()>suppressChartClickUntil){
@@ -2488,15 +2761,19 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   });
   $('ganttGrid').addEventListener('change',event=>{
     if(event.target.dataset.select){const id=event.target.dataset.select;event.target.checked?selected.add(id):selected.delete(id);updateSelection();}
-    if(event.target.id==='selectAllVisible'){for(const t of visibleTasks(state,analysis))event.target.checked?selected.add(t.id):selected.delete(t.id);updateSelection();}
+    if(event.target.id==='selectAllVisible'){
+      if(portfolio?.projects.length>1&&collapsedProjects.has(projectId))return;
+      for(const t of visibleTasks(state,analysis))event.target.checked?selected.add(t.id):selected.delete(t.id);
+      updateSelection();
+    }
   });
   $('ganttGrid').addEventListener('pointerdown',startDrag);
-  $('ganttGrid').addEventListener('dblclick',event=>{if(event.ctrlKey||event.metaKey||multiSelectMode||performance.now()<suppressChartClickUntil)return;const bar=event.target.closest('.gantt-bar');if(bar){cancelDrag();openTask(bar.dataset.task);}});
+  $('ganttGrid').addEventListener('dblclick',event=>{if(portfolio?.linkMode||event.ctrlKey||event.metaKey||multiSelectMode||performance.now()<suppressChartClickUntil)return;const bar=event.target.closest('.gantt-bar[data-task]');if(bar){cancelDrag();openTask(bar.dataset.task);}});
   $('ganttGrid').addEventListener('keydown',event=>{
     if(event.key!=='Enter'&&event.key!==' ')return;
-    const bar=event.target.closest('.gantt-bar'),link=event.target.closest('[data-link]');
+    const bar=event.target.closest('.gantt-bar[data-task]'),link=event.target.closest('[data-link]');
     // Prevent Enter from also activating the newly focused dialog-close button.
-    if(bar||link){event.preventDefault();event.stopPropagation();if(bar)openTask(bar.dataset.task);else openLink(link.dataset.link);}
+    if(bar||link){event.preventDefault();event.stopPropagation();if(bar)openChartTask(bar.dataset.task);else openLink(link.dataset.link);}
   });
   function isTextEditing(target) {
     const node=target instanceof Element?target:null;if(!node)return false;

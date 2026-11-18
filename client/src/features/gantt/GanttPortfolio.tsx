@@ -1,18 +1,7 @@
-import {
-  lazy,
-  Suspense,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { inferRouterOutputs } from "@trpc/server";
 import { X } from "lucide-react";
 import { toast } from "sonner";
-import { businessDate } from "@shared/date";
-import { taskExecutionMetrics, taskExecutionStatus } from "@shared/gantt";
 import {
   ganttColorInput,
   ganttColorText,
@@ -23,24 +12,11 @@ import {
 import { localeMeta, type Locale } from "@/lib/i18n";
 import { trpc } from "@/lib/trpc";
 import type { AppRouter } from "../../../../server/routers";
-import { PortfolioTimeline } from "./PortfolioTimeline";
-import { TaskDependencyPanel } from "./TaskDependencyPanel";
 import "./gantt-portfolio.css";
 
-const ProjectForm = lazy(() =>
-  import("../project-management/ProjectModule").then(module => ({
-    default: module.ProjectForm,
-  }))
-);
-
 type Outputs = inferRouterOutputs<AppRouter>["gantt"];
-type User = { id: number; permissions: string[] };
 type Project = Outputs["portfolio"]["projects"][number];
 type Task = Outputs["portfolio"]["tasks"][number];
-type Editor = { projectId: number; taskId?: number };
-type ColorSelection = { kind: "project" | "task" | "details"; id: number };
-type LinkPair = { from: Task; to: Task };
-const emptyProjects: Outputs["portfolioDirectory"] = [];
 
 function words(locale: Locale) {
   return (ar: string, en: string, ur: string) =>
@@ -94,7 +70,7 @@ function PortfolioDialog({
   );
 }
 
-function ProjectPicker({
+export function ProjectPicker({
   locale,
   directory,
   selected,
@@ -273,7 +249,7 @@ function ColorFooter({
   );
 }
 
-function ProjectColor({
+export function ProjectColor({
   project,
   locale,
   close,
@@ -414,21 +390,17 @@ function ProjectColor({
   );
 }
 
-function TaskColor({
+export function TaskColor({
   task,
   project,
   locale,
-  details,
   canEdit,
-  openEditor,
   close,
 }: {
   task: Task;
   project: Project;
   locale: Locale;
-  details: boolean;
   canEdit: boolean;
-  openEditor: (editor: Editor) => void;
   close: () => void;
 }) {
   const t = words(locale);
@@ -444,11 +416,7 @@ function TaskColor({
   return (
     <PortfolioDialog
       locale={locale}
-      title={
-        details
-          ? t("تفاصيل المهمة", "Task details", "کام کی تفصیلات")
-          : t("لون المهمة", "Task color", "کام کا رنگ")
-      }
+      title={t("لون المهمة", "Task color", "کام کا رنگ")}
       busy={save.isPending}
       close={close}
     >
@@ -472,46 +440,6 @@ function TaskColor({
               {project.name} · <bdi>{project.number}</bdi>
             </small>
           </div>
-          {details && (
-            <dl className="gantt-portfolio-task-dates">
-              <div>
-                <dt>
-                  {t("البداية المخططة", "Planned start", "منصوبہ شدہ آغاز")}
-                </dt>
-                <dd>
-                  <bdi>{task.startDate}</bdi>
-                </dd>
-              </div>
-              <div>
-                <dt>
-                  {t("النهاية المخططة", "Planned finish", "منصوبہ شدہ اختتام")}
-                </dt>
-                <dd>
-                  <bdi>{task.endDate}</bdi>
-                </dd>
-              </div>
-              <div>
-                <dt>{t("البداية الفعلية", "Actual start", "حقیقی آغاز")}</dt>
-                <dd>
-                  <bdi>{task.actualStartDate ?? "—"}</bdi>
-                </dd>
-              </div>
-              <div>
-                <dt>{t("النهاية الفعلية", "Actual finish", "حقیقی اختتام")}</dt>
-                <dd>
-                  <bdi>{task.actualEndDate ?? "—"}</bdi>
-                </dd>
-              </div>
-              <div>
-                <dt>{t("الحالة", "Status", "حالت")}</dt>
-                <dd>{task.statusName}</dd>
-              </div>
-              <div>
-                <dt>{t("المسؤولون", "Assignees", "ذمہ داران")}</dt>
-                <dd>{task.assignees.join("، ") || "—"}</dd>
-              </div>
-            </dl>
-          )}
           {canEdit && (
             <>
               <div
@@ -584,23 +512,6 @@ function TaskColor({
               )}
             </>
           )}
-          {details && (
-            <div>
-              <button
-                type="button"
-                disabled={save.isPending}
-                onClick={() =>
-                  openEditor({ projectId: project.id, taskId: task.id })
-                }
-              >
-                {t(
-                  "فتح المهمة في محرر جانت",
-                  "Open task in Gantt editor",
-                  "گانٹ میں کام کھولیں"
-                )}
-              </button>
-            </div>
-          )}
         </div>
         {canEdit && (
           <ColorFooter
@@ -615,7 +526,7 @@ function TaskColor({
   );
 }
 
-function PortfolioSummary({
+export function PortfolioSummary({
   locale,
   projects,
   tasks,
@@ -667,433 +578,5 @@ function PortfolioSummary({
         ))}
       </dl>
     </PortfolioDialog>
-  );
-}
-
-export function GanttPortfolio({
-  locale,
-  user,
-  openEditor,
-}: {
-  locale: Locale;
-  user: User;
-  openEditor: (editor: Editor) => void;
-}) {
-  const t = words(locale);
-  const utils = trpc.useUtils();
-  const canEdit = user.permissions.includes("pm.tasks.manage");
-  const directory = trpc.gantt.portfolioDirectory.useQuery();
-  const candidates = directory.data ?? emptyProjects;
-  const [selected, setSelected] = useState<number[] | null>(null);
-  const projectIds = useMemo(() => {
-    const allowed = new Set(selected);
-    return candidates
-      .filter(project => selected === null || allowed.has(project.id))
-      .map(project => project.id);
-  }, [candidates, selected]);
-  const chart = trpc.gantt.portfolio.useQuery(
-    { projectIds },
-    { enabled: projectIds.length > 0 }
-  );
-  const [picker, setPicker] = useState(false);
-  const [summary, setSummary] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [colors, setColors] = useState<ColorSelection | null>(null);
-  const [linkMode, setLinkMode] = useState(false);
-  const [showLinks, setShowLinks] = useState(true);
-  const [sourceId, setSourceId] = useState<number | null>(null);
-  const [focused, setFocused] = useState<number | null>(null);
-  const [pair, setPair] = useState<LinkPair | null>(null);
-  const [search, setSearch] = useState("");
-  const [today, setToday] = useState(businessDate);
-  useEffect(() => {
-    const timer = window.setInterval(() => setToday(businessDate()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const model = useMemo(() => {
-    const projectById = new Map(
-      chart.data?.projects.map(project => [project.id, project])
-    );
-    const byTask = new Map<number, Task>();
-    const byProject = new Map<number, Task[]>();
-    for (const task of chart.data?.tasks ?? []) {
-      byTask.set(task.id, task);
-      const children = byProject.get(task.projectId) ?? [];
-      children.push(task);
-      byProject.set(task.projectId, children);
-    }
-    const copy = words(locale);
-    return {
-      projectById,
-      byTask,
-      projects: (chart.data?.projects ?? []).map(project => {
-        const shades = ganttProjectColors(project);
-        return {
-          id: project.id,
-          number: project.number,
-          name: project.name,
-          plannedStartDate: project.plannedStartDate,
-          startDate: project.actualStartDate ?? project.plannedStartDate,
-          endDate: project.forecastEndDate ?? project.plannedEndDate,
-          color: shades.base,
-          workingDays: project.settings.workingDays,
-          holidays: project.settings.holidays,
-          calendarRevision: project.settings.calendarRevision,
-          tasks: (byProject.get(project.id) ?? []).map(task => {
-            const executionStatus = taskExecutionStatus(task.statusCode);
-            const delay =
-              executionStatus !== "completed" && task.endDate < today
-                ? taskExecutionMetrics(
-                    { ...task, executionStatus },
-                    project.settings,
-                    today
-                  ).endDelayDays
-                : 0;
-            return {
-              id: task.id,
-              parentId: task.parentId,
-              name: task.name,
-              startDate: task.startDate,
-              endDate: task.endDate,
-              color:
-                ganttColorInput.safeParse(task.color).data ??
-                shades.levels[Math.max(0, Math.min(4, task.level - 1))],
-              statusLabel: delay
-                ? copy(
-                    `متأخرة · ${delay} يوم عمل`,
-                    `Late · ${delay} workdays`,
-                    `تاخیر · ${delay} کام کے دن`
-                  )
-                : task.statusName,
-              statusTone: (delay
-                ? "late"
-                : executionStatus === "completed"
-                  ? "done"
-                  : executionStatus === "in_progress"
-                    ? "active"
-                    : "pending") as "late" | "done" | "active" | "pending",
-              owner: task.assignees.join(locale === "en" ? ", " : "، "),
-              isMilestone: task.isMilestone,
-            };
-          }),
-        };
-      }),
-      links: (chart.data?.links ?? []).map(link => ({
-        id: link.id,
-        from: link.fromTaskId,
-        to: link.toTaskId,
-        type: link.type,
-        lag: link.lagDays,
-      })),
-    };
-  }, [chart.data, locale, today]);
-
-  const cancelLink = () => {
-    setLinkMode(false);
-    setSourceId(null);
-    setPair(null);
-  };
-  const chooseTask = (id: number) => {
-    const task = model.byTask.get(id);
-    if (!task) return;
-    if (!linkMode) {
-      setFocused(id);
-      setColors({ kind: "details", id });
-      return;
-    }
-    const predecessor =
-      sourceId === null ? undefined : model.byTask.get(sourceId);
-    if (!predecessor) {
-      setSourceId(id);
-      return;
-    }
-    if (predecessor.projectId === task.projectId) {
-      toast.error(
-        t(
-          "اختر المهمة التابعة من مشروع آخر.",
-          "Choose the successor from another project.",
-          "اگلا کام دوسرے منصوبے سے منتخب کریں۔"
-        )
-      );
-      return;
-    }
-    setPair({ from: predecessor, to: task });
-  };
-  const selectedTask =
-    colors && colors.kind !== "project"
-      ? model.byTask.get(colors.id)
-      : undefined;
-  const selectedProject =
-    colors?.kind === "project"
-      ? model.projectById.get(colors.id)
-      : selectedTask && model.projectById.get(selectedTask.projectId);
-  const predecessorProject = pair && model.projectById.get(pair.from.projectId);
-  const source = sourceId === null ? undefined : model.byTask.get(sourceId);
-  const loading =
-    directory.isPending || (projectIds.length > 0 && chart.isPending);
-  const failed = directory.error ?? (projectIds.length ? chart.error : null);
-  return (
-    <section
-      className="gantt-studio-shell gantt-portfolio-shell"
-      dir={localeMeta[locale].direction}
-    >
-      <header className="gantt-portfolio-header">
-        <strong>
-          <bdi>Gantt Studio</bdi>
-        </strong>
-        <button
-          type="button"
-          onClick={() => setPicker(true)}
-          disabled={!directory.data}
-        >
-          {t("عرض المشاريع", "Show projects", "منصوبے دکھائیں")}
-          <span aria-hidden="true"> ▾</span>
-        </button>
-        <small className="gantt-portfolio-count">
-          {projectIds.length} / {candidates.length}
-        </small>
-        <div className="gantt-portfolio-actions">
-          <button
-            type="button"
-            onClick={() => setSummary(true)}
-            disabled={loading || Boolean(failed)}
-          >
-            {t("الملخص", "Summary", "خلاصہ")}
-          </button>
-          {user.permissions.includes("pm.create") && (
-            <button
-              className="gantt-portfolio-primary"
-              type="button"
-              onClick={() => setCreating(true)}
-            >
-              + {t("إنشاء مشروع", "Create project", "منصوبہ بنائیں")}
-            </button>
-          )}
-        </div>
-      </header>
-      {linkMode && (
-        <div className="gantt-portfolio-link-hint" role="status">
-          <span>
-            {source ? (
-              <>
-                {t("المهمة السابقة", "Predecessor", "سابقہ کام")}{" "}
-                <bdi>{source.name}</bdi> ·{" "}
-                {t(
-                  "اختر المهمة التابعة من مشروع آخر.",
-                  "Choose a successor in another project.",
-                  "دوسرے منصوبے سے اگلا کام منتخب کریں۔"
-                )}
-              </>
-            ) : (
-              t(
-                "اختر المهمة السابقة، ثم المهمة التي تعتمد عليها.",
-                "Choose the predecessor, then the task that depends on it.",
-                "پہلے سابقہ کام پھر اس پر منحصر کام منتخب کریں۔"
-              )
-            )}
-          </span>
-          <button type="button" onClick={cancelLink}>
-            {t("إلغاء الربط", "Cancel linking", "ربط منسوخ کریں")}
-          </button>
-        </div>
-      )}
-      {failed ? (
-        <div className="gantt-portfolio-message" role="alert">
-          <p>{failed.message}</p>
-          <button
-            type="button"
-            onClick={() =>
-              void (directory.isError ? directory.refetch() : chart.refetch())
-            }
-          >
-            {t("إعادة المحاولة", "Retry", "دوبارہ کوشش کریں")}
-          </button>
-        </div>
-      ) : loading ? (
-        <p className="gantt-portfolio-message" role="status">
-          {t(
-            "جارٍ تحميل المشاريع…",
-            "Loading projects…",
-            "منصوبے لوڈ ہو رہے ہیں…"
-          )}
-        </p>
-      ) : model.projects.length ? (
-        <PortfolioTimeline
-          locale={locale}
-          projects={model.projects}
-          links={model.links}
-          today={today}
-          search={search}
-          showLinks={showLinks}
-          linkMode={linkMode}
-          sourceTaskId={sourceId}
-          targetTaskId={pair?.to.id}
-          focusedTaskId={focused}
-          onTaskClick={chooseTask}
-          onTaskColor={
-            canEdit ? id => setColors({ kind: "task", id }) : undefined
-          }
-          onProjectColor={
-            canEdit ? id => setColors({ kind: "project", id }) : undefined
-          }
-          onProjectOpen={projectId => openEditor({ projectId })}
-          actions={
-            <div className="gantt-portfolio-actions">
-              {canEdit && (
-                <button
-                  type="button"
-                  aria-pressed={linkMode}
-                  disabled={model.projects.length < 2}
-                  onClick={() => {
-                    if (linkMode) cancelLink();
-                    else {
-                      setSearch("");
-                      setFocused(null);
-                      setLinkMode(true);
-                    }
-                  }}
-                >
-                  {t(
-                    "ربط مباشر بين المهام",
-                    "Link tasks directly",
-                    "کام براہ راست جوڑیں"
-                  )}
-                </button>
-              )}
-              <button
-                type="button"
-                aria-pressed={showLinks}
-                onClick={() => setShowLinks(value => !value)}
-              >
-                {t("الروابط", "Links", "روابط")}
-              </button>
-              <input
-                type="search"
-                value={search}
-                onChange={event => setSearch(event.target.value)}
-                placeholder={t(
-                  "ابحث عن مهمة…",
-                  "Find a task…",
-                  "کام تلاش کریں…"
-                )}
-                aria-label={t("ابحث عن مهمة", "Find a task", "کام تلاش کریں")}
-              />
-            </div>
-          }
-        />
-      ) : (
-        <p className="gantt-portfolio-message">
-          {candidates.length
-            ? t(
-                "اختر المشاريع التي تريد عرضها.",
-                "Select projects to display.",
-                "دکھانے کے لیے منصوبے منتخب کریں۔"
-              )
-            : t(
-                "لا توجد مشاريع مفتوحة للعرض في جانت.",
-                "There are no open projects for Gantt.",
-                "گانٹ میں دکھانے کے لیے کوئی کھلا منصوبہ نہیں۔"
-              )}
-        </p>
-      )}
-      {picker && (
-        <ProjectPicker
-          locale={locale}
-          directory={candidates}
-          selected={selected}
-          close={() => setPicker(false)}
-          apply={ids => {
-            cancelLink();
-            setFocused(null);
-            setSelected(ids);
-          }}
-        />
-      )}
-      {summary && (
-        <PortfolioSummary
-          locale={locale}
-          projects={chart.data?.projects ?? []}
-          tasks={chart.data?.tasks ?? []}
-          close={() => setSummary(false)}
-        />
-      )}
-      {creating && (
-        <Suspense
-          fallback={
-            <p className="gantt-portfolio-message" role="status">
-              …
-            </p>
-          }
-        >
-          <ProjectForm
-            locale={locale}
-            user={user}
-            close={() => setCreating(false)}
-            saved={() => {
-              setCreating(false);
-              void utils.projectManagement.invalidate();
-              void utils.gantt.portfolioDirectory.invalidate();
-              toast.success(
-                t(
-                  "تم حفظ المشروع كمسودة.",
-                  "Project saved as a draft.",
-                  "منصوبہ مسودے کے طور پر محفوظ ہو گیا۔"
-                )
-              );
-            }}
-          />
-        </Suspense>
-      )}
-      {selectedProject && colors?.kind === "project" && canEdit && (
-        <ProjectColor
-          key={selectedProject.id}
-          project={selectedProject}
-          locale={locale}
-          close={() => setColors(null)}
-        />
-      )}
-      {selectedProject && selectedTask && (
-        <TaskColor
-          key={selectedTask.id}
-          task={selectedTask}
-          project={selectedProject}
-          locale={locale}
-          canEdit={canEdit}
-          details={colors?.kind === "details"}
-          close={() => setColors(null)}
-          openEditor={editor => {
-            setColors(null);
-            openEditor(editor);
-          }}
-        />
-      )}
-      {pair && predecessorProject && (
-        <TaskDependencyPanel
-          key={`${pair.from.id}:${pair.to.id}`}
-          locale={locale}
-          projectId={pair.to.projectId}
-          taskId={pair.to.id}
-          taskName={pair.to.name}
-          fixedPredecessor={{
-            id: pair.from.id,
-            name: pair.from.name,
-            projectName: predecessorProject.name,
-            projectNumber: predecessorProject.number,
-          }}
-          canEdit={canEdit}
-          onClose={() => setPair(null)}
-          onSaved={() => {
-            setFocused(pair.to.id);
-            setLinkMode(false);
-            setSourceId(null);
-            setShowLinks(true);
-            toast.success(
-              t("تم حفظ العلاقة", "Dependency saved", "ربط محفوظ ہو گیا")
-            );
-          }}
-        />
-      )}
-    </section>
   );
 }

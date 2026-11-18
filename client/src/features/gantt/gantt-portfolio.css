@@ -6,45 +6,6 @@
   margin: 0;
 }
 
-.gantt-portfolio-shell.gantt-studio-shell {
-  display: flex;
-  flex-direction: column;
-  height: calc(100dvh - 70px);
-  min-height: 0;
-  min-width: 0;
-  background: #f4f6f8;
-  color: #172b3a;
-}
-
-.gantt-portfolio-header {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 7px;
-  padding: 5px 10px;
-  min-height: 42px;
-  flex: none;
-  background: #102536;
-  color: #f2f8fa;
-}
-
-.gantt-portfolio-header > strong {
-  font:
-    600 0.95rem Arial,
-    sans-serif;
-  margin-inline-end: 4px;
-  white-space: nowrap;
-}
-
-.gantt-portfolio-header > .gantt-portfolio-actions {
-  margin-inline-start: auto;
-}
-
-.gantt-portfolio-header small {
-  color: #c2d5df;
-  white-space: nowrap;
-}
-
 .gantt-portfolio-actions {
   display: flex;
   align-items: center;
@@ -52,14 +13,6 @@
   gap: 6px;
 }
 
-.gantt-portfolio-shell
-  :is(
-    .gantt-portfolio-header,
-    .gantt-portfolio-actions,
-    .gantt-portfolio-link-hint,
-    .gantt-portfolio-message
-  )
-  button,
 .gantt-portfolio-dialog button {
   display: inline-flex;
   align-items: center;
@@ -74,44 +27,30 @@
   line-height: 1.35;
 }
 
-.gantt-portfolio-shell
-  :is(
-    .gantt-portfolio-header,
-    .gantt-portfolio-actions,
-    .gantt-portfolio-link-hint,
-    .gantt-portfolio-message
-  )
-  button:hover:not(:disabled),
 .gantt-portfolio-dialog button:hover:not(:disabled),
-.gantt-portfolio-shell .gantt-portfolio-actions button[aria-pressed="true"],
 .gantt-portfolio-dialog button[aria-pressed="true"] {
   border-color: #7dbab2;
   background: #e8f5f2;
 }
 
-.gantt-portfolio-shell .gantt-portfolio-header button.gantt-portfolio-primary,
 .gantt-portfolio-dialog button.gantt-portfolio-primary {
   border-color: #087f7b;
   background: #087f7b;
   color: #fff;
 }
 
-.gantt-portfolio-shell
-  .gantt-portfolio-header
-  button.gantt-portfolio-primary:hover:not(:disabled),
 .gantt-portfolio-dialog button.gantt-portfolio-primary:hover:not(:disabled) {
   background: #066662;
   color: #fff;
 }
 
-.gantt-portfolio-shell button:disabled,
 .gantt-portfolio-dialog button:disabled {
   opacity: 0.55;
   cursor: default;
 }
 
-.gantt-portfolio-actions input[type="search"],
 .gantt-portfolio-dialog input[type="search"] {
+  width: 100%;
   min-width: 0;
   padding: 5px 8px;
   border: 1px solid #d5e2e8;
@@ -119,33 +58,6 @@
   background: #fff;
   color: #172b3a;
   font-size: 0.78rem;
-}
-
-.gantt-portfolio-actions input[type="search"] {
-  width: min(160px, 38vw);
-}
-
-.gantt-portfolio-dialog input[type="search"] {
-  width: 100%;
-}
-
-.gantt-portfolio-link-hint {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 5px 10px;
-  background: #eef7f4;
-  border-block-end: 1px solid #d2e9e3;
-  color: #214e49;
-  font-size: 0.78rem;
-}
-
-.gantt-portfolio-message {
-  margin: 0;
-  padding: 22px;
-  color: #465d6c;
 }
 
 .gantt-portfolio-dialog {
@@ -247,7 +159,6 @@
 
 .gantt-portfolio-palettes,
 .gantt-portfolio-levels,
-.gantt-portfolio-task-dates,
 .gantt-portfolio-summary {
   display: grid;
   gap: 7px;
@@ -335,7 +246,6 @@
   background: #eef7f4;
 }
 
-.gantt-portfolio-task-dates,
 .gantt-portfolio-summary {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -344,7 +254,6 @@
   padding: 15px;
 }
 
-.gantt-portfolio-task-dates dt,
 .gantt-portfolio-summary dt {
   color: #4d6574;
   font-size: 0.78rem;
@@ -366,20 +275,7 @@
 }
 
 @media (max-width: 430px) {
-  .gantt-portfolio-header {
-    gap: 5px;
-    padding-inline: 6px;
-  }
-  .gantt-portfolio-count {
-    display: none;
-  }
   .gantt-portfolio-palettes {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-@media (max-height: 410px) {
-  .gantt-portfolio-shell.gantt-studio-shell {
-    min-height: 295px;
   }
 }
