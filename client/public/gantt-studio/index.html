@@ -147,6 +147,49 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
 .portfolio-linking .gantt-bar{cursor:pointer}
 .portfolio-dependency-svg{position:absolute;inset:0;z-index:3;pointer-events:none;overflow:hidden}
 .portfolio-dependency-svg path[data-portfolio-edge]{fill:none;stroke:#147870;stroke-width:1.6;stroke-dasharray:6 3}
+
+@media screen {
+  html.gantt-review-expanded,
+  .gantt-review-expanded body { height: 100%; overflow: hidden; }
+  .gantt-review-expanded body { display: flex; flex-direction: column; }
+  .gantt-review-expanded .app-header {
+    flex: none;
+    height: auto;
+    min-height: 0;
+    padding: 4px 12px;
+    gap: 8px;
+  }
+  .gantt-review-expanded .main-nav { width: auto; height: 32px; min-height: 0; order: 0; }
+  .gantt-review-expanded main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+    margin: 0;
+    padding: 5px 8px 8px;
+    overflow: hidden;
+  }
+  .gantt-review-expanded .app-header .brand,
+  .gantt-review-expanded .project-heading > div:first-child,
+  .gantt-review-expanded #migrationNotice,
+  .gantt-review-expanded .metrics,
+  .gantt-review-expanded .below-chart > span,
+  .gantt-review-expanded .app-footer { display: none; }
+  .gantt-review-expanded .project-heading { flex: none; margin: 0 0 6px; }
+  .gantt-review-expanded .heading-actions { max-width: none; }
+  .gantt-review-expanded .view { flex: 1; min-height: 0; overflow: auto; }
+  .gantt-review-expanded #ganttView,
+  .gantt-review-expanded .workspace { display: flex; flex-direction: column; }
+  .gantt-review-expanded .workspace { flex: 1; min-height: 0; }
+  .gantt-review-expanded .workspace-toolbar,
+  .gantt-review-expanded .workspace-subtoolbar { flex: none; padding: 6px 8px; gap: 6px; }
+  .gantt-review-expanded .selection-bar { flex: none; min-height: 0; padding: 4px 8px; }
+  .gantt-review-expanded .chart-footer { flex: none; padding: 5px 8px; }
+  .gantt-review-expanded .gantt-scroll { flex: 1; height: auto; max-height: none; min-height: 0; }
+  .gantt-review-expanded .below-chart { flex: none; margin: 3px 0 0; }
+}
 </style>
 </head>
 <body>
@@ -173,6 +216,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       <div class="workspace-toolbar">
         <div class="toolbar-cluster"><label id="schedulingControl" class="scheduling-control" title="السحب اليدوي متاح دائمًا؛ هذا الخيار يحدد هل تُحدَّث المهام المرتبطة أيضًا"><input id="autoScheduleToggle" type="checkbox" role="switch" checked><span>تحديث المهام المرتبطة تلقائيًا</span><b id="scheduleStatus">مفعّل</b></label><button id="undoBtn" class="icon-button" title="تراجع Ctrl+Z — يعمل بالعربية والإنجليزية" aria-label="تراجع" aria-keyshortcuts="Control+Z Meta+Z">↶</button><button id="redoBtn" class="icon-button" title="إعادة Ctrl+Shift+Z أو Ctrl+Y" aria-label="إعادة" aria-keyshortcuts="Control+Shift+Z Control+Y Meta+Shift+Z">↷</button><span class="separator"></span><button id="linkBtn" class="button compact">⤷ علاقة</button><button id="recalculateBtn" class="button compact" title="إزالة قيود لا يبدأ قبل والجدولة من أقرب بداية">إعادة الجدولة</button></div>
         <div class="toolbar-cluster"><button id="criticalBtn" class="button compact toggle active" aria-pressed="true">المسار الحرج</button><button id="linksBtn" class="button compact toggle active" aria-pressed="true">الروابط</button><button id="baselineBtn" class="button compact toggle active" aria-pressed="true">خط الأساس</button><button id="saveBaselineBtn" class="icon-button" title="حفظ خط أساس جديد" aria-label="حفظ خط أساس جديد">◎</button></div>
+        <button id="reviewModeBtn" class="button compact" type="button" hidden>استعراض</button>
       </div>
       <div class="workspace-subtoolbar">
         <div class="toolbar-cluster"><div class="search"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="ابحث عن مهمة أو مسؤول…" aria-label="البحث في المهام"></div><select id="phaseFilter" aria-label="تصفية المرحلة"><option value="">كل المراحل</option></select><select id="statusFilter" aria-label="تصفية الحالة"><option value="">كل الحالات</option><option value="critical">الحرجة فقط</option><option value="done">مكتملة</option><option value="active">قيد التنفيذ</option><option value="todo">لم تبدأ</option><option value="late">متأخرة عن تاريخ المتابعة</option></select></div>
@@ -537,6 +581,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   Object.assign(catalogs.ar,{"بانتظار تحميل المشروع…":"بانتظار تحميل المشروع…","محفوظ محليًا":"محفوظ محليًا","تعديلات بانتظار الحفظ":"تعديلات بانتظار الحفظ","جارٍ الحفظ…":"جارٍ الحفظ…","تعذر الحفظ؛ التعديلات لا تزال مفتوحة":"تعذر الحفظ؛ التعديلات لا تزال مفتوحة","تعذر تحميل مخطط المشروع: ":"تعذر تحميل مخطط المشروع: ","تعذر مطابقة نتيجة الحفظ مع التعديلات.":"تعذر مطابقة نتيجة الحفظ مع التعديلات.","هذا المشروع للعرض فقط.":"هذا المشروع للعرض فقط.","طلب احتياج":"طلب احتياج","أقفال الجدولة":"أقفال الجدولة","قفل البداية":"قفل البداية","قفل النهاية":"قفل النهاية","القفل يمنع السحب أو التمديد من تجاوز هذا الحد.":"القفل يمنع السحب أو التمديد من تجاوز هذا الحد.","طي تفرعات ":"طي تفرعات ","فتح تفرعات ":"فتح تفرعات ","تحديد ":"تحديد ","تعديل ":"تعديل "});
   Object.assign(catalogs.en,{"بانتظار تحميل المشروع…":"Loading project…","محفوظ محليًا":"Saved locally","تعديلات بانتظار الحفظ":"Changes waiting to save","جارٍ الحفظ…":"Saving…","تعذر الحفظ؛ التعديلات لا تزال مفتوحة":"Save failed. Edits are still open.","تعذر تحميل مخطط المشروع: ":"Could not load the project chart: ","تعذر مطابقة نتيجة الحفظ مع التعديلات.":"Could not match the saved result to the edits.","هذا المشروع للعرض فقط.":"This project is read-only.","طلب احتياج":"Material requisition","أقفال الجدولة":"Schedule locks","قفل البداية":"Lock start","قفل النهاية":"Lock finish","القفل يمنع السحب أو التمديد من تجاوز هذا الحد.":"The lock prevents dragging or extending past this date.","طي تفرعات ":"Collapse branches of ","فتح تفرعات ":"Expand branches of ","تحديد ":"Select ","تعديل ":"Edit "});
   Object.assign(catalogs.ar,{
+    "استعراض":"استعراض",
     "جاهز للصرف":"جاهز للصرف",
     "جاهز":"جاهز",
     "الاحتياجات":"الاحتياجات",
@@ -549,6 +594,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     "احفظ تغييرات المهمة أولًا، ثم افتح علاقاتها مع المشاريع الأخرى.":"احفظ تغييرات المهمة أولًا، ثم افتح علاقاتها مع المشاريع الأخرى.",
   });
   Object.assign(catalogs.en,{
+    "استعراض":"Full screen",
     "جاهز للصرف":"Ready to issue",
     "جاهز":"Ready",
     "الاحتياجات":"Requisitions",
@@ -571,6 +617,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     "الحد الأقصى 3660 يوم إجازة.":"At most 3,660 holiday dates are allowed.",
   });
   Object.assign(catalogs.ur,{
+    "استعراض":"مکمل اسکرین",
     "جاهز للصرف":"اجرا کے لیے تیار",
     "جاهز":"تیار",
     "الاحتياجات":"درخواستیں",
@@ -1325,6 +1372,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   const calendarVersionOf=message=>Number.isSafeInteger(message?.calendarRevision)&&message.calendarRevision>=0?message.calendarRevision:0;
   let paletteLevels=[], paletteOverrides=new Map(), paletteSnapshot='';
   let portfolio=null, deferredPortfolio=null;
+  let reviewExpanded=false, reviewEscape=false;
+  let reviewScrollBefore=null, reviewScrollExpanded=null;
   const collapsedProjects=new Set(), collapsedPeerTasks=new Set();
   const portfolioCopy=(ar,en,ur)=>I.language==='en'?en:I.language==='ur'?ur:ar;
   const positiveId=value=>Number.isSafeInteger(value)&&value>0;
@@ -1366,6 +1415,43 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     if(Array.isArray(viewport.collapsedProjects))for(const id of viewport.collapsedProjects)if(positiveId(id))collapsedProjects.add(id);
     if(Array.isArray(viewport.collapsedPeerTasks))for(const id of viewport.collapsedPeerTasks)if(positiveId(id))collapsedPeerTasks.add(id);
     $('scaleSelect').value=dayWidth>=26?'32':dayWidth>=14?'18':'8';
+  }
+  function setReviewExpanded(expanded) {
+    if (reviewExpanded === expanded) return;
+    cancelDrag();
+    cancelLinkDrag();
+    const scroll = $('ganttScroll');
+    const position = portfolioViewport();
+    let {scrollLeft, scrollTop} = position;
+    if (expanded) {
+      reviewScrollBefore ??= position;
+      ({scrollLeft, scrollTop} = reviewScrollBefore);
+    } else if (reviewScrollBefore && reviewScrollExpanded) {
+      // The larger viewport can clamp scroll offsets without the user moving the chart.
+      const sameTimeScale = position.start === reviewScrollBefore.start &&
+        position.dayWidth === reviewScrollBefore.dayWidth;
+      const initialLeft = reviewScrollBefore.scrollLeft;
+      const initialTop = reviewScrollBefore.scrollTop;
+      if (sameTimeScale && (scrollLeft === reviewScrollExpanded.scrollLeft ||
+          scrollLeft === Math.min(initialLeft, scroll.scrollWidth - scroll.clientWidth))) {
+        scrollLeft = initialLeft;
+      }
+      if (scrollTop === reviewScrollExpanded.scrollTop ||
+          scrollTop === Math.min(initialTop, scroll.scrollHeight - scroll.clientHeight)) {
+        scrollTop = initialTop;
+      }
+    }
+    reviewExpanded = expanded;
+    document.documentElement.classList.toggle('gantt-review-expanded', expanded);
+    $('reviewModeBtn').hidden = expanded;
+    scroll.scrollLeft = scrollLeft;
+    scroll.scrollTop = scrollTop;
+    if (expanded) reviewScrollExpanded = portfolioViewport();
+    else {
+      // Native fullscreen can consume the first Escape before the iframe receives it.
+      reviewEscape = true;
+      reviewScrollBefore = reviewScrollExpanded = null;
+    }
   }
   function acceptPalette(palette) {
     const valid=entry=>/^#[0-9a-f]{6}$/i.test(entry?.color)&&/^#[0-9a-f]{6}$/i.test(entry?.ink);
@@ -2576,6 +2662,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
         selected=new Set([...selected].filter(id=>next.tasks.some(task=>task.id===id)));
       }
       showHostNotice();
+      if(initial&&typeof message.reviewExpanded==='boolean')setReviewExpanded(message.reviewExpanded);
       if(initial&&studioViews.includes(message.view))setView(message.view,false);
       else render();
       if(initial&&message.viewport) {
@@ -2635,6 +2722,10 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     }
     if(message.type==='pscm:gantt:locale') {
       if(state)switchLanguage(message.locale);
+      return;
+    }
+    if(message.type==='pscm:gantt:review-mode') {
+      if(typeof message.expanded==='boolean')setReviewExpanded(message.expanded);
       return;
     }
     if(message.type==='pscm:task-materials') {
@@ -2847,6 +2938,35 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   $('startBtn').onclick=()=>{viewStart=null;renderChart();$('ganttScroll').scrollLeft=0;};
   $('previousBtn').onclick=()=>{viewStart=(viewStart??lastRange.start)-Math.max(30,rangeDays-7);renderChart();$('ganttScroll').scrollLeft=0;};
   $('nextBtn').onclick=()=>{viewStart=(viewStart??lastRange.start)+Math.max(30,rangeDays-7);renderChart();$('ganttScroll').scrollLeft=0;};
+  if (embedded) {
+    const reviewButton = $('reviewModeBtn');
+    reviewButton.hidden = false;
+    reviewButton.addEventListener('click', event => {
+      if (!event.isTrusted || reviewExpanded) return;
+      reviewScrollBefore = portfolioViewport();
+      sendToHost('pscm:gantt:review-request', {expanded: true});
+    });
+    const escapeReview = event => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (reviewExpanded && !event.repeat) {
+        cancelDrag();
+        cancelLinkDrag();
+        sendToHost('pscm:gantt:review-request', {expanded: false});
+      }
+    };
+    window.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      if (!event.repeat) reviewEscape = reviewExpanded;
+      if (reviewExpanded || reviewEscape) escapeReview(event);
+    }, true);
+    window.addEventListener('keyup', event => {
+      if (event.key === 'Escape') reviewEscape = false;
+    }, true);
+    document.addEventListener('cancel', event => {
+      if (reviewExpanded || reviewEscape) escapeReview(event);
+    }, true);
+  }
   window.addEventListener('resize',()=>requestAnimationFrame(renderTaskTreeConnectors));
   $('resetDemoBtn').onclick=()=>loadDemo('full');$('loadLabBtn').onclick=()=>loadDemo('lab');$('runTestsBtn').onclick=runTests;
   $('exportBtn').onclick=exportJSON;$('exportCsvBtn').onclick=exportCSV;$('reportCsvBtn').onclick=exportCSV;$('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=importJSON;

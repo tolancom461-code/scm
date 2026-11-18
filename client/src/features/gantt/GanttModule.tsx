@@ -25,6 +25,7 @@ import { MaterialRequisitionForm } from "../material-requisitions/MaterialRequis
 import { mrText } from "../material-requisitions/copy";
 import { TaskMaterialPanel } from "../project-management/TaskMaterialProgress";
 import { TaskDependencyPanel } from "./TaskDependencyPanel";
+import { useGanttReview } from "./useGanttReview";
 import {
   PortfolioSummary,
   ProjectColor,
@@ -405,6 +406,7 @@ function GanttWorkspace({ locale, user }: { locale: Locale; user: User }) {
   const t = (ar: string, en: string, ur: string) =>
     locale === "ar" ? ar : locale === "en" ? en : ur;
   const utils = trpc.useUtils();
+  const { expanded: reviewExpanded, setReviewMode } = useGanttReview();
   const canEdit = user.permissions.includes("pm.tasks.manage");
   const directory = trpc.gantt.portfolioDirectory.useQuery();
   const candidates = directory.data ?? emptyDirectory;
@@ -593,8 +595,21 @@ function GanttWorkspace({ locale, user }: { locale: Locale; user: User }) {
   const predecessorProject = chart.data?.projects.find(
     project => project.id === pair?.from.projectId
   );
+  const reviewClose = reviewExpanded ? (
+    <button
+      type="button"
+      className="gantt-review-close"
+      aria-keyshortcuts="Escape"
+      onClick={() => setReviewMode(false)}
+    >
+      <span aria-hidden="true">×</span>
+      {t("إغلاق الاستعراض", "Close fullscreen", "فل اسکرین بند کریں")}
+    </button>
+  ) : null;
   return (
-    <>
+    <div
+      className={`gantt-workspace-root${reviewExpanded ? " gantt-review-active" : ""}`}
+    >
       {editor ? (
         <ScopedGanttModule
           key={editor.projectId}
@@ -605,6 +620,9 @@ function GanttWorkspace({ locale, user }: { locale: Locale; user: User }) {
           initialViewport={editor.viewport}
           initialView={view}
           onViewChange={setView}
+          reviewExpanded={reviewExpanded}
+          reviewClose={reviewClose}
+          onReviewModeChange={setReviewMode}
           portfolio={portfolio}
           renderBoardActions={renderActions}
           onFocusProject={(target, taskId, viewport) => {
@@ -623,6 +641,7 @@ function GanttWorkspace({ locale, user }: { locale: Locale; user: User }) {
           dir={locale === "en" ? "ltr" : "rtl"}
         >
           <div className="gantt-project-switcher">
+            {reviewClose}
             {renderActions(action => action())}
           </div>
           <div
@@ -723,7 +742,7 @@ function GanttWorkspace({ locale, user }: { locale: Locale; user: User }) {
           }}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -735,6 +754,9 @@ function ScopedGanttModule({
   initialViewport,
   initialView,
   onViewChange,
+  reviewExpanded,
+  reviewClose,
+  onReviewModeChange,
   portfolio,
   renderBoardActions,
   onFocusProject,
@@ -748,6 +770,9 @@ function ScopedGanttModule({
   initialViewport?: BoardViewport;
   initialView: StudioView;
   onViewChange: (view: StudioView) => void;
+  reviewExpanded: boolean;
+  reviewClose: ReactNode;
+  onReviewModeChange: (expanded: boolean) => void;
   portfolio: BoardPortfolio;
   renderBoardActions: (run: RunBoardAction, blocked: boolean) => ReactNode;
   onFocusProject: (
@@ -1040,6 +1065,14 @@ function ScopedGanttModule({
         onViewChange(message.view);
       return;
     }
+    if (message.type === "pscm:gantt:review-request") {
+      if (
+        readyProject.current === projectId &&
+        typeof message.expanded === "boolean"
+      )
+        onReviewModeChange(message.expanded);
+      return;
+    }
     if (message.type === "pscm:gantt:board-action-response") {
       const pending = boardAction.current;
       if (!pending || pending.requestId !== message.requestId) return;
@@ -1128,6 +1161,7 @@ function ScopedGanttModule({
         portfolio,
         viewport: initialViewport,
         view: initialView,
+        reviewExpanded,
       });
       const taskId = entryTask.current;
       if (
@@ -1253,6 +1287,10 @@ function ScopedGanttModule({
   }, [locale, projectId]);
   useEffect(() => {
     if (readyProject.current === projectId)
+      post("pscm:gantt:review-mode", { expanded: reviewExpanded });
+  }, [reviewExpanded, projectId]);
+  useEffect(() => {
+    if (readyProject.current === projectId)
       post("pscm:task-materials", { items: materialSummaries ?? [] });
   }, [materialSummaries, projectId]);
   useEffect(() => {
@@ -1339,6 +1377,7 @@ function ScopedGanttModule({
       dir={locale === "en" ? "ltr" : "rtl"}
     >
       <div className="gantt-project-switcher">
+        {reviewClose}
         {renderBoardActions(
           runBoardAction,
           saveFailed ||
@@ -1467,7 +1506,7 @@ function ScopedGanttModule({
             "Approved Gantt chart",
             "منظور شدہ گانٹ چارٹ"
           )}
-          src={`/gantt-studio/index.html?v=pscm-bridge-8&project=${projectId}&channel=${channel}&requisitions=${canCreateRequisition ? "1" : "0"}`}
+          src={`/gantt-studio/index.html?v=pscm-bridge-9&project=${projectId}&channel=${channel}&requisitions=${canCreateRequisition ? "1" : "0"}`}
           className="gantt-studio-frame"
         />
       )}

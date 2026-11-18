@@ -180,3 +180,59 @@
     height: calc(100vh - 190px);
   }
 }
+
+.gantt-workspace-root {
+  display: contents;
+}
+.gantt-review-active {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  background: #f4f6f8;
+}
+html:has(.gantt-review-active) {
+  overflow: hidden;
+}
+.p1-shell:has(.gantt-review-active) > .sidebar,
+.p1-shell:has(.gantt-review-active) > .app-main > .topbar {
+  visibility: hidden;
+}
+.gantt-review-active .gantt-studio-shell {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  margin: 0;
+  min-width: 0;
+  min-height: 0;
+}
+.gantt-review-active .gantt-project-switcher,
+.gantt-review-active .gantt-board-link-hint {
+  flex: 0 0 auto;
+}
+.gantt-review-active .gantt-studio-frame {
+  flex: 1 1 auto;
+  height: 0;
+  min-height: 0;
+}
+.gantt-review-active .gantt-review-close {
+  position: relative;
+  z-index: 61;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 3px 10px;
+  border: 1px solid #a7b5b9;
+  border-radius: 6px;
+  background: #fff;
+  color: #173446;
+  font-weight: 700;
+}
+.gantt-review-close span {
+  font-size: 20px;
+  line-height: 1;
+}
+.gantt-review-active .gantt-review-close:hover {
+  background: #e8f4f3;
+}
