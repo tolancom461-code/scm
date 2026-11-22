@@ -2538,8 +2538,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     cleanLinkDrag();notify(I.t("أُلغي الربط دون تغيير المهام أو العلاقات."));
   }
   function zoom(next) {
-    const scroll=$('ganttScroll'),side=document.querySelector('.task-sidebar')?.clientWidth||340,available=Math.max(150,scroll.clientWidth-side),center=(scroll.scrollLeft+available/2)/dayWidth;
-    dayWidth=Math.min(72,Math.max(8,next));renderChart();scroll.scrollLeft=Math.max(0,center*dayWidth-available/2);
+    const scroll=$('ganttScroll'),firstVisibleDay=scroll.scrollLeft/dayWidth;
+    dayWidth=Math.min(72,Math.max(8,next));renderChart();scroll.scrollLeft=Math.max(0,firstVisibleDay*dayWidth);
     $('scaleSelect').value=dayWidth>=26?'32':dayWidth>=14?'18':'8';
   }
   function fit() {

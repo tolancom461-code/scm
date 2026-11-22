@@ -447,6 +447,31 @@ describe("embedded Gantt Studio", () => {
     });
   });
 
+  it("keeps the first visible date in place when zooming instead of scrolling past early tasks", () => {
+    const scroll = { scrollLeft: 0 };
+    const scaleSelect = { value: "32" };
+    const context = vm.createContext({
+      $: (id: string) => id === "ganttScroll" ? scroll : scaleSelect,
+      renderChart: () => {},
+    });
+    vm.runInContext(
+      `let dayWidth=8;
+       ${sourceBetween("  function zoom(", "  function fit(")}`,
+      context
+    );
+    vm.runInContext("zoom(32)", context);
+    expect(scroll.scrollLeft).toBe(0);
+    scroll.scrollLeft = 160;
+    vm.runInContext("zoom(64)", context);
+    expect(scroll.scrollLeft).toBe(320);
+    expect(vm.runInContext("dayWidth", context)).toBe(64);
+    vm.runInContext("zoom(8)", context);
+    expect(scroll.scrollLeft).toBe(40);
+    vm.runInContext("zoom(100)", context);
+    expect(scroll.scrollLeft).toBe(360);
+    expect(vm.runInContext("dayWidth", context)).toBe(72);
+  });
+
   it("loads project-unit field lengths and keeps the standalone engine checks green", () => {
     const context = vm.createContext({});
     new vm.Script(script);
