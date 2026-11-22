@@ -20,6 +20,7 @@
 .linking,.linking *{user-select:none}
 .linking .port.port-blocked,.linking .port.port-rejected{cursor:not-allowed!important}
 .linking .dependency-svg .hit-link{pointer-events:none}
+.gantt-grid{width:max-content}
 .time-head{z-index:20}.task-sidebar{z-index:22}
 .drag-hint{max-width:min(700px,calc(100vw - 28px));text-align:center;line-height:1.9;direction:rtl}
 .drag-hint.invalid{background:#73383e}
@@ -288,7 +289,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   "السحب اليدوي متاح دائمًا. التحديث التلقائي متوقف: تتحرك المهام التي تختارها فقط، مع احترام أيام العمل. {0}": "خودکار اپ ڈیٹ بند ہے۔ صرف منتخب کام کام کے دنوں کے مطابق منتقل ہوتے ہیں۔ {0}",
   "لا توجد مخالفات حالية.": "فی الحال کوئی مسئلہ نہیں۔",
   "علاقات المهام": "کاموں کے روابط",
-  "{0} من {1} مهمة · نافذة حتى 180 يومًا": "{1} میں سے {0} کام · 180 دن تک",
+  "{0} من {1} مهمة · {2} يومًا ظاهرًا": "{1} میں سے {0} کام · {2} دن نظر آ رہے ہیں",
   "تحديد المهام الظاهرة": "نظر آنے والے کام منتخب کریں",
   "المهمة / المسؤول": "کام / ذمہ دار",
   "الأعمدة مثبتة أثناء التمرير": "اسکرول کے دوران کالم مقرر رہتے ہیں",
@@ -592,6 +593,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     "احفظ تغييرات المهمة أولًا، ثم افتح علاقاتها مع المشاريع الأخرى.":"احفظ تغييرات المهمة أولًا، ثم افتح علاقاتها مع المشاريع الأخرى.",
   });
   Object.assign(catalogs.en,{
+    "{0} من {1} مهمة · {2} يومًا ظاهرًا":"{0} of {1} tasks · {2} days visible",
     "استعراض":"Full screen",
     "جاهز للصرف":"Ready to issue",
     "جاهز":"Ready",
@@ -1738,7 +1740,11 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
         include(task.dates);
       }
     }
-    const length = Math.max(60, Math.min(180, finish - earliest + 17));
+    const scroll=$('ganttScroll');
+    const sidebar=document.querySelector('.task-sidebar');
+    const side=sidebar?.offsetWidth||parseFloat(getComputedStyle($('ganttGrid')).getPropertyValue('--side'))||340;
+    const viewportDays=Math.ceil(Math.max(0,scroll.clientWidth-side)/dayWidth);
+    const length = Math.max(60, Math.min(180, finish - earliest + 17), viewportDays);
     const start = viewStart ?? earliest - 2;
     rangeDays = length;
     return { start, count:length, width:length*dayWidth };
@@ -1935,7 +1941,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const depthOf=task=>{let depth=0,current=task;while(current.parentId&&tree.byId.has(current.parentId)&&depth<20){depth++;current=tree.byId.get(current.parentId);}return depth;};
     $('rangeLabel').textContent=fmt(E.iso(r.start))+' — '+fmt(E.iso(r.start+r.count-1));
     const totalCount=(portfolio?.projects??[]).filter(project=>project.id!==projectId).reduce((count,project)=>count+project.tasks.length,s.tasks.length);
-    $('visibleCount').textContent=I.t("{0} من {1} مهمة · نافذة حتى 180 يومًا", [visibleCount,totalCount]);
+    $('visibleCount').textContent=I.t("{0} من {1} مهمة · {2} يومًا ظاهرًا", [visibleCount,totalCount,r.count]);
     const monthGroups=[];
     for(let i=0;i<r.count;i++) {
       const date=E.iso(r.start+i), key=date.slice(0,7);
@@ -3077,7 +3083,10 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       if (reviewExpanded || reviewEscape) escapeReview(event);
     }, true);
   }
-  window.addEventListener('resize',()=>requestAnimationFrame(renderTaskTreeConnectors));
+  window.addEventListener('resize',()=>requestAnimationFrame(()=>{
+    if(state&&view==='gantt'&&!drag&&!linkDrag)renderChart();
+    else renderTaskTreeConnectors();
+  }));
   $('resetDemoBtn').onclick=()=>loadDemo('full');$('loadLabBtn').onclick=()=>loadDemo('lab');$('runTestsBtn').onclick=runTests;
   $('exportBtn').onclick=exportJSON;$('exportCsvBtn').onclick=exportCSV;$('reportCsvBtn').onclick=exportCSV;$('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=importJSON;
   for(const id of ['helpBtn','footerHelp'])$(id).onclick=()=>openDialog('helpDialog');

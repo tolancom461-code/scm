@@ -412,6 +412,41 @@ describe("embedded Gantt Studio", () => {
     ]);
   });
 
+  it("fills the chart width with dated columns when zooming out or resizing", () => {
+    const scroll = { clientWidth: 1840 };
+    const sidebar = { offsetWidth: 340 };
+    const context = vm.createContext({
+      $: () => scroll,
+      document: { querySelector: () => sidebar },
+      getComputedStyle: () => ({ getPropertyValue: () => "340px" }),
+    });
+    vm.runInContext(engine, context);
+    vm.runInContext(
+      `const E=GanttEngine;
+       let dayWidth=8,viewStart=null,rangeDays=80,portfolio=null;
+       const activeTaskTimelineDates=()=>({startDay:null,endDay:null,actualStartDay:null,actualEndDay:null});
+       ${sourceBetween("  function range(", "  function geometry(")}
+       const state=GanttSelfTests.base();
+       const analysis=E.analyze(state);`,
+      context
+    );
+    const readRange = () => vm.runInContext("range(state,analysis)", context);
+    expect(readRange()).toMatchObject({ count: 188, width: 1504 });
+    expect(scroll.clientWidth - sidebar.offsetWidth).toBeLessThanOrEqual(
+      readRange().width
+    );
+    scroll.clientWidth = 900;
+    expect(readRange()).toMatchObject({ count: 70, width: 560 });
+    vm.runInContext("dayWidth=32", context);
+    expect(readRange()).toMatchObject({ count: 60, width: 1920 });
+    sidebar.offsetWidth = 0;
+    vm.runInContext("dayWidth=8; viewStart=E.epoch('2026-11-01')", context);
+    expect(readRange()).toMatchObject({
+      start: vm.runInContext("viewStart", context),
+      count: 70,
+    });
+  });
+
   it("loads project-unit field lengths and keeps the standalone engine checks green", () => {
     const context = vm.createContext({});
     new vm.Script(script);
