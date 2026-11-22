@@ -5,6 +5,14 @@ export function useGanttReview() {
   const active = useRef(false);
   const ownsFullscreen = useRef(false);
   const pending = useRef<Promise<void> | null>(null);
+  const escapeHandler = useRef<(() => boolean) | null>(null);
+  const escapeHandledAt = useRef(0);
+  const setEscapeHandler = useCallback((handler: (() => boolean) | null) => {
+    escapeHandler.current = handler;
+  }, []);
+  const noteEscape = useCallback((handled: boolean) => {
+    escapeHandledAt.current = handled ? Date.now() : 0;
+  }, []);
 
   const exitNativeFullscreen = useCallback(() => {
     if (
@@ -57,50 +65,66 @@ export function useGanttReview() {
   );
 
   useEffect(() => {
-    let exitingWithEscape = false;
+    const openDialog = () =>
+      document.querySelector(
+        'dialog[open], [role="dialog"][aria-modal="true"]'
+      );
+    const alreadyHandled = () =>
+      escapeHandledAt.current > 0 && Date.now() - escapeHandledAt.current < 350;
     function synchronizeFullscreen() {
       if (document.fullscreenElement === document.documentElement) {
         if (pending.current) ownsFullscreen.current = true;
       } else if (ownsFullscreen.current) {
         ownsFullscreen.current = false;
-        if (active.current) exitingWithEscape = true;
-        setReviewMode(false);
+        if (!active.current || alreadyHandled()) return;
+        // Native fullscreen may consume Escape before the iframe sees it.
+        // Keep the board expanded while closing a dialog or its Today filter.
+        if (openDialog()) {
+          noteEscape(true);
+          document.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "Escape" })
+          );
+        } else if (escapeHandler.current?.()) noteEscape(true);
+        else {
+          noteEscape(true);
+          setReviewMode(false);
+        }
       }
     }
     function exitOnEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
-      if (!event.repeat) exitingWithEscape = active.current;
-      if (!active.current && !exitingWithEscape) return;
+      if (openDialog()) {
+        if (!event.repeat) noteEscape(true);
+        return;
+      }
+      if (event.repeat || alreadyHandled()) {
+        if (active.current || alreadyHandled()) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }
+        return;
+      }
+      const handled = escapeHandler.current?.() ?? false;
+      if (!handled && !active.current) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (!event.repeat) setReviewMode(false);
+      noteEscape(true);
+      if (!handled) setReviewMode(false);
     }
     function releaseEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") exitingWithEscape = false;
-    }
-    function preserveDialog(event: Event) {
-      if (
-        (!active.current && !exitingWithEscape) ||
-        !(event.target instanceof HTMLDialogElement)
-      )
-        return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      setReviewMode(false);
+      if (event.key === "Escape") noteEscape(false);
     }
     document.addEventListener("fullscreenchange", synchronizeFullscreen);
     window.addEventListener("keydown", exitOnEscape, true);
     window.addEventListener("keyup", releaseEscape, true);
-    document.addEventListener("cancel", preserveDialog, true);
     return () => {
       document.removeEventListener("fullscreenchange", synchronizeFullscreen);
       window.removeEventListener("keydown", exitOnEscape, true);
       window.removeEventListener("keyup", releaseEscape, true);
-      document.removeEventListener("cancel", preserveDialog, true);
       active.current = false;
       exitNativeFullscreen();
     };
-  }, [exitNativeFullscreen, setReviewMode]);
+  }, [exitNativeFullscreen, noteEscape, setReviewMode]);
 
-  return { expanded, setReviewMode };
+  return { expanded, setReviewMode, setEscapeHandler, noteEscape };
 }

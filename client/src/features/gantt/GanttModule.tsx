@@ -112,6 +112,11 @@ type BoardViewport = {
   scrollTop: number;
   collapsedProjects?: number[];
   collapsedPeerTasks?: number[];
+  todayOnly?: boolean;
+  todayViewport?: Pick<
+    BoardViewport,
+    "start" | "dayWidth" | "scrollLeft" | "scrollTop"
+  >;
 };
 type Editor = { projectId: number; taskId?: number; viewport?: BoardViewport };
 type StudioView = "gantt" | "analysis" | "lab";
@@ -200,6 +205,8 @@ function readBoardViewport(value: unknown): BoardViewport | undefined {
     scrollTop,
     collapsedProjects,
     collapsedPeerTasks,
+    todayOnly,
+    todayViewport,
   } = value as BoardViewport;
   const ids = (items: unknown) =>
     Array.isArray(items)
@@ -223,6 +230,17 @@ function readBoardViewport(value: unknown): BoardViewport | undefined {
       scrollTop,
       collapsedProjects: ids(collapsedProjects),
       collapsedPeerTasks: ids(collapsedPeerTasks),
+      ...(todayOnly === true
+        ? {
+            todayOnly: true,
+            todayViewport: readBoardViewport({
+              start: todayViewport?.start,
+              dayWidth: todayViewport?.dayWidth,
+              scrollLeft: todayViewport?.scrollLeft,
+              scrollTop: todayViewport?.scrollTop,
+            }),
+          }
+        : {}),
     };
 }
 
@@ -432,7 +450,12 @@ function GanttWorkspace({ locale, user }: { locale: Locale; user: User }) {
   const t = (ar: string, en: string, ur: string) =>
     locale === "ar" ? ar : locale === "en" ? en : ur;
   const utils = trpc.useUtils();
-  const { expanded: reviewExpanded, setReviewMode } = useGanttReview();
+  const {
+    expanded: reviewExpanded,
+    setReviewMode,
+    setEscapeHandler,
+    noteEscape,
+  } = useGanttReview();
   const canEdit = user.permissions.includes("pm.tasks.manage");
   const directory = trpc.gantt.portfolioDirectory.useQuery();
   const candidates = directory.data ?? emptyDirectory;
@@ -649,6 +672,8 @@ function GanttWorkspace({ locale, user }: { locale: Locale; user: User }) {
           reviewExpanded={reviewExpanded}
           reviewClose={reviewClose}
           onReviewModeChange={setReviewMode}
+          setEscapeHandler={setEscapeHandler}
+          noteEscape={noteEscape}
           portfolio={portfolio}
           renderBoardActions={renderActions}
           onFocusProject={(target, taskId, viewport) => {
@@ -783,6 +808,8 @@ function ScopedGanttModule({
   reviewExpanded,
   reviewClose,
   onReviewModeChange,
+  setEscapeHandler,
+  noteEscape,
   portfolio,
   renderBoardActions,
   onFocusProject,
@@ -799,6 +826,8 @@ function ScopedGanttModule({
   reviewExpanded: boolean;
   reviewClose: ReactNode;
   onReviewModeChange: (expanded: boolean) => void;
+  setEscapeHandler: (handler: (() => boolean) | null) => void;
+  noteEscape: (handled: boolean) => void;
   portfolio: BoardPortfolio;
   renderBoardActions: (run: RunBoardAction, blocked: boolean) => ReactNode;
   onFocusProject: (
@@ -873,6 +902,7 @@ function ScopedGanttModule({
     submitted = useRef<StudioSave | null>(null),
     receipt = useRef<StudioReceipt | null>(null),
     flush = useRef<() => void>(() => {});
+  const escapeBlocked = useRef(false);
   const post = (type: string, data: object = {}) =>
     frame.current?.contentWindow?.postMessage(
       { ...data, type, channel, projectId },
@@ -1108,6 +1138,19 @@ function ScopedGanttModule({
         onReviewModeChange(message.expanded);
       return;
     }
+    if (message.type === "pscm:gantt:escape-state") {
+      if (typeof message.blocked === "boolean")
+        escapeBlocked.current = message.blocked;
+      return;
+    }
+    if (message.type === "pscm:gantt:escape-handled") {
+      noteEscape(true);
+      return;
+    }
+    if (message.type === "pscm:gantt:escape-release") {
+      noteEscape(false);
+      return;
+    }
     if (message.type === "pscm:gantt:board-action-response") {
       const pending = boardAction.current;
       if (!pending || pending.requestId !== message.requestId) return;
@@ -1301,6 +1344,24 @@ function ScopedGanttModule({
       action();
     }
   };
+  useEffect(() => {
+    setEscapeHandler(() => {
+      if (!escapeBlocked.current || readyProject.current !== projectId)
+        return false;
+      post("pscm:gantt:escape");
+      return true;
+    });
+    const releaseEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      noteEscape(false);
+      if (readyProject.current === projectId) post("pscm:gantt:escape-release");
+    };
+    window.addEventListener("keyup", releaseEscape, true);
+    return () => {
+      window.removeEventListener("keyup", releaseEscape, true);
+      setEscapeHandler(null);
+    };
+  }, [setEscapeHandler, noteEscape, projectId]);
   useEffect(() => {
     const listener = (event: MessageEvent) => currentBridge.current(event);
     const confirmUnsaved = (event: BeforeUnloadEvent) => {

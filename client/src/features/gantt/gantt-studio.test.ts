@@ -117,20 +117,20 @@ function createEmbeddedStudio(projectId: number) {
   };
   vm.runInContext(
     `const E = GanttEngine, P = GanttProgress;
-     const I = {t: value => value, language: 'en', setLanguage() {}, applyStatic() {}};
+     const I = {t: value => value, field: (item, key) => item[key], language: 'en', setLanguage() {}, applyStatic() {}};
+     const todayInRiyadh = () => '2026-11-22';
      const embedded = true, channel = 'test-channel';
      let state, view = 'gantt', dayWidth = 32, viewStart = null, lastRange = null;
-     let drag = null, linkDrag = null, history = [], future = [], selected = new Set();
+     let drag = null, linkDrag = null, history = [], future = [], selected = new Set(), collapsed = new Set();
      let revision = 0, savedRevision = 0, serverVersion = 0;
      let calendarManaged = false, calendarRevision = 0, readOnly = false;
      const calendarVersionOf = message => message.calendarRevision ?? 0;
      let paletteLevels = [], paletteOverrides = new Map(), paletteSnapshot = '';
-     const visibleTasks = project => project.tasks;
      ${sourceBetween("  let portfolio=null", "  let showCritical")}
      ${sourceBetween("  function sendToHost(", "  function setSaveStatus(")}
      ${sourceBetween("  function save()", "  function record(")}
      ${sourceBetween("  const studioViews=", "  function updateSummary(")}
-     ${sourceBetween("  function visiblePeerTasks(", "  function range(")}
+     ${sourceBetween("  function todayTaskMatches(", "  function range(")}
      ${sourceBetween("  let deferredReceipt=", "  // Delegated handlers")}`,
     context
   );
@@ -326,6 +326,122 @@ describe("embedded Gantt Studio", () => {
     ]);
   });
 
+  it("filters today's unfinished work across projects while retaining ancestors and excluding cancelled branches", () => {
+    const studio = createEmbeddedStudio(101);
+    const project = studioProjectState(101, 1001);
+    const base = project.tasks[0];
+    project.tasks = [
+      { ...base, id: "root", start: "2026-11-16", duration: 10 },
+      ...[
+        { id: "start", start: "2026-11-22", duration: 2 },
+        { id: "end", start: "2026-11-19", duration: 2 },
+        { id: "ongoing", start: "2026-11-19", duration: 3 },
+        { id: "late", start: "2026-11-18" },
+        { id: "future", start: "2026-11-24" },
+        { id: "done", start: "2026-11-22", executionStatus: "completed" },
+        { id: "cancelled", start: "2026-11-22", pmStatusCode: "cancelled" },
+        { id: "cancelled-parent", start: "2026-11-22", pmStatusCode: "cancelled" },
+        { id: "cancelled-child", start: "2026-11-22", parentId: "cancelled-parent" },
+      ].map(task => ({ ...base, parentId: "root", ...task })),
+    ] as typeof project.tasks;
+    studio.receive({ type: "pscm:gantt:load", state: project, version: 5, sequence: 0 });
+    studio.receive({
+      type: "pscm:gantt:portfolio",
+      portfolio: { projects: [
+        portfolioProjects[0],
+        { ...portfolioProjects[1], tasks: [
+          { id: 2000, parentId: null, name: "Peer parent", startDate: "2026-11-16", endDate: "2026-11-28" },
+          { id: 2001, parentId: 2000, name: "Due today", startDate: "2026-11-22", endDate: "2026-11-22" },
+          { id: 2002, parentId: 2000, name: "Done", statusCode: "done", startDate: "2026-11-22", endDate: "2026-11-22" },
+          { id: 2003, parentId: 2000, name: "Future", startDate: "2026-11-25", endDate: "2026-11-25" },
+        ] },
+        { ...portfolioProjects[1], id: 303, name: "Future-only project", tasks: [
+          { id: 3001, name: "Future only", startDate: "2026-11-25", endDate: "2026-11-25" },
+        ] },
+      ], links: [] },
+    });
+    const before = studio.execute("JSON.stringify(state)");
+    studio.execute("todayOnly=true; collapsedProjects.add(101); collapsedProjects.add(202); collapsedPeerTasks.add(2000); analysis=E.analyze(state)");
+    expect(studio.execute("portfolioRows(state,analysis).map(row=>row.task?.id??row.project.id)")).toEqual([
+      101, "root", "start", "end", "ongoing", "late", 202, 2000, 2001,
+    ]);
+    expect(studio.execute("[...todayTaskMatches(state.tasks,analysis.cal)]")).toEqual([
+      ["start", { kind: "start" }],
+      ["end", { kind: "end" }],
+      ["ongoing", { kind: "ongoing" }],
+      ["late", { kind: "overdue", days: 2 }],
+    ]);
+    expect(studio.execute("JSON.stringify(state)")).toBe(before);
+    expect(studio.messages).toEqual([]);
+    studio.execute("todayOnly=false; collapsedProjects.clear(); collapsedPeerTasks.clear()");
+    expect(studio.execute("portfolioRows(state,analysis).some(row=>row.task?.id==='future')")).toBe(true);
+  });
+
+  it("uses workdays for overdue badges and suppresses scheduled work on a holiday", () => {
+    const studio = createEmbeddedStudio(101);
+    studio.receive({ type: "pscm:gantt:load", state: studioProjectState(101, 1001), version: 1, sequence: 0 });
+    expect(studio.execute(`
+      const cal=new E.Calendar(state.project.start,{...state.calendar,holidays:[{date:'2026-11-22',name:'Holiday'}]});
+      [...todayTaskMatches([
+        {id:1,startDay:E.epoch('2026-11-19'),endDay:E.epoch('2026-11-19')},
+        {id:2,startDay:E.epoch('2026-11-19'),endDay:E.epoch('2026-11-23')}
+      ],cal,true)]
+    `)).toEqual([[1, { kind: "overdue", days: 0 }]]);
+  });
+
+  it("restores the viewport after today's work without changing project data or collapse choices", () => {
+    const scroll = { clientWidth: 1440, scrollLeft: 128, scrollTop: 168 };
+    const context = vm.createContext({
+      $: (id: string) => id === "ganttScroll" ? scroll : { value: "32" },
+      document: { querySelector: () => ({ offsetWidth: 340 }) },
+      cancelDrag() {}, cancelLinkDrag() {}, renderChart() {}, updateSelection() {}, reportEscapeState() {},
+    });
+    vm.runInContext(engine, context);
+    vm.runInContext(`
+      const E=GanttEngine,todayInRiyadh=()=>'2026-11-22';
+      let state=GanttSelfTests.base(),todayOnly=false,todayViewport=null,dayWidth=32,viewStart=null;
+      const before=JSON.stringify(state);
+      ${sourceBetween("  function setTodayOnly(", "  let escapeBlocked=")}
+      setTodayOnly(true);
+    `, context);
+    expect(vm.runInContext("todayOnly", context)).toBe(true);
+    expect(scroll.scrollLeft).toBe(0);
+    expect(scroll.scrollTop).toBe(0);
+    vm.runInContext("dayWidth=64; viewStart=0; setTodayOnly(false)", context);
+    expect(vm.runInContext("[todayOnly,viewStart,dayWidth,todayViewport]", context)).toEqual([false, null, 32, null]);
+    expect(scroll).toMatchObject({ scrollLeft: 128, scrollTop: 168 });
+    expect(vm.runInContext("JSON.stringify(state)===before", context)).toBe(true);
+  });
+
+  it("closes details before today's filter and review, respecting a cancelled dirty-form close", () => {
+    const messages: string[] = [];
+    let open = true, allowClose = false;
+    const dialog = { dispatchEvent: () => allowClose, close: () => { open = false; } };
+    const context = vm.createContext({
+      Event,
+      document: { querySelector: () => open ? dialog : null, querySelectorAll: () => open ? [dialog] : [] },
+      setTodayOnly: () => vm.runInContext("todayOnly=false", context),
+      reportEscapeState() {},
+      sendToHost: (type: string) => messages.push(type),
+    });
+    vm.runInContext(`
+      let todayOnly=true,drag=null,linkDrag=null,reviewExpanded=true,boardEscapeHeld=false;
+      ${sourceBetween("  function consumeBoardEscape(", "  function visibleTasks(")}
+      handleBoardEscape();
+    `, context);
+    expect(open).toBe(true);
+    expect(vm.runInContext("todayOnly", context)).toBe(true);
+    allowClose = true;
+    vm.runInContext("handleBoardEscape()", context);
+    expect(open).toBe(false);
+    expect(vm.runInContext("todayOnly", context)).toBe(true);
+    vm.runInContext("handleBoardEscape()", context);
+    expect(vm.runInContext("todayOnly", context)).toBe(false);
+    expect(messages).not.toContain("pscm:gantt:review-request");
+    vm.runInContext("handleBoardEscape()", context);
+    expect(messages.at(-1)).toBe("pscm:gantt:review-request");
+  });
+
   it("assigns a localized holiday name as a literal input value", () => {
     const rows = new ElementStub();
     const context = vm.createContext({
@@ -470,6 +586,30 @@ describe("embedded Gantt Studio", () => {
     vm.runInContext("zoom(100)", context);
     expect(scroll.scrollLeft).toBe(360);
     expect(vm.runInContext("dayWidth", context)).toBe(72);
+  });
+
+  it("uses the Riyadh day for the marker and refreshes it without saving a task", () => {
+    const context = vm.createContext({ Intl });
+    vm.runInContext(
+      sourceBetween("  const riyadhCalendar=", "  const clone = E.clone;"),
+      context
+    );
+    expect(vm.runInContext("todayInRiyadh(new Date('2026-11-22T20:59:59Z'))", context)).toBe("2026-11-22");
+    expect(vm.runInContext("todayInRiyadh(new Date('2026-11-22T21:00:00Z'))", context)).toBe("2026-11-23");
+    let rendered = 0;
+    const refreshContext = vm.createContext({ renderChart: () => rendered++ });
+    vm.runInContext(
+      `let state={},view='gantt',drag=null,linkDrag=null,renderedToday='2026-11-22';
+       const todayInRiyadh=()=>'2026-11-23';
+       ${sourceBetween("  function refreshTodayLine(", "  setInterval(refreshTodayLine,")}
+       refreshTodayLine();`,
+      refreshContext
+    );
+    expect(rendered).toBe(1);
+    vm.runInContext("renderedToday='2026-11-23'; refreshTodayLine()", refreshContext);
+    expect(rendered).toBe(1);
+    vm.runInContext("renderedToday='2026-11-22'; drag={}; refreshTodayLine()", refreshContext);
+    expect(rendered).toBe(1);
   });
 
   it("loads project-unit field lengths and keeps the standalone engine checks green", () => {

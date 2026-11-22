@@ -21,6 +21,11 @@
 .linking .port.port-blocked,.linking .port.port-rejected{cursor:not-allowed!important}
 .linking .dependency-svg .hit-link{pointer-events:none}
 .gantt-grid{width:max-content}
+.tracking-line{width:0;border-left:1px solid #dc2626;z-index:8;pointer-events:none}
+.tracking-line.tracking-head{z-index:1}
+.tracking-label{top:2px;font-size:10px;color:#fff;background:#dc2626;border-radius:3px;pointer-events:none}
+.task-details .today-task-badge{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;padding:1px 4px;border-radius:3px;background:#e6f5f1;color:#126657;font-size:9px;line-height:1.4;font-weight:600}
+.task-details .today-task-badge.is-overdue{background:#fff0ed;color:#a52b26}
 .time-head{z-index:20}.task-sidebar{z-index:22}
 .drag-hint{max-width:min(700px,calc(100vw - 28px));text-align:center;line-height:1.9;direction:rtl}
 .drag-hint.invalid{background:#73383e}
@@ -593,6 +598,14 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     "احفظ تغييرات المهمة أولًا، ثم افتح علاقاتها مع المشاريع الأخرى.":"احفظ تغييرات المهمة أولًا، ثم افتح علاقاتها مع المشاريع الأخرى.",
   });
   Object.assign(catalogs.en,{
+    "اليوم":"Today",
+    "أعمال اليوم":"Today's work",
+    "تبدأ وتنتهي اليوم":"Starts and finishes today",
+    "تبدأ اليوم":"Starts today",
+    "تنتهي اليوم":"Finishes today",
+    "مستمرة اليوم":"Ongoing today",
+    "تجاوزت موعدها":"Overdue",
+    "متأخرة {0} أيام عمل":"Overdue by {0} workdays",
     "{0} من {1} مهمة · {2} يومًا ظاهرًا":"{0} of {1} tasks · {2} days visible",
     "استعراض":"Full screen",
     "جاهز للصرف":"Ready to issue",
@@ -619,6 +632,14 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     "الحد الأقصى 3660 يوم إجازة.":"At most 3,660 holiday dates are allowed.",
   });
   Object.assign(catalogs.ur,{
+    "اليوم":"آج",
+    "أعمال اليوم":"آج کے کام",
+    "تبدأ وتنتهي اليوم":"آج شروع اور مکمل ہوگا",
+    "تبدأ اليوم":"آج شروع ہوگا",
+    "تنتهي اليوم":"آج مکمل ہوگا",
+    "مستمرة اليوم":"آج جاری ہے",
+    "تجاوزت موعدها":"مقررہ وقت گزر گیا",
+    "متأخرة {0} أيام عمل":"{0} کام کے دن تاخیر",
     "استعراض":"مکمل اسکرین",
     "جاهز للصرف":"اجرا کے لیے تیار",
     "جاهز":"تیار",
@@ -1387,13 +1408,22 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     dateLabels.set(key,label);
     return label;
   }
-  const compactDate = date => date.slice(8,10) + '/' + date.slice(5,7);
+  const riyadhCalendar=new Intl.DateTimeFormat('en-CA',{
+    timeZone:'Asia/Riyadh',calendar:'gregory',numberingSystem:'latn',
+    year:'numeric',month:'2-digit',day:'2-digit'
+  });
+  function todayInRiyadh(now=new Date()) {
+    const parts=riyadhCalendar.formatToParts(now);
+    const part=type=>parts.find(item=>item.type===type).value;
+    return part('year')+'-'+part('month')+'-'+part('day');
+  }
   const clone = E.clone;
   let state, analysis, view = 'gantt', dayWidth = 32, viewStart = null, rangeDays = 80;
   let calendarManaged=false, calendarRevision=0;
   const calendarVersionOf=message=>Number.isSafeInteger(message?.calendarRevision)&&message.calendarRevision>=0?message.calendarRevision:0;
   let paletteLevels=[], paletteOverrides=new Map(), paletteSnapshot='';
   let portfolio=null, deferredPortfolio=null;
+  let todayOnly=false, todayViewport=null;
   let reviewExpanded=false, reviewEscape=false;
   let reviewScrollBefore=null, reviewScrollExpanded=null;
   const collapsedProjects=new Set(), collapsedPeerTasks=new Set();
@@ -1437,7 +1467,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   function portfolioViewport() {
     const scroll=$('ganttScroll');
     return {start:lastRange?.start??viewStart,dayWidth,scrollLeft:scroll.scrollLeft,scrollTop:scroll.scrollTop,
-      collapsedProjects:[...collapsedProjects],collapsedPeerTasks:[...collapsedPeerTasks]};
+      collapsedProjects:[...collapsedProjects],collapsedPeerTasks:[...collapsedPeerTasks],
+      ...(todayOnly?{todayOnly:true,todayViewport}:{})};
   }
   function restorePortfolioViewport(viewport) {
     if(!viewport)return;
@@ -1445,6 +1476,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     if(Number.isFinite(viewport.dayWidth))dayWidth=Math.max(8,Math.min(72,viewport.dayWidth));
     if(Array.isArray(viewport.collapsedProjects))for(const id of viewport.collapsedProjects)if(positiveId(id))collapsedProjects.add(id);
     if(Array.isArray(viewport.collapsedPeerTasks))for(const id of viewport.collapsedPeerTasks)if(positiveId(id))collapsedPeerTasks.add(id);
+    todayOnly=viewport.todayOnly===true;
+    todayViewport=todayOnly?viewport.todayViewport??null:null;
     $('scaleSelect').value=dayWidth>=26?'32':dayWidth>=14?'18':'8';
   }
   function setReviewExpanded(expanded) {
@@ -1501,7 +1534,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   let detailsHandler = null, taskSnapshot = null;
   let editingTask = null, editingLink = null, toastTimer, persistenceAvailable = true, startupError = '';
   let lastGeometry = new Map(), lastRange = null, lastChartState = null, suppressChartClickUntil = 0;
-  let renderedTimeline='', renderedSidebar='';
+  let renderedTimeline='', renderedSidebar='', renderedToday='';
   let revision=0,savedRevision=0,serverVersion=0,readOnly=false;
   let taskMaterialSummaries=new Map();
   let saveStatusKey=embedded?'بانتظار تحميل المشروع…':'محفوظ محليًا';
@@ -1655,11 +1688,94 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     } else if (view === 'analysis') renderAnalysis();
     else renderActivity();
   }
+  function todayTaskMatches(tasks,cal,peer=false) {
+    const today=todayInRiyadh(),day=E.epoch(today),byId=new Map(tasks.map(task=>[task.id,task]));
+    const live=new Set(),parents=new Set(),matches=new Map();
+    for(const task of tasks) {
+      let current=task,cancelled=false;
+      const visited=new Set();
+      while(current&&!visited.has(current.id)) {
+        visited.add(current.id);
+        if((peer?current.statusCode:current.pmStatusCode)==='cancelled'){cancelled=true;break;}
+        current=byId.get(current.parentId);
+      }
+      if(!cancelled)live.add(task.id);
+    }
+    for(const task of tasks)if(live.has(task.id)&&live.has(task.parentId))parents.add(task.parentId);
+    for(const task of tasks) {
+      if(!live.has(task.id)||parents.has(task.id))continue;
+      const done=peer?['done','completed'].includes(task.statusCode):task.progress===100||task.executionStatus==='completed';
+      if(done)continue;
+      const start=peer?task.startDay:E.epoch(task.start),end=peer?task.endDay:E.epoch(cal.finish(task.start,task.duration));
+      if(end<day)matches.set(task.id,{kind:'overdue',days:Math.max(0,cal.index(today,-1)-cal.index(E.iso(end),-1))});
+      else if(start<=day&&day<=end&&cal.isWorkday(today))matches.set(task.id,{kind:start===day&&end===day?'both':start===day?'start':end===day?'end':'ongoing'});
+    }
+    return matches;
+  }
+  function todayTaskBadge(match) {
+    if(!match)return '';
+    const label=match.kind==='overdue'?(match.days?I.t('متأخرة {0} أيام عمل',[match.days]):I.t('تجاوزت موعدها')):
+      I.t({both:'تبدأ وتنتهي اليوم',start:'تبدأ اليوم',end:'تنتهي اليوم',ongoing:'مستمرة اليوم'}[match.kind]);
+    return '<span class="today-task-badge'+(match.kind==='overdue'?' is-overdue':'')+'">'+esc(label)+'</span>';
+  }
+  function setTodayOnly(enabled) {
+    if(todayOnly===enabled||!state)return;
+    cancelDrag();cancelLinkDrag();
+    const scroll=$('ganttScroll');
+    if(enabled) {
+      todayViewport={start:viewStart,dayWidth,scrollLeft:scroll.scrollLeft,scrollTop:scroll.scrollTop};
+      const side=document.querySelector('.task-sidebar')?.offsetWidth||340;
+      const days=Math.max(1,Math.floor((scroll.clientWidth-side)/dayWidth));
+      viewStart=E.epoch(todayInRiyadh())-Math.floor(days/2);
+    }
+    todayOnly=enabled;
+    if(!enabled&&todayViewport) {
+      viewStart=todayViewport.start;dayWidth=todayViewport.dayWidth;
+      $('scaleSelect').value=dayWidth>=26?'32':dayWidth>=14?'18':'8';
+    }
+    renderChart();updateSelection();
+    scroll.scrollLeft=enabled?0:todayViewport?.scrollLeft??scroll.scrollLeft;
+    scroll.scrollTop=enabled?0:todayViewport?.scrollTop??scroll.scrollTop;
+    if(!enabled)todayViewport=null;
+    reportEscapeState();
+  }
+  let escapeBlocked=null,boardEscapeHeld=false;
+  function reportEscapeState() {
+    const blocked=Boolean(todayOnly||document.querySelector('dialog[open]'));
+    if(blocked===escapeBlocked)return;
+    escapeBlocked=blocked;
+    sendToHost('pscm:gantt:escape-state',{blocked});
+  }
+  function consumeBoardEscape() {
+    const dialog=[...document.querySelectorAll('dialog[open]')].at(-1);
+    if(dialog) {
+      const cancel=new Event('cancel',{cancelable:true});
+      if(dialog.dispatchEvent(cancel))dialog.close();
+      reportEscapeState();
+      return true;
+    }
+    if(drag||linkDrag){cancelDrag();cancelLinkDrag();return true;}
+    if(todayOnly){setTodayOnly(false);return true;}
+    return false;
+  }
+  function handleBoardEscape() {
+    if(todayOnly||drag||linkDrag||document.querySelector('dialog[open]')) {
+      sendToHost('pscm:gantt:escape-handled');
+      consumeBoardEscape();
+      boardEscapeHeld=true;
+      return true;
+    }
+    if(reviewExpanded) {
+      sendToHost('pscm:gantt:review-request',{expanded:false});
+      return true;
+    }
+    return false;
+  }
   function visibleTasks(s, a) {
     const q = $('searchInput').value.trim().toLowerCase(), phase = $('phaseFilter').value, status = $('statusFilter').value;
-    const ordered=P.ordered(s), byId=new Map(s.tasks.map(t=>[t.id,t]));
-    const matches=t=>(!q || [t.name,t.owner,t.id,t.phase,I.field(t,'name'),I.field(t,'owner'),I.field(t,'phase'),t.translations?.ar?.name||'',t.translations?.en?.name||''].some(v=>String(v).toLowerCase().includes(q))) && (!phase || t.phase===phase) && (!status || (status==='critical' && a.metrics.get(t.id).critical) || (status==='done' && t.progress===100) || (status==='active' && t.status==='in_progress') || (status==='todo' && t.status==='not_started') || (status==='late' && a.overdue.some(x=>x.id===t.id)));
-    const filtering=Boolean(q||phase||status), allowed=new Set();
+    const ordered=P.ordered(s), byId=new Map(s.tasks.map(t=>[t.id,t])),todayMatches=todayOnly?todayTaskMatches(s.tasks,a.cal):null;
+    const matches=t=>(!todayMatches||todayMatches.has(t.id)) && (!q || [t.name,t.owner,t.id,t.phase,I.field(t,'name'),I.field(t,'owner'),I.field(t,'phase'),t.translations?.ar?.name||'',t.translations?.en?.name||''].some(v=>String(v).toLowerCase().includes(q))) && (!phase || t.phase===phase) && (!status || (status==='critical' && a.metrics.get(t.id).critical) || (status==='done' && t.progress===100) || (status==='active' && t.status==='in_progress') || (status==='todo' && t.status==='not_started') || (status==='late' && a.overdue.some(x=>x.id===t.id)));
+    const filtering=Boolean(todayOnly||q||phase||status), allowed=new Set();
     if(filtering) {
       for(const task of ordered.filter(matches)) {
         let current=task;
@@ -1674,9 +1790,10 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     };
     return ordered.filter(t=>allowed.has(t.id)&&!hiddenByCollapsed(t));
   }
-  function visiblePeerTasks(project,s) {
+  function visiblePeerTasks(project,s,a=analysis) {
     const q=$('searchInput').value.trim().toLowerCase(),phase=$('phaseFilter').value,status=$('statusFilter').value;
-    const filter=Boolean(q||phase||status),statusDay=portfolioDay(s.project.statusDate);
+    const filter=Boolean(todayOnly||q||phase||status),statusDay=portfolioDay(s.project.statusDate);
+    const todayMatches=todayOnly?todayTaskMatches(project.tasks,a.cal,true):null;
     const byId=new Map(project.tasks.map(task=>[task.id,task])),children=new Map();
     for(const task of project.tasks) {
       const parent=byId.has(task.parentId)?task.parentId:null;
@@ -1688,7 +1805,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       if(visited.has(task.id))return;
       visited.add(task.id);
       const childTasks=children.get(task.id)??[];
-      ordered.push({task,depth,hasChildren:childTasks.length>0});
+      ordered.push({task,depth,hasChildren:childTasks.length>0,todayWork:todayMatches?.get(task.id)});
       if(filter||!collapsedPeerTasks.has(task.id))for(const child of childTasks)walk(child,depth+1);
     }
     for(const task of children.get(null)??[])walk(task,0);
@@ -1699,7 +1816,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       const matchesStatus=!status||(status==='done'&&done)||(status==='active'&&active)||
         (status==='todo'&&!done&&!active)||(status==='late'&&!done&&statusDay!==null&&task.endDay<statusDay);
       if((q&&![task.name,task.owner,task.id,taskPhase].some(value=>String(value??'').toLowerCase().includes(q)))||
-        (phase&&phase!==taskPhase)||!matchesStatus)continue;
+        (phase&&phase!==taskPhase)||!matchesStatus||(todayMatches&&!todayMatches.has(task.id)))continue;
       let current=task;
       while(current&&!allowed.has(current.id)) {
         allowed.add(current.id);
@@ -1711,11 +1828,11 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   function portfolioRows(s,a) {
     const activeRows=visibleTasks(s,a).map(task=>({kind:'active',task}));
     if(!portfolio?.projects.length||portfolio.projects.length===1&&portfolio.projects[0].id===projectId)return activeRows;
-    const rows=portfolio.projects.flatMap(project=>[
-      {kind:'project',project},
-      ...(collapsedProjects.has(project.id)?[]:project.id===projectId?activeRows:
-        visiblePeerTasks(project,s).map(row=>({kind:'peer',project,...row})))
-    ]);
+    const rows=portfolio.projects.flatMap(project=>{
+      const tasks=project.id===projectId?activeRows:visiblePeerTasks(project,s,a).map(row=>({kind:'peer',project,...row}));
+      if(todayOnly&&!tasks.length)return [];
+      return [{kind:'project',project},...(!todayOnly&&collapsedProjects.has(project.id)?[]:tasks)];
+    });
     return portfolio.projects.some(project=>project.id===projectId)?rows:[...activeRows,...rows];
   }
   function range(s, a, taskDates) {
@@ -1883,7 +2000,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       (taskId?' data-portfolio-task="'+taskId+'"':'')+' style="--portfolio-color:'+color+'" title="'+title+'" aria-label="'+title+'"><i aria-hidden="true"></i></button>';
   }
   function portfolioGroupMarkup(project,r) {
-    const open=!collapsedProjects.has(project.id),current=project.id===projectId;
+    const open=todayOnly||!collapsedProjects.has(project.id),current=project.id===projectId;
     const label=esc(open?portfolioCopy('طي المشروع','Collapse project','منصوبہ سمیٹیں'):portfolioCopy('توسيع المشروع','Expand project','منصوبہ پھیلائیں'));
     const openLabel=esc(portfolioCopy('العمل على المشروع','Work on project','منصوبے پر کام کریں'));
     const name='<b>'+esc(project.name)+'</b><small><bdi>'+esc(project.number)+'</bdi></small>';
@@ -1892,7 +2009,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       '<button type="button" class="portfolio-project-name" data-portfolio-focus="'+project.id+'" title="'+openLabel+' · '+datesLabel+'">'+name+'</button>';
     const marker='<span class="portfolio-project-mark" style="--portfolio-color:'+project.color+'" aria-hidden="true"></span>';
     const names='<div class="task-row portfolio-group'+(current?' is-current':'')+'"><button type="button" class="tree-toggle" data-portfolio-collapse="'+project.id+
-      '" aria-expanded="'+open+'" aria-label="'+label+'">'+(open?'−':'+')+'</button>'+marker+title+portfolioColorButton(project,null,project.color)+'</div>';
+      '" aria-expanded="'+open+'" aria-label="'+label+'"'+(todayOnly?' disabled':'')+'>'+(open?'−':'+')+'</button>'+marker+title+portfolioColorButton(project,null,project.color)+'</div>';
     let timeline='<div class="time-lane portfolio-group'+(current?' is-current':'')+'">';
     if(project.startDay!==null&&project.endDay!==null&&project.endDay>=project.startDay) {
       const left=(project.startDay-r.start)*dayWidth,width=(project.endDay-project.startDay+1)*dayWidth;
@@ -1901,18 +2018,18 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     return {names,timeline:timeline+actualTrackMarkup(project,r)+'</div>'};
   }
   function portfolioPeerMarkup(row,index,r,positions) {
-    const {project,task,depth,hasChildren}=row,open=!collapsedPeerTasks.has(task.id);
+    const {project,task,depth,hasChildren}=row,open=todayOnly||!collapsedPeerTasks.has(task.id);
     const left=(task.startDay-r.start)*dayWidth,right=task.isMilestone?left:(task.endDay-r.start+1)*dayWidth;
     const status=task.statusCode==='done'||task.statusCode==='completed'?'done':task.statusCode==='working'||task.statusCode==='in_progress'?'active-task':'';
     const predecessor=portfolio?.predecessorTaskId===task.id?' portfolio-predecessor':'';
     const taskAttrs=' data-portfolio-focus="'+project.id+'" data-portfolio-task="'+task.id+'"';
     positions.set(task.id,{left,right,y:index*56+26,duration:task.isMilestone?0:1,projectId:project.id});
     const toggle=hasChildren?'<button type="button" class="tree-toggle" data-portfolio-tree="'+task.id+
-      '" aria-expanded="'+open+'" aria-label="'+esc(portfolioCopy('تفرعات المهمة','Task subtasks','ذیلی کام'))+'">'+(open?'−':'+')+'</button>':'<span class="tree-toggle-spacer" aria-hidden="true"></span>';
+      '" aria-expanded="'+open+'" aria-label="'+esc(portfolioCopy('تفرعات المهمة','Task subtasks','ذیلی کام'))+'"'+(todayOnly?' disabled':'')+'>'+(open?'−':'+')+'</button>':'<span class="tree-toggle-spacer" aria-hidden="true"></span>';
     const title=esc(task.name+' · '+executionTimelineLabel(task.dates));
     const names='<div class="task-row portfolio-peer-row'+(hasChildren?' is-parent':'')+'" data-depth="'+depth+'"><span class="tree-indent" style="width:'+
       Math.min(depth,5)*18+'px" aria-hidden="true"></span>'+toggle+'<div class="task-info"><button type="button" class="task-details"'+taskAttrs+
-      ' title="'+title+'"><b>'+esc(task.name)+'</b>'+(task.owner?'<small>'+esc(task.owner)+'</small>':'')+'</button></div>'+
+      ' title="'+title+'"><b>'+esc(task.name)+'</b>'+todayTaskBadge(row.todayWork)+(task.owner?'<small>'+esc(task.owner)+'</small>':'')+'</button></div>'+
       portfolioColorButton(project,task.id,task.color)+'</div>';
     let timeline='<div class="time-lane">';
     if(right>=0&&left<=r.width) {
@@ -1926,10 +2043,17 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   }
   function renderChart(s=state,a=analysis) {
     if(linkDrag)cancelLinkDrag();
+    const todayButton=$('todayWorkBtn');
+    todayButton.classList.toggle('active',todayOnly);
+    todayButton.setAttribute('aria-pressed',String(todayOnly));
+    todayButton.textContent=I.t('أعمال اليوم');
     const scroll=$('ganttScroll'), oldTop=scroll.scrollTop, oldLeft=scroll.scrollLeft;
     const rows=portfolioRows(s,a), visible=rows.filter(row=>row.kind==='active'), visibleCount=rows.filter(row=>row.kind!=='project').length;
     const taskDates=new Map(s.tasks.map(task=>[task.id,activeTaskTimelineDates(task,a.cal)]));
+    const todayMatches=todayOnly?todayTaskMatches(s.tasks,a.cal):new Map();
     const r=range(s,a,taskDates), tree=P.hierarchy(s.tasks), positions=new Map();
+    const today=todayInRiyadh(),todayX=(E.epoch(today)-r.start+.5)*dayWidth;
+    const todayVisible=todayX>=0&&todayX<r.width;
     const activeProject=portfolio?.projects.find(project=>project.id===projectId);
     const projectDates=$('projectTimelineDates');
     const activeDates=portfolio?.activeDates??activeProject;
@@ -1957,7 +2081,12 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       timeline+=`<div class="day-cell ${off?'off':''} ${holiday?'holiday':''}" style="width:${dayWidth}px" title="${esc(fmt(date)+(holiday?' · '+I.field(holiday,'name'):''))}">${dayWidth>=15||i%7===0?date.slice(8).replace(/^0/,''):''}${shortWeekdays?`<small>${shortWeekdays[E.weekday(n)]}</small>`:''}</div>`;
     }
     const height=Math.max(rows.length*56,rows.length?0:180);
-    timeline+=`</div></div><div class="time-body" style="height:${height}px;overflow:hidden"><div class="grid-lines"></div>`;
+    timeline+='</div>';
+    if(todayVisible) {
+      const labelLeft=Math.max(4,Math.min(todayX+6,r.width-160))-todayX;
+      timeline+='<div class="tracking-line tracking-head" style="left:'+todayX+'px"><span class="tracking-label" style="left:'+labelLeft+'px">'+esc(I.t('اليوم')+' '+fmt(today))+'</span></div>';
+    }
+    timeline+=`</div><div class="time-body" style="height:${height}px;overflow:hidden"><div class="grid-lines"></div>`;
     for(let i=0;i<r.count;i++) {
       const n=r.start+i;if(!a.cal.isWorkday(n)) timeline+=`<div class="off-stripe ${holidays.has(E.iso(n))?'holiday':''}" style="left:${i*dayWidth}px;width:${dayWidth}px"></div>`;
     }
@@ -1978,9 +2107,9 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       const critical=showCritical&&m.critical, status=t.status==='completed'?'done':t.status==='in_progress'?'active-task':'',sel=selected.has(t.id);
       const dates=taskDates.get(t.id);
       const title=I.t("{0} · {1}\n{2} ← {3}\n{4} يوم عمل · إنجاز {5}% · سماح {6} يوم", [t.id, I.field(t,'name'), fmt(t.start), fmt(a.cal.finish(t.start,t.duration)), t.duration, t.progress, m.totalFloat])+'\n'+executionTimelineLabel(dates);
-      const depth=depthOf(t), hasChildren=(tree.children.get(t.id)||[]).length>0, expanded=!collapsed.has(t.id);
+      const depth=depthOf(t), hasChildren=(tree.children.get(t.id)||[]).length>0, expanded=todayOnly||!collapsed.has(t.id);
       const toggleLabel=I.t(expanded?'طي تفرعات ':'فتح تفرعات ');
-      const treeControl=hasChildren?`<button type="button" class="tree-toggle tree-node-anchor" data-tree-toggle="${t.id}" aria-expanded="${expanded}" aria-label="${esc(toggleLabel+I.field(t,'name'))}" title="${esc(toggleLabel+I.field(t,'name'))}">${expanded?'−':'+'}</button>`:'<span class="tree-toggle-spacer tree-node-anchor" aria-hidden="true"></span>';
+      const treeControl=hasChildren?`<button type="button" class="tree-toggle tree-node-anchor" data-tree-toggle="${t.id}" aria-expanded="${expanded}" aria-label="${esc(toggleLabel+I.field(t,'name'))}" title="${esc(toggleLabel+I.field(t,'name'))}" ${todayOnly?'disabled':''}>${expanded?'−':'+'}</button>`:'<span class="tree-toggle-spacer tree-node-anchor" aria-hidden="true"></span>';
       const requisitionLabel=I.t('طلب احتياج');
       const requisitionButton=allowMaterialRequisitions&&Number.isSafeInteger(t.pmTaskId)&&t.pmTaskId>0?`<button type="button" class="requisition-add" data-requisition="${t.pmTaskId}" title="${esc(requisitionLabel)}" aria-label="${esc(requisitionLabel+' — '+I.field(t,'name'))}">+</button>`:'';
       const palette=paletteOverrides.get(t.pmTaskId)??paletteLevels[Math.min(4,depth)];
@@ -1988,7 +2117,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       const predecessor=persistedId&&portfolio?.predecessorTaskId===persistedId?' portfolio-predecessor':'';
       const materialsBadge=embedded&&Number.isSafeInteger(t.pmTaskId)&&t.pmTaskId>0
         ?`<button type="button" class="task-materials-badge" data-task-materials="${t.pmTaskId}" data-task-name="${esc(I.field(t,'name'))}" aria-haspopup="dialog" hidden><bdi></bdi><span class="task-materials-long"></span><span class="task-materials-short"></span></button>`:'';
-      names+=`<div class="task-row ${sel?'selected':''} ${critical?'critical-row':''} ${hasChildren?'is-parent':''} ${hasChildren&&expanded?'tree-open':''}" data-row="${t.id}" data-parent-id="${t.parentId||''}" data-depth="${depth}"><input type="checkbox" data-select="${t.id}" ${sel?'checked':''} aria-label="${esc(I.t('تحديد ')+I.field(t,'name'))}"><span class="task-code">${esc(t.id)}</span><span class="tree-indent" style="width:${depth*18}px" aria-hidden="true"></span>${treeControl}<div class="task-info"><button class="task-details" data-edit="${t.id}" title="${esc(I.field(t,'name')+' · '+I.field(t,'phase'))}"><b>${esc(I.field(t,'name'))}</b><small>${esc(I.field(t,'owner')||I.t("بلا مسؤول"))} · ${t.progress}%</small></button>${materialsBadge}</div><span class="task-duration">${t.duration||'◆'}<small>${t.duration?I.t("يوم"):I.t("معلم")}</small></span>${requisitionButton}${colorButton}<button class="row-more" data-edit="${t.id}" aria-label="${esc(I.t('تعديل ')+I.field(t,'name'))}">⋮</button></div>`;
+      names+=`<div class="task-row ${sel?'selected':''} ${critical?'critical-row':''} ${hasChildren?'is-parent':''} ${hasChildren&&expanded?'tree-open':''}" data-row="${t.id}" data-parent-id="${t.parentId||''}" data-depth="${depth}"><input type="checkbox" data-select="${t.id}" ${sel?'checked':''} aria-label="${esc(I.t('تحديد ')+I.field(t,'name'))}"><span class="task-code">${esc(t.id)}</span><span class="tree-indent" style="width:${depth*18}px" aria-hidden="true"></span>${treeControl}<div class="task-info"><button class="task-details" data-edit="${t.id}" title="${esc(I.field(t,'name')+' · '+I.field(t,'phase'))}"><b>${esc(I.field(t,'name'))}</b>${todayTaskBadge(todayMatches.get(t.id))}<small>${esc(I.field(t,'owner')||I.t("بلا مسؤول"))} · ${t.progress}%</small></button>${materialsBadge}</div><span class="task-duration">${t.duration||'◆'}<small>${t.duration?I.t("يوم"):I.t("معلم")}</small></span>${requisitionButton}${colorButton}<button class="row-more" data-edit="${t.id}" aria-label="${esc(I.t('تعديل ')+I.field(t,'name'))}">⋮</button></div>`;
       timeline+=`<div class="time-lane ${sel?'selected':''}" data-lane="${t.id}">`;
       const base=baselineTasks?.get(t.id);
       if(base) {
@@ -2011,8 +2140,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       timeline+='</div>';
     });
     if(!rows.length) timeline+=I.markup("<div class=\"empty-chart\">لا توجد مهام تطابق التصفية.</div>");
-    const statusX=(E.epoch(s.project.statusDate)-r.start+.5)*dayWidth;
-    if(statusX>=0&&statusX<r.width) timeline+=I.markup("<div class=\"tracking-line\" style=\"left:{0}px\"><span class=\"tracking-label\">متابعة {1}</span></div>", [statusX, compactDate(s.project.statusDate)]);
+    if(todayVisible)timeline+='<div class="tracking-line" style="left:'+todayX+'px" aria-hidden="true"></div>';
     timeline+=edgesHTML(s,a,lastGeometry,r,height)+portfolioEdgesHTML(positions,r,height)+'</div></div>'; names+='</div></div>';
     const grid=$('ganttGrid');
     const timelineChanged=timeline!==renderedTimeline,sidebarChanged=names!==renderedSidebar;
@@ -2027,6 +2155,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     }
     scroll.scrollTop=oldTop; scroll.scrollLeft=oldLeft;
     lastChartState=s;
+    renderedToday=today;
+    reportEscapeState();
   }
   function updateSelection() {
     $('selectionBar').hidden=false;
@@ -2042,7 +2172,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     document.querySelectorAll('[data-row]').forEach(n=>n.classList.toggle('selected',selected.has(n.dataset.row)));
     document.querySelectorAll('.gantt-bar[data-task]').forEach(n=>n.classList.toggle('selected',selected.has(n.dataset.task)));
     document.querySelectorAll('[data-select]').forEach(n=>n.checked=selected.has(n.dataset.select));
-    const visible=collapsedProjects.has(projectId)&&portfolio?.projects.length>1?[]:visibleTasks(state,analysis);
+    const visible=!todayOnly&&collapsedProjects.has(projectId)&&portfolio?.projects.length>1?[]:visibleTasks(state,analysis);
     if($('selectAllVisible')) {
       const count=visible.filter(t=>selected.has(t.id)).length;
       $('selectAllVisible').checked=visible.length>0&&count===visible.length;
@@ -2066,8 +2196,8 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const activity=Array.isArray(state.activity)?state.activity.slice(-8).reverse():[];
     $('activityList').innerHTML=activity.length?activity.map(a=>`<div class="activity-row">${esc(a.actionI18n?.[I.language] || I.translateText(a.action))}<small>${esc(Number.isNaN(Date.parse(a.at))?'':I.format(new Date(a.at),'timestamp'))}</small></div>`).join(''):I.markup("<div class=\"empty-tests\">لم تبدأ التعديلات بعد.<br>اختر سيناريو أو حرّك مهمة.</div>");
   }
-  function openDialog(id) { if(!$(id).open)$(id).showModal();markFormBases($(id)); }
-  function closeDialog(id) { $(id).close(); }
+  function openDialog(id) { if(!$(id).open)$(id).showModal();markFormBases($(id));reportEscapeState(); }
+  function closeDialog(id) { $(id).close();reportEscapeState(); }
   function uid(prefix) { return prefix+'_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,7); }
   function options(tasks,value) { return tasks.map(t=>`<option value="${t.id}" ${t.id===value?'selected':''}>${esc(t.id+' · '+I.field(t,'name'))}</option>`).join(''); }
   function dependencyRow(link={from:'',type:'FS',lag:0}) {
@@ -2844,6 +2974,14 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       if(typeof message.expanded==='boolean')setReviewExpanded(message.expanded);
       return;
     }
+    if(message.type==='pscm:gantt:escape') {
+      handleBoardEscape();
+      return;
+    }
+    if(message.type==='pscm:gantt:escape-release') {
+      boardEscapeHeld=false;reviewEscape=false;
+      return;
+    }
     if(message.type==='pscm:task-materials') {
       updateTaskMaterialSummaries(message.items);
       return;
@@ -2961,7 +3099,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   $('ganttGrid').addEventListener('change',event=>{
     if(event.target.dataset.select){const id=event.target.dataset.select;event.target.checked?selected.add(id):selected.delete(id);updateSelection();}
     if(event.target.id==='selectAllVisible'){
-      if(portfolio?.projects.length>1&&collapsedProjects.has(projectId))return;
+      if(!todayOnly&&portfolio?.projects.length>1&&collapsedProjects.has(projectId))return;
       for(const t of visibleTasks(state,analysis))event.target.checked?selected.add(t.id):selected.delete(t.id);
       updateSelection();
     }
@@ -3054,6 +3192,28 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   $('startBtn').onclick=()=>{viewStart=null;renderChart();$('ganttScroll').scrollLeft=0;};
   $('previousBtn').onclick=()=>{viewStart=(viewStart??lastRange.start)-Math.max(30,rangeDays-7);renderChart();$('ganttScroll').scrollLeft=0;};
   $('nextBtn').onclick=()=>{viewStart=(viewStart??lastRange.start)+Math.max(30,rangeDays-7);renderChart();$('ganttScroll').scrollLeft=0;};
+  const todayWorkBtn=document.createElement('button');
+  todayWorkBtn.type='button';
+  todayWorkBtn.id='todayWorkBtn';
+  todayWorkBtn.className='button compact toggle';
+  todayWorkBtn.textContent='أعمال اليوم';
+  todayWorkBtn.setAttribute('aria-pressed','false');
+  $('criticalBtn').before(todayWorkBtn);
+  todayWorkBtn.onclick=()=>setTodayOnly(!todayOnly);
+  new MutationObserver(reportEscapeState).observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});
+  window.addEventListener('keydown',event=>{
+    if(event.key!=='Escape')return;
+    if(event.repeat||boardEscapeHeld) {
+      if(boardEscapeHeld){event.preventDefault();event.stopImmediatePropagation();}
+      return;
+    }
+    if(handleBoardEscape()) {event.preventDefault();event.stopImmediatePropagation();}
+  },true);
+  window.addEventListener('keyup',event=>{
+    if(event.key!=='Escape')return;
+    boardEscapeHeld=false;reviewEscape=false;
+    sendToHost('pscm:gantt:escape-release');
+  },true);
   if (embedded) {
     const reviewButton = $('reviewModeBtn');
     reviewButton.hidden = false;
@@ -3062,31 +3222,27 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       reviewScrollBefore = portfolioViewport();
       sendToHost('pscm:gantt:review-request', {expanded: true});
     });
-    const escapeReview = event => {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (reviewExpanded && !event.repeat) {
-        cancelDrag();
-        cancelLinkDrag();
-        sendToHost('pscm:gantt:review-request', {expanded: false});
-      }
-    };
-    window.addEventListener('keydown', event => {
-      if (event.key !== 'Escape') return;
-      if (!event.repeat) reviewEscape = reviewExpanded;
-      if (reviewExpanded || reviewEscape) escapeReview(event);
-    }, true);
-    window.addEventListener('keyup', event => {
-      if (event.key === 'Escape') reviewEscape = false;
-    }, true);
     document.addEventListener('cancel', event => {
-      if (reviewExpanded || reviewEscape) escapeReview(event);
+      if(boardEscapeHeld||reviewEscape) {
+        event.preventDefault();event.stopImmediatePropagation();
+      } else {
+        sendToHost('pscm:gantt:escape-handled');
+        queueMicrotask(reportEscapeState);
+      }
     }, true);
   }
   window.addEventListener('resize',()=>requestAnimationFrame(()=>{
     if(state&&view==='gantt'&&!drag&&!linkDrag)renderChart();
     else renderTaskTreeConnectors();
   }));
+  function refreshTodayLine() {
+    if(state&&view==='gantt'&&!drag&&!linkDrag&&renderedToday!==todayInRiyadh())renderChart();
+  }
+  setInterval(refreshTodayLine,60_000);
+  window.addEventListener('focus',refreshTodayLine);
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible')refreshTodayLine();
+  });
   $('resetDemoBtn').onclick=()=>loadDemo('full');$('loadLabBtn').onclick=()=>loadDemo('lab');$('runTestsBtn').onclick=runTests;
   $('exportBtn').onclick=exportJSON;$('exportCsvBtn').onclick=exportCSV;$('reportCsvBtn').onclick=exportCSV;$('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=importJSON;
   for(const id of ['helpBtn','footerHelp'])$(id).onclick=()=>openDialog('helpDialog');
