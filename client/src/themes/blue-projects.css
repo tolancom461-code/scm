@@ -1,0 +1,260 @@
+@media screen {
+  /* Project screens inherit the blue theme; the Gantt workspace keeps its existing palette. */
+  :root:not(:has(.gantt-content-area)) :is(.pm-module, .pm-form, .pm-detail) {
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :is(
+      .pm-heading p,
+      .pm-help,
+      .pm-project-card p,
+      .pm-field small,
+      .pm-cmms-location legend,
+      .pm-cmms-location small,
+      .pm-task-execution dt,
+      .pm-summary dt,
+      .pm-task-open span,
+      .pm-task-open small,
+      .pm-directory span,
+      .pm-directory small,
+      .pm-history small,
+      .pm-preview-note
+    ) {
+    color: var(--ui-muted);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :is(
+      .pm-tabs,
+      .pm-empty,
+      .pm-cmms-location,
+      .pm-task-execution,
+      .pm-summary,
+      .pm-panel,
+      .pm-task-row,
+      .pm-assignees,
+      .pm-history,
+      .pm-history > div,
+      .pm-files > div,
+      .pm-holidays-panel,
+      .pm-holidays-range,
+      .pm-google-map-frame
+    ) {
+    border-color: var(--ui-border);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-tabs .active {
+    background: var(--ui-primary-soft);
+    border-color: var(--ui-primary);
+    color: var(--ui-primary);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-project-card {
+    background: var(--ui-surface) !important;
+    border-color: var(--ui-border) !important;
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :is(.pm-project-card:hover, .pm-project-card:focus-within) {
+    border-color: var(--ui-primary) !important;
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-project-card-link-location {
+    background: var(--ui-primary-soft);
+    border-color: var(--ui-border);
+    color: var(--ui-primary);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-project-card-link-location:hover {
+    border-color: var(--ui-primary);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :is(.pm-project-card-open, .pm-direct-location-share a, .pm-files a) {
+    background: transparent;
+    color: var(--ui-primary);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-badge {
+    background: var(--ui-surface-muted);
+    color: #475569;
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :is(.pm-badge.pm-pending, .pm-badge.pm-returned) {
+    background: var(--ui-warning-soft);
+    color: var(--ui-warning);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-badge.pm-rejected {
+    background: var(--ui-danger-soft);
+    color: var(--ui-danger);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :is(.pm-badge.pm-approved, .pm-badge.pm-active) {
+    background: var(--ui-success-soft);
+    color: var(--ui-success);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-empty {
+    color: var(--ui-muted);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-empty h2 {
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :is(.pm-task-execution, .pm-summary, .pm-panel, .pm-holidays-panel) {
+    background: var(--ui-surface);
+  }
+
+  :root:not(:has(.gantt-content-area)) :is(.pm-task-delay, .pm-notice) {
+    color: var(--ui-warning);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :is(.pm-task-completed, .pm-task-requisition > span) {
+    color: var(--ui-success);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-notice {
+    background: var(--ui-warning-soft);
+    border-color: #e6c77d;
+  }
+
+  :root:not(:has(.gantt-content-area)) :is(.pm-task-row, .pm-directory > div) {
+    background: var(--ui-surface-muted);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-task-open {
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-priority {
+    background: var(--ui-primary-soft);
+    color: var(--ui-primary);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-priority.pm-critical {
+    background: var(--ui-danger-soft);
+    color: var(--ui-danger);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-priority.pm-high {
+    background: var(--ui-warning-soft);
+    color: var(--ui-warning);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-history summary {
+    color: var(--ui-primary);
+  }
+
+  /* Document contents and the dark CAD drawing canvas retain their own rendering colors. */
+  :root:not(:has(.gantt-content-area)) .pm-pdf-frame {
+    background: #e8eef5;
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :is(.task-material-trigger, .task-material-pagination button) {
+    border-color: var(--ui-border);
+    background: var(--ui-surface);
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area)) .task-material-panel {
+    border-color: var(--ui-border);
+    background: var(--ui-surface);
+    color: var(--ui-text);
+    box-shadow: 0 0 48px rgb(15 23 42 / 16%);
+  }
+
+  :root:not(:has(.gantt-content-area)) .task-material-panel::backdrop {
+    background: rgb(15 23 42 / 48%);
+  }
+
+  :root:not(:has(.gantt-content-area)) .task-material-request {
+    border-color: var(--ui-border);
+    background: var(--ui-surface-muted);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :is(
+      .task-material-list > p,
+      .task-material-summary,
+      .task-material-item-status,
+      .task-material-item dt,
+      .task-material-cost-unavailable,
+      .project-material-costs > p
+    ) {
+    color: var(--ui-muted);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :is(.task-material-ready, .task-material-trigger) {
+    color: var(--ui-success);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    .task-material-trigger.task-material-ready {
+    border-color: #a7ddb9;
+    background: var(--ui-success-soft);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :is(
+      .task-material-items,
+      .task-material-item + .task-material-item,
+      .task-material-cost-total,
+      .project-material-costs dl > div
+    ) {
+    border-color: var(--ui-border);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    .project-material-costs
+    > summary
+    > span {
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-holidays-day {
+    border-color: var(--ui-border);
+    background: var(--ui-surface-muted);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-holidays-day:has(input:checked) {
+    border-color: var(--ui-primary);
+    background: var(--ui-primary-soft);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    .pm-holidays-day:has(input:checked:disabled) {
+    border-color: #94a3b8;
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :is(
+      .pm-holidays-day input[type="checkbox"],
+      .pm-attachment-upload-progress progress
+    ) {
+    accent-color: var(--ui-primary);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :is(
+      .pm-holidays .pm-holidays-remove,
+      .pm-holidays-error,
+      .pm-attachment-upload-failures li span
+    ) {
+    color: var(--ui-danger);
+  }
+
+  :root:not(:has(.gantt-content-area)) .pm-attachment-upload-failures li {
+    border-color: #f1b9b9;
+    background: var(--ui-danger-soft);
+  }
+}

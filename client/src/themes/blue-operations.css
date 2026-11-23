@@ -1,0 +1,216 @@
+/* Color-only screen overrides. The complete Gantt workspace keeps its original theme. */
+@media screen {
+  :root:not(:has(.gantt-content-area)) .mr-module,
+  :root:not(:has(.gantt-content-area)) .mr-form,
+  :root:not(:has(.gantt-content-area)) .mr-view,
+  :root:not(:has(.gantt-content-area)) .mr-catalog,
+  :root:not(:has(.gantt-content-area)) .policy-form {
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-heading p,
+  :root:not(:has(.gantt-content-area)) .mr-card-title p,
+  :root:not(:has(.gantt-content-area)) .mr-filter-grid label,
+  :root:not(:has(.gantt-content-area)) .mr-form-grid label,
+  :root:not(:has(.gantt-content-area)) .mr-line-limit,
+  :root:not(:has(.gantt-content-area)) .mr-line-card dt,
+  :root:not(:has(.gantt-content-area)) .mr-line-grid label > span,
+  :root:not(:has(.gantt-content-area)) .mr-card dt,
+  :root:not(:has(.gantt-content-area)) .mr-no-image,
+  :root:not(:has(.gantt-content-area)) .mr-integration,
+  :root:not(:has(.gantt-content-area)) .mr-catalog-branches p,
+  :root:not(:has(.gantt-content-area)) .mr-catalog-results p,
+  :root:not(:has(.gantt-content-area)) .mr-catalog-count,
+  :root:not(:has(.gantt-content-area)) .mr-catalog-result-text small,
+  :root:not(:has(.gantt-content-area)) .mr-catalog-browser-search svg,
+  :root:not(:has(.gantt-content-area)) .users-hint,
+  :root:not(:has(.gantt-content-area)) .policy-center td small {
+    color: var(--ui-muted);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-filters,
+  :root:not(:has(.gantt-content-area)) .mr-card,
+  :root:not(:has(.gantt-content-area)) .mr-line-card,
+  :root:not(:has(.gantt-content-area)) .mr-catalog-main {
+    background: var(--ui-surface);
+    border-color: var(--ui-border);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-card dl div,
+  :root:not(:has(.gantt-content-area)) .mr-line-location,
+  :root:not(:has(.gantt-content-area)) .mr-help {
+    background: var(--ui-surface-muted);
+    color: var(--ui-muted);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-line-meta dd,
+  :root:not(:has(.gantt-content-area)) .mr-line-location dd {
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-line-header,
+  :root:not(:has(.gantt-content-area)) .mr-empty,
+  :root:not(:has(.gantt-content-area)) .mr-view th,
+  :root:not(:has(.gantt-content-area)) .mr-view td,
+  :root:not(:has(.gantt-content-area)) .mr-catalog-browser,
+  :root:not(:has(.gantt-content-area)) .mr-catalog-tree,
+  :root:not(:has(.gantt-content-area)) .mr-catalog-browser-search,
+  :root:not(:has(.gantt-content-area)) .mr-catalog-pagination,
+  :root:not(:has(.gantt-content-area)) .policy-form fieldset {
+    border-color: var(--ui-border);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-view th,
+  :root:not(:has(.gantt-content-area)) .mr-catalog-tree {
+    background: var(--ui-surface-muted);
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-line-grid input[readonly] {
+    background: var(--ui-surface-muted);
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    .mr-line-grid
+    :is(input, select)[aria-invalid="true"] {
+    border-color: var(--ui-danger);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    .mr-line-grid
+    :is(input, select)[aria-invalid="true"]:focus {
+    box-shadow: 0 0 0 3px rgb(185 28 28 / 12%);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-field-error {
+    color: var(--ui-danger);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-error {
+    color: var(--ui-danger);
+    background: var(--ui-danger-soft);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-status.draft {
+    background: var(--ui-warning-soft);
+    color: var(--ui-warning);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-status.approved {
+    background: var(--ui-success-soft);
+    color: var(--ui-success);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-actions button,
+  :root:not(:has(.gantt-content-area)) .mr-line-remove,
+  :root:not(:has(.gantt-content-area)) .mr-catalog .mr-heading button,
+  :root:not(:has(.gantt-content-area)) .mr-catalog-load-error button {
+    color: var(--ui-text);
+    background: var(--ui-surface);
+    border-color: var(--ui-border);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-actions button:enabled:hover,
+  :root:not(:has(.gantt-content-area)) .mr-line-remove:enabled:hover,
+  :root:not(:has(.gantt-content-area))
+    .mr-catalog
+    .mr-heading
+    button:enabled:hover,
+  :root:not(:has(.gantt-content-area))
+    .mr-catalog-load-error
+    button:enabled:hover {
+    background: var(--ui-primary-soft);
+    border-color: var(--ui-primary);
+    color: var(--ui-primary);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-actions .primary,
+  :root:not(:has(.gantt-content-area)) .mr-heading .primary,
+  :root:not(:has(.gantt-content-area)) .policy-form button {
+    background: var(--ui-primary);
+    border-color: var(--ui-primary);
+    color: #fff;
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-actions .primary:enabled:hover,
+  :root:not(:has(.gantt-content-area)) .mr-heading .primary:enabled:hover,
+  :root:not(:has(.gantt-content-area)) .policy-form button:enabled:hover {
+    background: var(--ui-primary-hover);
+    border-color: var(--ui-primary-hover);
+    color: #fff;
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-image-button {
+    background: var(--ui-surface-muted);
+    border-color: var(--ui-border);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-image-button:enabled:hover {
+    background: var(--ui-primary-soft);
+    border-color: var(--ui-primary);
+  }
+
+  /* The image preview keeps a dark scrim so light product photos remain distinct. */
+  :root:not(:has(.gantt-content-area)) .mr-image-lightbox {
+    background: rgb(15 23 42 / 94%);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-image-lightbox > button {
+    background: var(--ui-primary);
+    border-color: var(--ui-primary);
+    color: #fff;
+  }
+
+  :root:not(:has(.gantt-content-area))
+    .mr-image-lightbox
+    > button:enabled:hover {
+    background: var(--ui-primary-hover);
+    border-color: var(--ui-primary-hover);
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-catalog-branch-toggle,
+  :root:not(:has(.gantt-content-area)) .mr-catalog-branch-select {
+    color: var(--ui-text);
+    background: transparent;
+    border-color: transparent;
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-catalog-branch-select bdi,
+  :root:not(:has(.gantt-content-area)) .mr-catalog-result-select > bdi {
+    background: #e2e8f0;
+    color: #334155;
+  }
+
+  :root:not(:has(.gantt-content-area)) .mr-catalog-branch-select:enabled:hover,
+  :root:not(:has(.gantt-content-area))
+    button.mr-catalog-branch-toggle:enabled:hover,
+  :root:not(:has(.gantt-content-area)) .mr-catalog-result:hover {
+    background: var(--ui-primary-soft);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    .mr-catalog-branch-select[aria-pressed="true"],
+  :root:not(:has(.gantt-content-area)) .mr-catalog-result:has(input:checked) {
+    background: #dbeafe;
+    color: var(--ui-primary-hover);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    .mr-catalog-result-select
+    input[type="checkbox"],
+  :root:not(:has(.gantt-content-area)) .policy-form input[type="checkbox"],
+  :root:not(:has(.gantt-content-area)) .policy-form input[type="radio"] {
+    accent-color: var(--ui-primary);
+  }
+
+  :root:not(:has(.gantt-content-area)) .policy-form select {
+    background: var(--ui-input);
+    color: var(--ui-text);
+    border-color: var(--ui-border);
+  }
+
+  :root:not(:has(.gantt-content-area)) .policy-form select:focus {
+    border-color: var(--ui-primary);
+  }
+}

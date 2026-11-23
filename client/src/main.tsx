@@ -8,6 +8,7 @@ import superjson from "superjson";
 import App from "./App";
 
 import "./index.css";
+import "./themes/administrative-blue.css";
 
 const queryClient = new QueryClient();
 

@@ -1,0 +1,428 @@
+/* Presentation only. The original theme remains active throughout Gantt,
+   including its host controls, dialogs, notifications and embedded document.
+   Screen-only overrides also leave document exports and printing unchanged. */
+@media screen {
+  :root:not(:has(.gantt-content-area)) {
+    --ui-bg: #f4f7fb;
+    --ui-surface: #ffffff;
+    --ui-surface-muted: #f1f5f9;
+    --ui-input: #ffffff;
+    --ui-text: #1e293b;
+    --ui-muted: #5f6f85;
+    --ui-border: #d8e2ef;
+    --ui-primary: #2563eb;
+    --ui-primary-hover: #1d4ed8;
+    --ui-primary-soft: #eff6ff;
+    --ui-success: #166534;
+    --ui-success-soft: #dcfce7;
+    --ui-warning: #92400e;
+    --ui-warning-soft: #fef3c7;
+    --ui-danger: #b91c1c;
+    --ui-danger-soft: #fee2e2;
+    --ink: var(--ui-bg);
+    --panel: var(--ui-surface);
+    --panel-2: var(--ui-surface-muted);
+    --line: var(--ui-border);
+    --cyan: var(--ui-primary);
+    --magenta: var(--ui-danger);
+    --violet: #4f46e5;
+    --text: var(--ui-text);
+    --muted: var(--ui-muted);
+    --popover: var(--ui-surface);
+    --popover-foreground: var(--ui-text);
+    --border: var(--ui-border);
+    color-scheme: light;
+  }
+
+  :root:not(:has(.gantt-content-area)) body {
+    background: var(--ui-bg);
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area)) :where(.p1-page) {
+    --background: var(--ui-bg);
+    --foreground: var(--ui-text);
+    --card: var(--ui-surface);
+    --border: var(--ui-border);
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area)) :where(input, select, textarea) {
+    background-color: var(--ui-input);
+    color: var(--ui-text);
+    border-color: var(--ui-border);
+    accent-color: var(--ui-primary);
+    caret-color: var(--ui-text);
+    color-scheme: light;
+  }
+
+  :root:not(:has(.gantt-content-area)) :where(input, textarea)::placeholder {
+    color: var(--ui-muted);
+    opacity: 1;
+  }
+
+  :root:not(:has(.gantt-content-area)) :where(input, select, textarea):focus {
+    border-color: var(--ui-primary);
+    box-shadow: 0 0 0 3px rgb(37 99 235 / 12%);
+  }
+
+  :root:not(:has(.gantt-content-area)) :where(input, select, textarea):disabled,
+  :root:not(:has(.gantt-content-area)) :where(input, textarea)[readonly] {
+    background-color: var(--ui-surface-muted);
+    color: #475569;
+    -webkit-text-fill-color: #475569;
+  }
+
+  :root:not(:has(.gantt-content-area)) select option {
+    background: var(--ui-surface);
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area)) input[type="date"] {
+    color-scheme: light;
+  }
+
+  :root:not(:has(.gantt-content-area))
+    input[type="date"]::-webkit-calendar-picker-indicator {
+    border-color: #bfdbfe;
+    background-color: var(--ui-primary-soft);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='5' width='18' height='16' rx='2'/%3E%3Cpath d='M16 3v4M8 3v4M3 10h18'/%3E%3Cpath d='M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01'/%3E%3C/svg%3E");
+  }
+
+  :root:not(:has(.gantt-content-area))
+    input[type="date"]::-webkit-calendar-picker-indicator:hover {
+    background-color: #dbeafe;
+    border-color: #93c5fd;
+  }
+
+  /* Keep all dimensions and responsive navigation behavior intact. */
+  :root:not(:has(.gantt-content-area)) .sidebar {
+    --muted: #b9c8dd;
+    background: #16325c;
+    color: #ffffff;
+    border-color: #294b76;
+  }
+
+  :root:not(:has(.gantt-content-area)) .sidebar::after {
+    background: #294b76;
+  }
+
+  :root:not(:has(.gantt-content-area)) .sidebar nav button {
+    background: transparent;
+    color: #d6e3f4;
+  }
+
+  :root:not(:has(.gantt-content-area)) .sidebar nav button:hover {
+    background: #20416e;
+    color: #ffffff;
+  }
+
+  :root:not(:has(.gantt-content-area)) .sidebar nav button.active {
+    background: #28548b;
+    color: #ffffff;
+  }
+
+  :root:not(:has(.gantt-content-area)) .sidebar nav button.active::before,
+  :root:not(:has(.gantt-content-area)) .sidebar nav button.active b {
+    background: #93c5fd;
+    box-shadow: none;
+  }
+
+  :root:not(:has(.gantt-content-area)) .profile-row {
+    background: #1c3d69;
+    color: #ffffff;
+    border-color: #36577f;
+  }
+
+  :root:not(:has(.gantt-content-area)) .profile-row > div {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+
+  :root:not(:has(.gantt-content-area)) .topbar {
+    background: var(--ui-surface);
+    color: var(--ui-text);
+    border-color: var(--ui-border);
+    backdrop-filter: none;
+  }
+
+  :root:not(:has(.gantt-content-area)) .breadcrumb {
+    color: var(--ui-muted);
+  }
+
+  :root:not(:has(.gantt-content-area)) .breadcrumb b {
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area)) .breadcrumb i {
+    background: var(--ui-primary);
+  }
+
+  :root:not(:has(.gantt-content-area)) .locale-switch {
+    background: var(--ui-surface);
+    color: var(--ui-primary);
+    border-color: var(--ui-border);
+  }
+
+  :root:not(:has(.gantt-content-area)) .locale-switch select {
+    background: transparent;
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area)) :where(.icon-button) {
+    background: var(--ui-surface);
+    color: var(--ui-muted);
+    border-color: var(--ui-border);
+  }
+
+  :root:not(:has(.gantt-content-area)) .sidebar .icon-button {
+    background: #20416e;
+    color: #ffffff;
+    border-color: #36577f;
+  }
+
+  :root:not(:has(.gantt-content-area)) :where(.p1-page, .auth-form) button {
+    background-color: var(--ui-surface);
+    color: var(--ui-text);
+    border-color: var(--ui-border);
+  }
+
+  :root:not(:has(.gantt-content-area)) :where(.p1-page) button:enabled:hover,
+  :root:not(:has(.gantt-content-area))
+    :where(.icon-button, .table-action):enabled:hover {
+    background-color: var(--ui-primary-soft);
+    border-color: #93c5fd;
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :where(.p1-page, .auth-form)
+    button.primary,
+  :root:not(:has(.gantt-content-area)) .neo-button {
+    background: var(--ui-primary);
+    color: #ffffff;
+    border-color: var(--ui-primary);
+    box-shadow: none;
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :where(.p1-page, .auth-form)
+    button.primary:enabled:hover,
+  :root:not(:has(.gantt-content-area)) .neo-button:enabled:hover {
+    background: var(--ui-primary-hover);
+    color: #ffffff;
+    border-color: var(--ui-primary-hover);
+    box-shadow: 0 3px 10px rgb(37 99 235 / 16%);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :where(button, input, select, textarea):focus-visible {
+    outline-color: var(--ui-primary);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :where(.field, .p1-hint, .p1-detail-list b):not(.p1-print *) {
+    color: var(--ui-muted);
+  }
+
+  :root:not(:has(.gantt-content-area)) .field i {
+    color: var(--ui-danger);
+  }
+
+  :root:not(:has(.gantt-content-area)) [role="alert"] {
+    color: var(--ui-danger);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :where(.data-panel, .p1-panel, .p1-payment-card, .p1-supplier-card):not(
+      .p1-print *
+    ) {
+    background: var(--ui-surface);
+    border-color: var(--ui-border);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :where(.table-tools, th, td, .p1-page hr, .p1-fir-allocation):not(
+      .p1-print *
+    ) {
+    border-color: var(--ui-border);
+  }
+
+  :root:not(:has(.gantt-content-area)) :where(th):not(.p1-print *) {
+    background: var(--ui-surface-muted);
+    color: #475569;
+  }
+
+  :root:not(:has(.gantt-content-area)) :where(td, .status):not(.p1-print *) {
+    color: var(--ui-text);
+  }
+
+  :root:not(:has(.gantt-content-area)) tbody tr:not(.p1-print *):hover {
+    background: #f8faff;
+  }
+
+  :root:not(:has(.gantt-content-area)) .status i {
+    background: #64748b;
+    box-shadow: none;
+  }
+
+  :root:not(:has(.gantt-content-area)) .status:where(.active, .approved) i {
+    background: var(--ui-success);
+    box-shadow: none;
+  }
+
+  :root:not(:has(.gantt-content-area)) .status:where(.normal, .internal) i {
+    background: var(--ui-primary);
+    box-shadow: none;
+  }
+
+  :root:not(:has(.gantt-content-area))
+    .status:where(.high, .rejected, .blocked)
+    i {
+    background: var(--ui-danger);
+    box-shadow: none;
+  }
+
+  :root:not(:has(.gantt-content-area)) .table-action {
+    background: var(--ui-primary-soft);
+    color: var(--ui-primary);
+    border-color: #bfdbfe;
+  }
+
+  :root:not(:has(.gantt-content-area)) .table-action.accept {
+    background: var(--ui-success-soft);
+    color: var(--ui-success);
+    border-color: #bbf7d0;
+  }
+
+  :root:not(:has(.gantt-content-area)) .table-action.reject {
+    background: var(--ui-danger-soft);
+    color: var(--ui-danger);
+    border-color: #fecaca;
+  }
+
+  :root:not(:has(.gantt-content-area)) .p1-status {
+    background: var(--ui-primary-soft);
+    color: #1e40af;
+  }
+
+  :root:not(:has(.gantt-content-area)) .p1-status.approved {
+    background: var(--ui-success-soft);
+    color: var(--ui-success);
+  }
+
+  :root:not(:has(.gantt-content-area)) .p1-status.rejected {
+    background: var(--ui-danger-soft);
+    color: var(--ui-danger);
+  }
+
+  :root:not(:has(.gantt-content-area)) .p1-metrics > div,
+  :root:not(:has(.gantt-content-area))
+    :where(.p1-payment-card, .p1-supplier-card)[open]
+    > summary {
+    background: var(--ui-surface-muted);
+    border-color: var(--ui-border);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :where(
+      .p1-payment-card > summary p,
+      .p1-payment-card > summary span,
+      .p1-supplier-card > summary span,
+      .p1-supplier-identity small
+    ) {
+    color: var(--ui-muted);
+  }
+
+  :root:not(:has(.gantt-content-area))
+    :where(.p1-payment-card, .p1-supplier-card)
+    > summary:focus-visible {
+    outline-color: var(--ui-primary);
+  }
+
+  :root:not(:has(.gantt-content-area)) .modal-backdrop {
+    background: rgb(15 23 42 / 42%);
+  }
+
+  :root:not(:has(.gantt-content-area)) .modal-card {
+    background: var(--ui-surface);
+    color: var(--ui-text);
+    border-color: var(--ui-border);
+    box-shadow: 0 20px 60px rgb(15 23 42 / 20%);
+  }
+
+  /* The sign-in form keeps its fields, remember-me behavior and dimensions. */
+  :root:not(:has(.gantt-content-area)) .auth-shell {
+    background: var(--ui-bg);
+  }
+
+  :root:not(:has(.gantt-content-area)) .auth-panel {
+    background: var(--ui-surface);
+    border-color: var(--ui-border);
+    box-shadow: 0 12px 40px rgb(22 50 92 / 10%);
+  }
+
+  :root:not(:has(.gantt-content-area)) .auth-panel::before {
+    background: var(--ui-primary);
+  }
+
+  :root:not(:has(.gantt-content-area)) .auth-grid {
+    background-image:
+      linear-gradient(rgb(37 99 235 / 4%) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(37 99 235 / 4%) 1px, transparent 1px);
+  }
+
+  :root:not(:has(.gantt-content-area)) .orbit-core {
+    background: radial-gradient(
+      circle,
+      #2563eb 0 5%,
+      #93c5fd 6%,
+      rgb(147 197 253 / 24%) 22%,
+      transparent 63%
+    );
+    box-shadow: none;
+  }
+
+  :root:not(:has(.gantt-content-area)) .pulse {
+    border-color: #bfdbfe;
+    box-shadow: none;
+  }
+
+  :root:not(:has(.gantt-content-area)) .brand-mark {
+    border-color: var(--ui-primary);
+    box-shadow: none;
+  }
+
+  :root:not(:has(.gantt-content-area)) .brand-mark span {
+    background: var(--ui-primary);
+    box-shadow: none;
+  }
+
+  :root:not(:has(.gantt-content-area)) .auth-wordmark {
+    color: var(--ui-primary);
+    text-shadow: none;
+  }
+
+  :root:not(:has(.gantt-content-area)) .auth-wordmark::before,
+  :root:not(:has(.gantt-content-area)) .auth-wordmark::after {
+    background: #bfdbfe;
+  }
+
+  :root:not(:has(.gantt-content-area)) [data-sonner-toaster] {
+    --normal-bg: #ffffff;
+    --normal-text: #1e293b;
+    --normal-border: #d8e2ef;
+    --success-bg: #dcfce7;
+    --success-text: #166534;
+    --success-border: #bbf7d0;
+    --error-bg: #fee2e2;
+    --error-text: #b91c1c;
+    --error-border: #fecaca;
+    --warning-bg: #fef3c7;
+    --warning-text: #92400e;
+    --warning-border: #fde68a;
+    --info-bg: #eff6ff;
+    --info-text: #1e40af;
+    --info-border: #bfdbfe;
+    color-scheme: light;
+  }
+}
