@@ -6,6 +6,7 @@ export type RoutePolicy = {
 };
 export const routePolicies: Record<string, RoutePolicy> = {
   "projectManagement.list": { any: ["pm.view"] },
+  "projectManagement.listView": { any: ["pm.view"] },
   "projectManagement.directory": { any: ["pm.view"] },
   "projectManagement.detail": { any: ["pm.view"] },
   "projectManagement.holidayCalendar": { any: ["pm.view"] },

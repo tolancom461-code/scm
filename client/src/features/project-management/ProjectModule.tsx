@@ -39,6 +39,10 @@ import { TaskDependencyAction } from "../gantt/TaskDependencyPanel";
 import { HolidayCalendar } from "./HolidayCalendar";
 import { ProjectMaterialCosts } from "./ProjectMaterialCosts";
 import { TaskMaterialTrigger } from "./TaskMaterialProgress";
+import {
+  ProjectListView,
+  type ProjectListTaskSelection,
+} from "./ProjectListView";
 import "./projects.css";
 type Outputs = inferRouterOutputs<AppRouter>["projectManagement"];
 type Project = Outputs["detail"]["project"];
@@ -153,6 +157,7 @@ function notifyAttachmentsUploaded(locale: Locale) {
 }
 type ProjectTab =
   | "projects"
+  | "list"
   | "reviews"
   | "employees"
   | "statuses"
@@ -164,6 +169,7 @@ function projectNavigation(saved: unknown, user: Person) {
   const { tab, selected } = saved as { tab?: unknown; selected?: unknown };
   if (
     tab !== "projects" &&
+    tab !== "list" &&
     tab !== "reviews" &&
     tab !== "employees" &&
     tab !== "statuses" &&
@@ -178,7 +184,7 @@ function projectNavigation(saved: unknown, user: Person) {
   return {
     tab,
     selected:
-      (tab === "projects" || tab === "reviews") &&
+      (tab === "projects" || tab === "reviews" || tab === "list") &&
       typeof selected === "number" &&
       Number.isSafeInteger(selected) &&
       selected > 0
@@ -206,6 +212,11 @@ export function ProjectModule({
       undefined,
     ]),
     [creating, setCreating] = useState(false),
+    [listEditor, setListEditor] = useState<
+      | { kind: "project"; projectId: number }
+      | ({ kind: "task" } & ProjectListTaskSelection)
+      | null
+    >(null),
     [linkingProjectId, setLinkingProjectId] = useState<number | null>(null),
     [linkedProjectIds, setLinkedProjectIds] = useState<Set<number>>(
       () => new Set()
@@ -242,12 +253,17 @@ export function ProjectModule({
       : undefined;
   const linkLocationTitle = linkProjectLocationLabel[localeIndex[locale]];
   const chooseTab = (tab: ProjectTab) => {
+    setListEditor(null);
     setLinkingProjectId(null);
     setPageCursors([undefined]);
     navigate(tab);
   };
   return (
-    <section className="pm-module">
+    <section
+      className={
+        "pm-module" + (tab === "list" && !selected ? " pm-module-list" : "")
+      }
+    >
       <div className="pm-heading">
         <div>
           <h1>{t("وحدة المشاريع", "Project module", "منصوبوں کا ماڈیول")}</h1>
@@ -276,6 +292,7 @@ export function ProjectModule({
         {(
           [
             ["projects", t("المشاريع", "Projects", "منصوبے")],
+            ["list", "list"],
             ...(can("pm.review")
               ? [
                   [
@@ -342,6 +359,31 @@ export function ProjectModule({
         />
       )}
       {tab === "holidays" && <HolidayCalendar locale={locale} />}
+      {tab === "list" && (
+        <div hidden={Boolean(selected)}>
+          <ProjectListView
+            locale={locale}
+            user={user}
+            directory={directory.data}
+            onCreateProject={() => setCreating(true)}
+            onOpenProject={id => navigate("list", id)}
+            onEditProject={projectId =>
+              setListEditor({ kind: "project", projectId })
+            }
+            onTask={selection => setListEditor({ kind: "task", ...selection })}
+            onCards={() => chooseTab("projects")}
+          />
+        </div>
+      )}
+      {tab === "list" && Boolean(selected) && (
+        <ProjectDetail
+          id={selected}
+          locale={locale}
+          user={user}
+          directory={directory.data}
+          back={() => navigate("list")}
+        />
+      )}
       {projectListTab &&
         (selected ? (
           <ProjectDetail
@@ -529,14 +571,194 @@ export function ProjectModule({
           saved={id => {
             setCreating(false);
             setPageCursors([undefined]);
-            navigate("projects", id);
+            navigate(
+              tab === "list" ? "list" : "projects",
+              tab === "list" ? 0 : id
+            );
             void utils.projectManagement.invalidate();
             void utils.gantt.projects.invalidate();
             void utils.materialRequisitions.directory.invalidate();
           }}
         />
       )}
+      {listEditor && tab === "list" && (
+        <ProjectListEditor
+          key={
+            listEditor.kind === "project"
+              ? "project-" + listEditor.projectId
+              : "task-" +
+                listEditor.projectId +
+                "-" +
+                (listEditor.taskId ?? "new") +
+                "-" +
+                listEditor.parentId
+          }
+          selection={listEditor}
+          locale={locale}
+          user={user}
+          directory={directory.data}
+          close={() => setListEditor(null)}
+        />
+      )}
     </section>
+  );
+}
+
+function ProjectListEditor({
+  selection,
+  locale,
+  user,
+  directory,
+  close,
+}: {
+  selection:
+    | { kind: "project"; projectId: number }
+    | ({ kind: "task" } & ProjectListTaskSelection);
+  locale: Locale;
+  user: Person;
+  directory?: Directory;
+  close: () => void;
+}) {
+  const t = text(locale);
+  const utils = trpc.useUtils();
+  // Fetch current versions, dates and calendar before opening the existing forms.
+  const query = trpc.projectManagement.detail.useQuery(
+    { id: selection.projectId },
+    { staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: false }
+  );
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (query.data && !query.isFetching) setReady(true);
+  }, [query.data, query.isFetching]);
+  const can = (permission: string) => user.permissions.includes(permission);
+  if (!ready && !query.error)
+    return (
+      <Modal
+        title={t("جاري التحميل…", "Loading…", "لوڈ ہو رہا ہے…")}
+        close={close}
+      >
+        <p role="status" className="pm-help">
+          {t(
+            "جاري جلب بيانات المشروع والمهمة…",
+            "Loading project and task data…",
+            "منصوبے اور کام کا ڈیٹا لوڈ ہو رہا ہے…"
+          )}
+        </p>
+      </Modal>
+    );
+  if (query.error || !query.data)
+    return (
+      <Modal
+        title={t(
+          "تعذّر فتح البيانات",
+          "Unable to open data",
+          "ڈیٹا نہیں کھل سکا"
+        )}
+        close={close}
+      >
+        <p role="alert">{query.error?.message}</p>
+        <button type="button" onClick={() => void query.refetch()}>
+          {t("إعادة المحاولة", "Retry", "دوبارہ کوشش کریں")}
+        </button>
+      </Modal>
+    );
+  const { project, tasks, calendar } = query.data;
+  const saved = async () => {
+    if (selection.kind === "project")
+      void utils.projectManagement.listView.invalidate();
+    void utils.projectManagement.list.invalidate();
+    void utils.projectManagement.detail.invalidate({ id: project.id });
+    void utils.gantt.projects.invalidate();
+    void utils.gantt.detail.invalidate({ projectId: project.id });
+    void utils.gantt.portfolioDirectory.invalidate();
+    void utils.gantt.portfolio.invalidate();
+    void utils.materialRequisitions.directory.invalidate();
+    close();
+  };
+  if (
+    selection.kind === "project" &&
+    (!can("pm.edit") || !["draft", "returned"].includes(project.status))
+  )
+    return (
+      <Modal
+        title={t("تعديل المشروع", "Edit project", "منصوبے میں ترمیم کریں")}
+        close={close}
+      >
+        <p role="alert">
+          {t(
+            "يمكن تعديل المسودة أو المشروع المعاد للتعديل فقط، مع صلاحية تعديل المشاريع.",
+            "Editing requires project edit permission and a draft or returned project.",
+            "ترمیم کے لیے اجازت اور مسودہ یا واپس کیا گیا منصوبہ درکار ہے۔"
+          )}
+        </p>
+      </Modal>
+    );
+  if (selection.kind === "project")
+    return (
+      <ProjectForm
+        project={project}
+        locale={locale}
+        user={user}
+        close={close}
+        saved={() => void saved()}
+      />
+    );
+  if (!directory)
+    return (
+      <Modal
+        title={t("قوائم المهمة", "Task directory", "کام کی فہرست")}
+        close={close}
+      >
+        <p role="status">
+          {t(
+            "جاري تحميل قوائم الموظفين والحالات…",
+            "Loading employees and statuses…",
+            "ملازمین اور حالتیں لوڈ ہو رہی ہیں…"
+          )}
+        </p>
+        <button
+          type="button"
+          onClick={() => void utils.projectManagement.directory.invalidate()}
+        >
+          {t("إعادة المحاولة", "Retry", "دوبارہ کوشش کریں")}
+        </button>
+      </Modal>
+    );
+  const row = selection.taskId
+    ? tasks.find(task => task.id === selection.taskId)
+    : undefined;
+  if (selection.taskId && !row)
+    return (
+      <Modal
+        title={t("المهمة غير متاحة", "Task unavailable", "کام دستیاب نہیں")}
+        close={close}
+      >
+        <p role="alert">
+          {t(
+            "لم تعد المهمة موجودة في هذا المشروع. أعد تحميل القائمة.",
+            "This task is no longer in this project. Reload the list.",
+            "یہ کام اس منصوبے میں موجود نہیں ہے۔ فہرست دوبارہ لوڈ کریں۔"
+          )}
+        </p>
+      </Modal>
+    );
+  return (
+    <TaskForm
+      projectId={project.id}
+      parentId={row ? row.parentId : selection.parentId}
+      row={row}
+      tasks={tasks}
+      calendar={calendar}
+      directory={directory}
+      locale={locale}
+      canManage={can("pm.tasks.manage") && project.status === "active"}
+      canStatus={can("pm.statuses.manage")}
+      canCreateRequisition={can("materialRequisitions.create")}
+      canDocumentsView={can("documents.view")}
+      canDocumentsUpload={can("documents.upload")}
+      close={close}
+      saved={saved}
+    />
   );
 }
 type ProjectLocationSelection = {
@@ -2189,6 +2411,7 @@ function TaskForm({
     save = trpc.projectManagement.saveTask.useMutation({
       onSuccess: async () => {
         void utils.gantt.detail.invalidate({ projectId });
+        await utils.projectManagement.listView.invalidate();
         toast.success(t("تم حفظ المهمة", "Task saved", "کام محفوظ ہو گیا"));
         await saved();
       },
@@ -2218,6 +2441,7 @@ function TaskForm({
   };
   const refreshAfterDependency = async () => {
     if (!savedTask) return;
+    void utils.projectManagement.listView.invalidate();
     const detail = await utils.projectManagement.detail.fetch(
       { id: projectId },
       { staleTime: 0 }

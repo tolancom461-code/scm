@@ -12,6 +12,7 @@ import {
 } from "../../../shared/construction";
 import { saveHolidayCalendarInput } from "../../../shared/work-calendar";
 import * as service from "./service";
+import { projectListInput, projectListView } from "./project-list";
 import { holidayCalendar, saveHolidayCalendar } from "./work-calendar";
 import {
   taskMaterialCosts,
@@ -19,6 +20,9 @@ import {
   taskMaterialSummary,
 } from "../material-requisitions/service";
 export const projectManagementRouter = router({
+  listView: requiring("pm.view")
+    .input(projectListInput)
+    .query(({ input, ctx }) => projectListView(ctx.access!, input)),
   list: requiring("pm.view")
     .input(
       z
