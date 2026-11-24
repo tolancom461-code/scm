@@ -1008,7 +1008,11 @@
 /* These dimensions apply only while the List tab is the active project view. */
 @media screen {
   :root .pm-module.pm-module-list {
+    width: 100%;
+    min-width: 0;
     max-width: none;
+    margin-inline: 0;
+    align-self: stretch;
     padding: 10px;
     border-radius: 4px;
     background: #fff;
