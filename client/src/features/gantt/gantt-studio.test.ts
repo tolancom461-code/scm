@@ -612,6 +612,57 @@ describe("embedded Gantt Studio", () => {
     expect(rendered).toBe(1);
   });
 
+  it("opens task actions for inherited colors at every depth and honors a custom color", () => {
+    const tasks = [
+      { id: "T1001", pmTaskId: 1001, parentId: null },
+      { id: "T1002", pmTaskId: 1002, parentId: "T1001" },
+      { id: "T1003", pmTaskId: 1003, parentId: "T1002" },
+    ];
+    const paletteLevels = ["#4e1f49", "#74296b", "#913b89"].map(color => ({
+      color,
+      ink: "#ffffff",
+    }));
+    const paletteOverrides = new Map<number, { color: string; ink: string }>();
+    const taskContextActions = { innerHTML: "", hidden: true };
+    const taskContextError = { hidden: false, textContent: "old error" };
+    const context = vm.createContext({
+      state: { tasks },
+      portfolio: { projects: [{ id: 101, color: "#913b89" }] },
+      projectId: 101,
+      paletteLevels,
+      paletteOverrides,
+      taskContextActions,
+      taskContextError,
+      allowMaterialRequisitions: false,
+      I: { t: (value: string) => value },
+      esc: (value: string) => value,
+      portfolioColorButton: (_project: unknown, id: number, color: string) =>
+        `${id}:${color}`,
+    });
+    vm.runInContext(engine, context);
+    vm.runInContext(
+      `const P=GanttProgress;
+       ${sourceBetween("  function taskHierarchyDepth(", "  function taskNameMarkup(")}
+       ${sourceBetween("  function persistedTaskId(", "  function watchTaskExecution(")}
+       ${sourceBetween("  function renderTaskContextActions(", "  function mayUseTaskContextActions(")}`,
+      context
+    );
+    tasks.forEach((task, index) => {
+      vm.runInContext(
+        `renderTaskContextActions(state.tasks[${index}])`,
+        context
+      );
+      expect(taskContextActions.innerHTML).toBe(
+        `${task.pmTaskId}:${paletteLevels[index].color}`
+      );
+      expect(taskContextActions.hidden).toBe(false);
+    });
+    paletteOverrides.set(1003, { color: "#2775b5", ink: "#ffffff" });
+    vm.runInContext("renderTaskContextActions(state.tasks[2])", context);
+    expect(taskContextActions.innerHTML).toBe("1003:#2775b5");
+    expect(taskContextError).toEqual({ hidden: true, textContent: "" });
+  });
+
   it("loads project-unit field lengths and keeps the standalone engine checks green", () => {
     const context = vm.createContext({});
     new vm.Script(script);

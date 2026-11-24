@@ -204,6 +204,11 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
 .task-context-actions .task-context-requisition > span:first-child{font-size:17px;font-weight:800}
 .task-context-actions .portfolio-swatch{width:auto;min-height:30px;height:auto;gap:7px;padding:5px 9px;font-size:11px}
 .task-context-actions .portfolio-swatch i{width:14px;height:14px;flex:0 0 14px}
+.task-sidebar .task-details .task-name-line{display:flex;align-items:center;gap:5px;min-width:0;margin-bottom:5px}
+.task-sidebar .task-details b.task-name-badge{flex:0 1 auto;min-width:0;max-width:100%;margin:0;padding:1px 6px;border-radius:4px;background:var(--task-label-color,var(--blue));color:var(--task-label-ink,#fff);line-height:1.5}
+.task-sidebar .task-row[data-depth] .task-details b.task-name-badge::before{display:none;content:none}
+.task-child-count{display:inline-flex;align-items:center;gap:3px;flex:none;color:var(--muted);font-size:10px;line-height:1.4;font-weight:400;white-space:nowrap}
+.task-child-count svg{width:11px;height:11px;flex:none;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
 </style>
 </head>
 <body>
@@ -2011,6 +2016,21 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     return '<button type="button" class="portfolio-swatch" data-portfolio-color="'+project.id+'"'+
       (taskId?' data-portfolio-task="'+taskId+'"':'')+' style="--portfolio-color:'+color+'" title="'+title+'" aria-label="'+title+'"><i aria-hidden="true"></i>'+(labelled?'<span>'+title+'</span>':'')+'</button>';
   }
+  function taskHierarchyDepth(task,byId) {
+    let depth=0,current=task;
+    while(current?.parentId&&byId.has(current.parentId)&&depth<20){depth++;current=byId.get(current.parentId);}
+    return depth;
+  }
+  function taskNameMarkup(name,palette,childCount) {
+    const countLabel=portfolioCopy('المهام الفرعية المباشرة: ','Direct subtasks: ','براہ راست ذیلی کام: ')+childCount;
+    const count=childCount>0?'<span class="task-child-count" data-child-count="'+childCount+'" title="'+esc(countLabel)+'"><svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M3 2v5a2 2 0 0 0 2 2h4M3 3h5M8 1v4M9 7v4"/></svg><bdi>'+childCount+'</bdi></span>':'';
+    return '<span class="task-name-line"><b class="task-name-badge" style="--task-label-color:'+esc(palette.color)+';--task-label-ink:'+esc(palette.ink)+'">'+esc(name)+'</b>'+count+'</span>';
+  }
+  function taskLabelPalette(task,palette,critical) {
+    if(palette)return palette;
+    const color=critical?'#d56d74':!task.duration?'#9c7db4':task.status==='completed'?'#65a695':task.status==='in_progress'?'var(--purple)':'var(--blue)';
+    return {color,ink:'#ffffff'};
+  }
   function portfolioGroupMarkup(project,r) {
     const open=todayOnly||!collapsedProjects.has(project.id),current=project.id===projectId;
     const label=esc(open?portfolioCopy('طي المشروع','Collapse project','منصوبہ سمیٹیں'):portfolioCopy('توسيع المشروع','Expand project','منصوبہ پھیلائیں'));
@@ -2039,9 +2059,10 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     const toggle=hasChildren?'<button type="button" class="tree-toggle" data-portfolio-tree="'+task.id+
       '" aria-expanded="'+open+'" aria-label="'+esc(portfolioCopy('تفرعات المهمة','Task subtasks','ذیلی کام'))+'"'+(todayOnly?' disabled':'')+'>'+(open?'−':'+')+'</button>':'<span class="tree-toggle-spacer" aria-hidden="true"></span>';
     const title=esc(task.name+' · '+executionTimelineLabel(task.dates));
+    const childCount=project.tasks.filter(child=>child.parentId===task.id).length;
     const names='<div class="task-row portfolio-peer-row'+(hasChildren?' is-parent':'')+'" data-depth="'+depth+'"><span class="tree-indent" style="width:'+
       Math.min(depth,5)*18+'px" aria-hidden="true"></span>'+toggle+'<div class="task-info"><button type="button" class="task-details"'+taskAttrs+
-      ' title="'+title+'"><b>'+esc(task.name)+'</b>'+todayTaskBadge(row.todayWork)+(task.owner?'<small>'+esc(task.owner)+'</small>':'')+'</button></div></div>';
+      ' title="'+title+'">'+taskNameMarkup(task.name,task,childCount)+todayTaskBadge(row.todayWork)+(task.owner?'<small>'+esc(task.owner)+'</small>':'')+'</button></div></div>';
     let timeline='<div class="time-lane">';
     if(right>=0&&left<=r.width) {
       timeline+='<button type="button" class="gantt-bar portfolio-peer-bar palette-bar '+status+predecessor+(task.isMilestone?' milestone':'')+'"'+taskAttrs+
@@ -2073,7 +2094,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
     $('actualTimelineLegend').textContent=portfolioCopy('التنفيذ الفعلي','Actual execution','حقیقی عمل درآمد');
     lastRange=r;lastGeometry=new Map();
     $('ganttGrid').classList.toggle('portfolio-linking',Boolean(portfolio?.linkMode));
-    const depthOf=task=>{let depth=0,current=task;while(current.parentId&&tree.byId.has(current.parentId)&&depth<20){depth++;current=tree.byId.get(current.parentId);}return depth;};
+    const depthOf=task=>taskHierarchyDepth(task,tree.byId);
     $('rangeLabel').textContent=fmt(E.iso(r.start))+' — '+fmt(E.iso(r.start+r.count-1));
     const totalCount=(portfolio?.projects??[]).filter(project=>project.id!==projectId).reduce((count,project)=>count+project.tasks.length,s.tasks.length);
     $('visibleCount').textContent=I.t("{0} من {1} مهمة · {2} يومًا ظاهرًا", [visibleCount,totalCount,r.count]);
@@ -2118,14 +2139,14 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
       const critical=showCritical&&m.critical, status=t.status==='completed'?'done':t.status==='in_progress'?'active-task':'',sel=selected.has(t.id);
       const dates=taskDates.get(t.id);
       const title=I.t("{0} · {1}\n{2} ← {3}\n{4} يوم عمل · إنجاز {5}% · سماح {6} يوم", [t.id, I.field(t,'name'), fmt(t.start), fmt(a.cal.finish(t.start,t.duration)), t.duration, t.progress, m.totalFloat])+'\n'+executionTimelineLabel(dates);
-      const depth=depthOf(t), hasChildren=(tree.children.get(t.id)||[]).length>0, expanded=todayOnly||!collapsed.has(t.id);
+      const depth=depthOf(t), childCount=(tree.children.get(t.id)||[]).length, hasChildren=childCount>0, expanded=todayOnly||!collapsed.has(t.id);
       const toggleLabel=I.t(expanded?'طي تفرعات ':'فتح تفرعات ');
       const treeControl=hasChildren?`<button type="button" class="tree-toggle tree-node-anchor" data-tree-toggle="${t.id}" aria-expanded="${expanded}" aria-label="${esc(toggleLabel+I.field(t,'name'))}" title="${esc(toggleLabel+I.field(t,'name'))}" ${todayOnly?'disabled':''}>${expanded?'−':'+'}</button>`:'<span class="tree-toggle-spacer tree-node-anchor" aria-hidden="true"></span>';
       const palette=paletteOverrides.get(t.pmTaskId)??paletteLevels[Math.min(4,depth)];
       const predecessor=persistedId&&portfolio?.predecessorTaskId===persistedId?' portfolio-predecessor':'';
       const materialsBadge=embedded&&Number.isSafeInteger(t.pmTaskId)&&t.pmTaskId>0
         ?`<button type="button" class="task-materials-badge" data-task-materials="${t.pmTaskId}" data-task-name="${esc(I.field(t,'name'))}" aria-haspopup="dialog" hidden><bdi></bdi><span class="task-materials-long"></span><span class="task-materials-short"></span></button>`:'';
-      names+=`<div class="task-row ${sel?'selected':''} ${critical?'critical-row':''} ${hasChildren?'is-parent':''} ${hasChildren&&expanded?'tree-open':''}" data-row="${t.id}" data-parent-id="${t.parentId||''}" data-depth="${depth}"><input type="checkbox" data-select="${t.id}" ${sel?'checked':''} aria-label="${esc(I.t('تحديد ')+I.field(t,'name'))}"><span class="tree-indent" style="width:${depth*18}px" aria-hidden="true"></span>${treeControl}<div class="task-info"><button class="task-details" data-edit="${t.id}" title="${esc(I.field(t,'name')+' · '+I.field(t,'phase'))}"><b>${esc(I.field(t,'name'))}</b>${todayTaskBadge(todayMatches.get(t.id))}<small>${esc(I.field(t,'owner')||I.t("بلا مسؤول"))} · ${t.progress}%</small></button>${materialsBadge}</div><button class="row-more" data-edit="${t.id}" aria-label="${esc(I.t('تعديل ')+I.field(t,'name'))}">⋮</button></div>`;
+      names+=`<div class="task-row ${sel?'selected':''} ${critical?'critical-row':''} ${hasChildren?'is-parent':''} ${hasChildren&&expanded?'tree-open':''}" data-row="${t.id}" data-parent-id="${t.parentId||''}" data-depth="${depth}"><input type="checkbox" data-select="${t.id}" ${sel?'checked':''} aria-label="${esc(I.t('تحديد ')+I.field(t,'name'))}"><span class="tree-indent" style="width:${depth*18}px" aria-hidden="true"></span>${treeControl}<div class="task-info"><button class="task-details" data-edit="${t.id}" title="${esc(I.field(t,'name')+' · '+I.field(t,'phase'))}">${taskNameMarkup(I.field(t,'name'),taskLabelPalette(t,palette,critical),childCount)}${todayTaskBadge(todayMatches.get(t.id))}<small>${esc(I.field(t,'owner')||I.t("بلا مسؤول"))} · ${t.progress}%</small></button>${materialsBadge}</div><button class="row-more" data-edit="${t.id}" aria-label="${esc(I.t('تعديل ')+I.field(t,'name'))}">⋮</button></div>`;
       timeline+=`<div class="time-lane ${sel?'selected':''}" data-lane="${t.id}">`;
       const base=baselineTasks?.get(t.id);
       if(base) {
@@ -2270,7 +2291,7 @@ input[type=date]::-webkit-calendar-picker-indicator:hover{background-color:#d4ec
   function renderTaskContextActions(task) {
     const taskId=persistedTaskId(task);
     const project=portfolio?.projects.find(project=>project.id===projectId);
-    const palette=taskId?(paletteOverrides.get(taskId)??paletteLevels[Math.min(4,depthOf(task))]):null;
+    const palette=taskId?(paletteOverrides.get(taskId)??paletteLevels[Math.min(4,taskHierarchyDepth(task,P.hierarchy(state.tasks).byId))]):null;
     const requisitionLabel=esc(I.t('طلب احتياج'));
     const requisition=allowMaterialRequisitions&&taskId
       ?'<button type="button" class="button compact task-context-requisition" data-requisition="'+taskId+'"><span aria-hidden="true">+</span><span>'+requisitionLabel+'</span></button>':'';
